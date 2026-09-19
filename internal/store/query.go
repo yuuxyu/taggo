@@ -31,11 +31,13 @@ func (s *Store) Search(opts SearchOptions) (Result, error) {
 	q := search.Parse(opts.Query)
 
 	// 並び順に対応するインデックスを選ぶ。関連度順だけは絞り込み後に自前で並べる。
+	// 名前順はタイトル（見出しやタグの曲名）ではなくフォルダ込みの相対パスで
+	// 並べる。これにより同じフォルダのファイルが自然にまとまる。
 	index := idxModTime
 	descending := true
 	switch opts.Sort {
 	case SortNameAsc:
-		index, descending = idxTitle, false
+		index, descending = idxRelPath, false
 	case SortRelevance:
 		index, descending = idxModTime, true
 	}

@@ -23,7 +23,10 @@ const MaxEntries = 20000
 const (
 	entryPrefix = "entry:"
 	idxModTime  = "entry_modtime"
-	idxTitle    = "entry_title"
+	// idxRelPath はフォルダ階層込みの相対パスで並べるためのインデックス。
+	// タイトル（Markdown なら見出し、音声ならタグの曲名）ではなく実際の
+	// ファイルパスで並べることで、同じフォルダの中身が自然にまとまる。
+	idxRelPath = "entry_relpath"
 )
 
 // SortOrder は一覧の並び順。要件どおり手動並べ替えは提供せず、この 3 つに限る。
@@ -79,8 +82,8 @@ func (s *Store) createIndexes() error {
 	if err := s.db.CreateIndex(idxModTime, entryPrefix+"*", buntdb.IndexJSON("modTime")); err != nil {
 		return fmt.Errorf("更新日時インデックスの作成に失敗しました: %w", err)
 	}
-	if err := s.db.CreateIndex(idxTitle, entryPrefix+"*", buntdb.IndexJSON("title")); err != nil {
-		return fmt.Errorf("タイトルインデックスの作成に失敗しました: %w", err)
+	if err := s.db.CreateIndex(idxRelPath, entryPrefix+"*", buntdb.IndexJSON("relPath")); err != nil {
+		return fmt.Errorf("パスインデックスの作成に失敗しました: %w", err)
 	}
 	return nil
 }

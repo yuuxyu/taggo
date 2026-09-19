@@ -121,12 +121,29 @@ func TestSearchSortOrders(t *testing.T) {
 	}
 
 	r, _ = s.Search(SearchOptions{Sort: SortNameAsc})
-	titles := make([]string, 0, len(r.Entries))
-	for _, e := range r.Entries {
-		titles = append(titles, e.Title)
+	if got := paths(r); got[0] != "a.md" || got[2] != "c.md" {
+		t.Fatalf("パス昇順になっていない: %v", got)
 	}
-	if titles[0] != "Go の設計メモ" {
-		t.Fatalf("タイトル昇順になっていない: %v", titles)
+}
+
+// TestSearchSortNameUsesPathNotTitle は、名前順が見出しやメタデータのタイトル
+// ではなく実際のファイルパスで並ぶことを確かめる。フォルダ配下のファイルが
+// 自然にまとまるようにするための挙動。
+func TestSearchSortNameUsesPathNotTitle(t *testing.T) {
+	s := newTestStore(t)
+	entries := []*model.Entry{
+		// パスは folder/b.md だが、タイトルは "A" 始まりでアルファベット順なら先頭に来る。
+		newEntry("folder/b.md", "Aaa という見出し", 1, nil),
+		// パスは folder/a.md だが、タイトルは "Z" 始まりでアルファベット順なら末尾に来る。
+		newEntry("folder/a.md", "Zzz という見出し", 1, nil),
+	}
+	if err := s.PutAll(entries); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+
+	r, _ := s.Search(SearchOptions{Sort: SortNameAsc})
+	if got := paths(r); got[0] != "folder/a.md" || got[1] != "folder/b.md" {
+		t.Fatalf("名前順がパスではなくタイトルで並んでいる: %v", got)
 	}
 }
 
