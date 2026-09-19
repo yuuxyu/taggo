@@ -38,3 +38,109 @@ Exif.Image.XPKeywords や XMP:Subject などの標準タグ領域に書き込み
 .mp3 は ID3v2 タグ（GenreやComment、Keywords欄）にタグ文字列を書き込みます。
 
 .wav は INFO chunk や ID3 chunk に埋め込みます。
+
+## 対応状況
+
+| 種別 | 拡張子 | 読み取り | 書き込み | 保存先 |
+| --- | --- | --- | --- | --- |
+| Markdown | `.md` `.markdown` | ✓ | ✓ | YAML Front Matter の `tags` |
+| 画像 | `.jpg` `.jpeg` | ✓ | ✓ | Exif IFD0 の `XPKeywords`（読み取りは XMP `dc:subject` も併用） |
+| 画像 | `.png` | ✓ | ✓ | eXIf チャンクの `XPKeywords`（読み取りは `tEXt` / `iTXt` も併用） |
+| 画像 | `.webp` | ✓ | ✓ | `XMP ` チャンクの `dc:subject`（読み取りは `EXIF` チャンクも併用） |
+| 画像 | `.gif` `.svg` | ✓ | – | 表示のみ。SVG は埋め込み XMP を読み取る |
+| 音声 | `.mp3` | ✓ | ✓ | ID3v2 の `TXXX:KEYWORDS` |
+| 音声 | `.flac` | ✓ | ✓ | Vorbis Comment の `KEYWORDS` |
+| 音声 | `.wav` | ✓ | ✓ | RIFF `LIST/INFO` の `IKEY`（読み取りは `id3 ` チャンクも併用） |
+| 音声 | `.aac` `.m4a` | – | – | 再生のみ |
+
+書き込みは一時ファイルへ出力してから rename する方式で、途中で失敗しても元のファイルを壊しません。
+読み取り専用のファイルはエラーとして表示し、メモリ上だけ更新するような不整合は起こしません。
+
+### 拡張子と中身の食い違い
+
+ブラウザから保存した画像などでは、中身が PNG なのに名前が `.jpg`、といった食い違いが珍しくありません。
+taggo は先頭バイトから実際の形式を判定し、メタデータの読み書きも配信時の MIME タイプもそちらに合わせます。
+カードには実体の形式がバッジで表示されます。
+
+判定はできても taggo が扱えない形式（AVIF・HEIC・BMP・TIFF）は、
+読み取り専用として理由を添えて表示します。正しい MIME タイプで配信するため、
+ブラウザが対応している形式（AVIF など）はプレビューできます。
+
+## 動かし方
+
+### 必要なもの
+
+- Go 1.26 以上
+- Node.js 20 以上
+- Linux では `webkit2gtk-4.1` と `gtk3`（開発パッケージ）
+- [Wails CLI](https://wails.io/) v2
+
+```sh
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+```
+
+### ビルドと実行
+
+```sh
+make build            # build/bin/taggo を作る
+./build/bin/taggo     # 起動する
+
+./build/bin/taggo --folder ~/Documents/notes   # フォルダを指定して起動する
+```
+
+開発中はホットリロードが使えます。
+
+```sh
+make dev
+```
+
+`webkit2gtk-4.1` しか入っていない環境が一般的になったため、Makefile では
+`-tags webkit2_41` を常に付けています。`wails` コマンドを直接叩く場合も同じタグが要ります。
+
+なお `wails dev` は GET をすべて Vite の開発サーバーへ転送し、
+開発サーバーが 404 か 405 を返したときにだけ Go 側のハンドラーへ委譲します。
+Vite は未知のパスへ SPA フォールバックで `index.html` を 200 で返してしまうため、
+`frontend/vite.config.ts` のプラグインで `/taggo/` 以下だけを 404 にして、
+画像やプレビューの配信要求が Go 側へ届くようにしています。
+
+### テスト
+
+```sh
+make test   # Go のテスト
+make lint   # gofmt / go vet / tsc --noEmit
+```
+
+## 使い方
+
+- **検索バー**（最上部）: 起動時にフォーカスが当たり、1 文字入力するごとに絞り込みが走ります。
+  - `#タグ` … そのタグを持つものだけ（完全一致）
+  - `-#タグ` … そのタグを持たないものだけ
+  - `#a OR #b` … どちらかのタグを持つもの
+  - `語` … タイトル・ファイル名・本文抜粋・タグへの部分一致
+  - `"複数 語"` … 空白を含めて 1 語として扱う
+  - `#` を入力すると、登録済みタグの候補が使用件数の多い順に出ます。
+- **カード**: クリックで詳細プレビュー、`Ctrl` を押しながらクリック（またはカード左上のチェック）で複数選択。
+  カード下部の `#タグ` バッジをクリックすると、そのタグが検索バーに足されて即座に絞り込まれます。
+- **一括編集**: 複数選択するとツールバーに「タグを一括編集」が出ます。追加と削除を別々に指定できます。
+
+## 設計
+
+- ファイルのメタデータ領域が正（Single Source of Truth）です。アプリ側にデータベースを保存しません。
+- 検索は Pure Go の [BuntDB](https://github.com/tidwall/buntdb) をインメモリ（`:memory:`）で使い、
+  起動時・フォルダ選択時に配下を走査して展開します。終了時にメモリごと破棄されます。
+- RAM の消費を抑えるため、1 回の走査で展開する件数に上限（20,000 件）を設けています。
+- ファイルウォッチャーが外部エディタによる変更も検知し、該当レコードを同期・削除します。
+
+### パッケージ構成
+
+| パッケージ | 役割 |
+| --- | --- |
+| `internal/model` | 共有するデータ型とタグの正規化 |
+| `internal/meta` | 形式ごとの埋め込みタグの読み書き |
+| `internal/store` | BuntDB への展開と検索・タグ索引・バックリンク |
+| `internal/search` | 検索バーの文字列を問い合わせへ変換する |
+| `internal/scan` | フォルダ走査とメタデータの並列読み取り |
+| `internal/watcher` | ファイル変更の検知 |
+| `internal/thumb` | サムネイルの生成とメモリ内キャッシュ |
+| `internal/app` | フロントエンドへ公開する API とローカルファイル配信 |
+| `frontend` | React + TypeScript + Vite の UI |
