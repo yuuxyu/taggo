@@ -1,0 +1,13 @@
+# ビルド成果物
+build/bin
+
+# フロントエンドのビルド結果。main.go が //go:embed で参照するため、
+# 新規クローンでもビルドが通るよう placeholder だけは残す。
+frontend/dist/*
+!frontend/dist/gitkeep
+
+# 依存パッケージ
+node_modules
+
+# Wails が npm install の要否判定に使う生成ファイル
+frontend/package.json.md5
