@@ -55,7 +55,7 @@ export function useLibrary(): Library {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortOrder>("modified_desc");
+  const [sort, setSort] = useState<SortOrder>("name_asc");
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
 

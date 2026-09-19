@@ -31,6 +31,27 @@ export default function App() {
     [detailPath, entries],
   );
 
+  // 画像の詳細プレビューは「前へ／次へ」で画像だけを順に辿れるようにする。
+  // 現在の検索結果・並び順に対する画像だけの部分列として扱う。
+  const imageEntries = useMemo(() => entries.filter((e) => e.kind === "image"), [entries]);
+  const imageIndex = useMemo(
+    () =>
+      detailEntry?.kind === "image"
+        ? imageEntries.findIndex((e) => e.path === detailEntry.path)
+        : -1,
+    [detailEntry, imageEntries],
+  );
+  // 端では止める（ループしない）。
+  const navigateImage = useCallback(
+    (direction: 1 | -1) => {
+      if (imageIndex < 0) return;
+      const next = imageIndex + direction;
+      if (next < 0 || next >= imageEntries.length) return;
+      setDetailPath(imageEntries[next].path);
+    },
+    [imageIndex, imageEntries],
+  );
+
   const selectedEntries = useMemo(
     () => entries.filter((e) => selected.has(e.path)),
     [entries, selected],
@@ -187,6 +208,9 @@ export default function App() {
           onFollowLink={handleFollowLink}
           onEntryUpdated={replaceEntry}
           onError={(message) => notify("error", message)}
+          onNavigateImage={navigateImage}
+          imageIndex={imageIndex}
+          imageTotal={imageEntries.length}
         />
       )}
 

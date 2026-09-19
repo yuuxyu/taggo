@@ -1,71 +1,133 @@
-/* 画像プレビュー。 */
+/* 画像プレビュー（漫画ビューア）。 */
 
-.imgpreview {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.mangaview__stage {
+  /* display:grid/flex の place-items:center はアイテムを内容サイズに縮めてしまい
+     （行トラックが auto になるため、中の img の height:100% が確定しない）、
+     さらに中央寄せと overflow の組み合わせは WebKit 系で
+     「はみ出した先頭側にスクロールで届かない」不具合もあるため、
+     どちらも避けて text-align + inline-block で中央寄せする。 */
+  position: relative;
+  width: 100%;
   height: 100%;
-  min-height: 0;
-}
-
-.imgpreview__stage {
-  display: grid;
-  flex: 1;
-  min-height: 240px;
   overflow: auto;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  place-items: center;
+  text-align: center;
+  background: #000;
 }
 
-.imgpreview__img {
-  display: block;
+.mangaview__img {
+  display: inline-block;
+  /* inline-block の既定 vertical-align:baseline のままだと、文字の descender
+     ぶんの数px が下に隙間として残り、height:100% と合わせて常に縦スクロールが
+     出てしまう。bottom にして隙間を消す。 */
+  vertical-align: bottom;
   max-width: none;
+  max-height: none;
 }
 
-.imgpreview__img.is-fit {
-  max-width: 100%;
-  max-height: 100%;
+/* 既定：漫画ページとして見やすいよう、高さをウィンドウに合わせる。
+   横に収まらない分は .mangaview__stage の overflow: auto で横スクロールする。 */
+.mangaview__img.is-fit-height {
+  width: auto;
+  height: 100%;
+}
+
+/* 縦横どちらも収まりきる、いわゆる「全体を表示」。
+   要素自体をコンテナいっぱいにし、object-fit で内側にレターボックスする。 */
+.mangaview__img.is-fit-contain {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
-.imgpreview__error {
+.mangaview__error {
   padding: 40px;
   color: var(--text-faint);
 }
 
-.imgpreview__controls {
+/* ---- 下部の操作 HUD ----
+ * マウスが動いた間だけ表示する。常に画像の上に乗るので、
+ * 背景の画像が何色でも読めるよう暗いグラデーションを敷く。
+ */
+.mangaview__hud {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 20px 16px;
+  color: var(--hud-text, #fff);
+  background: linear-gradient(to top, rgb(0 0 0 / 68%), transparent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.mangaview__hud.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mangaview__hud-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mangaview__zoom,
+.mangaview__pager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
 }
 
-.imgpreview__zoom {
+.mangaview__hud .btn--ghost {
+  color: var(--hud-text, #fff);
+}
+
+.mangaview__hud .btn--ghost:hover {
+  background: var(--hud-chip-bg, rgb(255 255 255 / 14%));
+}
+
+.mangaview__hud .btn--ghost:disabled {
+  opacity: 0.35;
+}
+
+.mangaview__zoomlabel,
+.mangaview__pagecount {
   min-width: 64px;
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--hud-text-muted, rgb(255 255 255 / 72%));
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
-.imgpreview__meta {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 16px;
-  padding: 12px 14px;
+.mangaview__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  padding: 0;
   margin: 0;
-  font-size: 12.5px;
-  background: var(--bg-sunken);
-  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--hud-text-muted, rgb(255 255 255 / 72%));
 }
 
-.imgpreview__meta dt {
-  color: var(--text-faint);
+.mangaview__meta dt {
+  display: inline;
+  margin-right: 4px;
 }
 
-.imgpreview__meta dd {
+.mangaview__meta dt::after {
+  content: "：";
+}
+
+.mangaview__meta dd {
+  display: inline;
   margin: 0;
-  word-break: break-word;
+  color: var(--hud-text, #fff);
 }
