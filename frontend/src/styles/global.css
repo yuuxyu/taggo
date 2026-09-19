@@ -1,0 +1,171 @@
+/*
+ * taggo の基本スタイル。
+ * Scrapbox（Helpfeel Cosense）の設計思想にならい、余白と情報密度を優先し、
+ * 装飾は最小限にとどめる。配色は OS のテーマ設定に追従する。
+ */
+
+:root {
+  /* 明るいテーマの配色。暗いテーマでは下の media query で上書きする。 */
+  --bg: #faf9f7;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #f1efec;
+  --border: #e2ded8;
+  --border-strong: #cfc9c1;
+  --text: #2c2a28;
+  --text-muted: #7b756d;
+  --text-faint: #a8a199;
+  --accent: #2f7d6e;
+  --accent-soft: #e2f0ec;
+  --accent-text: #1d5b50;
+  --danger: #b4452f;
+  --danger-soft: #f8e7e3;
+  --selection: #d9ebe6;
+  --shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
+  --shadow-lg: 0 8px 40px rgb(0 0 0 / 18%);
+  --radius: 8px;
+  --radius-sm: 5px;
+
+  color-scheme: light dark;
+  font-family: "Inter", "Helvetica Neue", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1918;
+    --bg-elevated: #232220;
+    --bg-sunken: #131211;
+    --border: #35332f;
+    --border-strong: #4a4740;
+    --text: #e8e4de;
+    --text-muted: #9c968c;
+    --text-faint: #6e6860;
+    --accent: #5fb3a1;
+    --accent-soft: #1e332f;
+    --accent-text: #8fd3c3;
+    --danger: #e0755c;
+    --danger-soft: #3a2320;
+    --selection: #234039;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 12px rgb(0 0 0 / 30%);
+    --shadow-lg: 0 8px 40px rgb(0 0 0 / 60%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden; /* スクロールは仮想スクロール側が受け持つ */
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* アプリ全体のレイアウト。検索バーを最上部に固定し、残りをグリッドに割り当てる。 */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* WebView 側の既定の背景は透過なので、アプリのルートで必ず塗りつぶす。 */
+  background: var(--bg);
+}
+
+.app__body {
+  flex: 1;
+  min-height: 0; /* flex 子要素が内容で押し広がらないようにする */
+  background: var(--bg);
+}
+
+/* --- 汎用パーツ --- */
+
+.btn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 12px;
+  white-space: nowrap;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.btn:hover {
+  background: var(--bg-sunken);
+  border-color: var(--border-strong);
+}
+
+.btn--primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn--primary:hover {
+  background: var(--accent-text);
+  border-color: var(--accent-text);
+}
+
+.btn--ghost {
+  background: none;
+  border-color: transparent;
+}
+
+.btn--danger {
+  color: var(--danger);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.empty__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty__hint {
+  max-width: 420px;
+  font-size: 13px;
+}

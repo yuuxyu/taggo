@@ -1,0 +1,71 @@
+/* 画像プレビュー。 */
+
+.imgpreview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.imgpreview__stage {
+  display: grid;
+  flex: 1;
+  min-height: 240px;
+  overflow: auto;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  place-items: center;
+}
+
+.imgpreview__img {
+  display: block;
+  max-width: none;
+}
+
+.imgpreview__img.is-fit {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.imgpreview__error {
+  padding: 40px;
+  color: var(--text-faint);
+}
+
+.imgpreview__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.imgpreview__zoom {
+  min-width: 64px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.imgpreview__meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  padding: 12px 14px;
+  margin: 0;
+  font-size: 12.5px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+
+.imgpreview__meta dt {
+  color: var(--text-faint);
+}
+
+.imgpreview__meta dd {
+  margin: 0;
+  word-break: break-word;
+}

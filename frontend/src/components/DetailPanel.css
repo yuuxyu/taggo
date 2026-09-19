@@ -1,0 +1,109 @@
+/* 詳細プレビューのオーバーレイ。 */
+
+.detail {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  padding: 32px;
+  place-items: center;
+}
+
+.detail__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 38%);
+  backdrop-filter: blur(2px);
+}
+
+.detail__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 100%);
+  height: min(90vh, 100%);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
+.detail__header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px 20px 12px;
+}
+
+.detail__heading {
+  min-width: 0;
+}
+
+.detail__title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.detail__path {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail__close {
+  flex-shrink: 0;
+}
+
+.detail__tags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail__tagactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.detail__spacer {
+  flex: 1;
+}
+
+.detail__warning {
+  color: var(--danger);
+}
+
+.detail__currenttags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.detail__tagjump {
+  padding: 0;
+  color: var(--accent-text);
+}
+
+.detail__tagjump:hover {
+  text-decoration: underline;
+}
+
+.detail__content {
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+  overflow-y: auto;
+}

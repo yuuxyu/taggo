@@ -1,0 +1,15 @@
+/* 仮想スクロールするカードグリッド。 */
+
+.cardgrid {
+  height: 100%;
+}
+
+.cardgrid__viewport {
+  /* react-window が内部でスクロールを持つので、外側では隠さない。 */
+  scrollbar-gutter: stable;
+}
+
+.cardgrid__cell {
+  /* セルの矩形いっぱいにカードを置き、右下に間隔を作る。 */
+  padding: 0 14px 14px 0;
+}

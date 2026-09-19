@@ -1,0 +1,235 @@
+/* Markdown プレビューの本文スタイル。 */
+
+.mdpreview {
+  font-size: 14.5px;
+  line-height: 1.85;
+  word-break: break-word;
+}
+
+.mdpreview__loading,
+.mdpreview__error {
+  padding: 24px 0;
+  color: var(--text-muted);
+}
+
+.mdpreview__error {
+  color: var(--danger);
+}
+
+.mdpreview h1,
+.mdpreview h2,
+.mdpreview h3,
+.mdpreview h4 {
+  margin: 1.6em 0 0.6em;
+  line-height: 1.4;
+}
+
+.mdpreview h1 {
+  font-size: 1.6em;
+}
+
+.mdpreview h2 {
+  padding-bottom: 0.3em;
+  font-size: 1.32em;
+  border-bottom: 1px solid var(--border);
+}
+
+.mdpreview h3 {
+  font-size: 1.14em;
+}
+
+.mdpreview > :first-child {
+  margin-top: 0;
+}
+
+.mdpreview p,
+.mdpreview ul,
+.mdpreview ol {
+  margin: 0.8em 0;
+}
+
+.mdpreview li {
+  margin: 0.25em 0;
+}
+
+.mdpreview a {
+  color: var(--accent-text);
+}
+
+.mdpreview__wikilink {
+  padding: 0 2px;
+  background: var(--accent-soft);
+  border-radius: 3px;
+  text-decoration: none;
+}
+
+.mdpreview blockquote {
+  padding: 0.1em 1em;
+  margin: 1em 0;
+  color: var(--text-muted);
+  border-left: 3px solid var(--border-strong);
+}
+
+.mdpreview code {
+  padding: 0.15em 0.4em;
+  font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  font-size: 0.88em;
+  background: var(--bg-sunken);
+  border-radius: 4px;
+}
+
+.mdpreview pre {
+  padding: 12px 14px;
+  margin: 1em 0;
+  overflow-x: auto;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.mdpreview pre code {
+  padding: 0;
+  background: none;
+}
+
+.mdpreview table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 1em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.mdpreview th,
+.mdpreview td {
+  padding: 6px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+}
+
+.mdpreview th {
+  background: var(--bg-sunken);
+}
+
+.mdpreview img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+}
+
+.mdpreview hr {
+  margin: 2em 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.mdpreview input[type="checkbox"] {
+  margin-right: 6px;
+}
+
+/* mermaid の図。 */
+
+.mermaid {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  margin: 1.2em 0;
+  overflow-x: auto;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-loading {
+  padding: 20px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+
+.mermaid-error {
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius);
+}
+
+/* バックリンク一覧。 */
+
+.mdpreview__backlinks {
+  padding-top: 16px;
+  margin-top: 40px;
+  border-top: 1px solid var(--border);
+}
+
+.mdpreview__backlinks h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.mdpreview__backlinks ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.mdpreview__backlinks button {
+  padding: 3px 10px;
+  font-size: 12.5px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.mdpreview__backlinks button:hover {
+  border-color: var(--accent);
+}
+
+/* ハイライトの配色を、暗いテーマでも読めるよう調整する。 */
+@media (prefers-color-scheme: dark) {
+  .mdpreview pre code.hljs {
+    color: var(--text);
+    background: none;
+  }
+
+  .mdpreview .hljs-comment,
+  .mdpreview .hljs-quote {
+    color: var(--text-faint);
+  }
+
+  .mdpreview .hljs-keyword,
+  .mdpreview .hljs-selector-tag,
+  .mdpreview .hljs-literal {
+    color: #d08fd0;
+  }
+
+  .mdpreview .hljs-string,
+  .mdpreview .hljs-attr {
+    color: #8fd3c3;
+  }
+
+  .mdpreview .hljs-number,
+  .mdpreview .hljs-built_in {
+    color: #e0b070;
+  }
+
+  .mdpreview .hljs-title,
+  .mdpreview .hljs-section {
+    color: #83b4e8;
+  }
+}
