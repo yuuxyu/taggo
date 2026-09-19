@@ -6,9 +6,11 @@ package thumb
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -18,6 +20,7 @@ import (
 	_ "image/png"  // PNG をデコード対象に加える
 
 	"golang.org/x/image/draw"
+	"golang.org/x/sync/semaphore"
 
 	// 拡張子を偽ったファイル（中身が BMP や TIFF の .png など）でも
 	// サムネイルを出せるように、標準外の形式もデコード対象に含める。
@@ -38,14 +41,30 @@ const (
 	maxCacheEntries = 512
 	// maxSourceBytes を超える画像はサムネイル化せず、そのまま原寸を返す判断を呼び出し側に委ねる。
 	maxSourceBytes = 64 << 20
+
+	// maxDecodeBudgetBytes は、デコード中の画像が同時に確保してよいメモリ量の目安。
+	// 本数そのものは制限しない（小さい画像ばかりのときにスループットを落とさない）が、
+	// 大きな画像がたまたま重なったときだけ暗黙に直列化し、ピークメモリの青天井を防ぐ。
+	maxDecodeBudgetBytes = 512 << 20
+	// bytesPerPixelEstimate はデコード後 1 ピクセルあたりのバイト数の見積もり。
+	// 実際の内訳（JPEG は YCbCr で約1.5、PNG 等は RGBA で4）を形式ごとに厳密に
+	// 見分けはせず、安全側に倒して RGBA 相当で見積もる。
+	bytesPerPixelEstimate = 4
 )
 
-// Cache は生成済みサムネイルのメモリ内キャッシュ。ゼロ値で使える。
+// Cache は生成済みサムネイルのメモリ内キャッシュ。ゼロ値では使えない、NewCache を使うこと。
 type Cache struct {
 	mu    sync.Mutex
 	items map[string]*entry
 	// order は挿入順。上限を超えたときに古いものから捨てるために持つ。
 	order []string
+
+	// sem はデコード・リサイズ中の画像が同時に確保してよいメモリの重み付きセマフォ。
+	sem *semaphore.Weighted
+	// dstPool と bufPool は生成のたびに使う一時バッファの使い回しプール。
+	// 高速スクロールで生成が連発してもアロケーション由来のメモリ増加を抑える。
+	dstPool sync.Pool
+	bufPool sync.Pool
 }
 
 type entry struct {
@@ -57,7 +76,10 @@ type entry struct {
 
 // NewCache は空のキャッシュを返す。
 func NewCache() *Cache {
-	return &Cache{items: map[string]*entry{}}
+	return &Cache{
+		items: map[string]*entry{},
+		sem:   semaphore.NewWeighted(maxDecodeBudgetBytes),
+	}
 }
 
 // Get は path のサムネイルを JPEG バイト列で返す。
@@ -86,7 +108,7 @@ func (c *Cache) Get(path string, width int) ([]byte, error) {
 	}
 	c.mu.Unlock()
 
-	data, err := generate(path, width)
+	data, err := c.generate(path, width)
 	if err != nil {
 		return nil, err
 	}
@@ -157,12 +179,30 @@ func lastIndexByte(s string, b byte) int {
 
 // generate は画像を読み込んで縮小し、JPEG として書き出す。
 // 元画像が要求幅より小さい場合は拡大せず、そのままの解像度で書き出す。
-func generate(path string, width int) ([]byte, error) {
+func (c *Cache) generate(path string, width int) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+
+	// 本デコードの前にヘッダーだけ読み、デコード後のおおよそのメモリ量を見積もる。
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return nil, fmt.Errorf("画像のデコードに失敗しました: %w", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	weight := int64(cfg.Width) * int64(cfg.Height) * bytesPerPixelEstimate
+	weight = max(min(weight, int64(maxDecodeBudgetBytes)), 1)
+	// 総量が maxDecodeBudgetBytes を超えて重なったときだけ、ここで待たされる。
+	// 小さい画像ばかりのときは常に空きがあるので、本数を絞られることはない。
+	if err := c.sem.Acquire(context.Background(), weight); err != nil {
+		return nil, err
+	}
+	defer c.sem.Release(weight)
 
 	src, _, err := image.Decode(f)
 	if err != nil {
@@ -180,13 +220,59 @@ func generate(path string, width int) ([]byte, error) {
 		dstH = 1
 	}
 
-	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
-	// CatmullRom は縮小時の品質が高く、写真のサムネイルに向く。
-	draw.CatmullRom.Scale(dst, dst.Bounds(), src, bounds, draw.Over, nil)
+	dst := c.acquireRGBA(dstW, dstH)
+	defer c.releaseRGBA(dst)
 
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
+	// ApproxBiLinear は CatmullRom よりカーネルが軽く、計算量も中間バッファも小さい。
+	// サムネイルは小さく表示するだけなので画質差はほぼ気付かれない一方、
+	// 生成の速度と省メモリを両取りできる。
+	// Over ではなく Src を使うのは、プールから使い回した dst に残る前の描画内容が
+	// 透過画像の合成で透けて見えないようにするため（Src は必ず dst を上書きする）。
+	draw.ApproxBiLinear.Scale(dst, dst.Bounds(), src, bounds, draw.Src, nil)
+
+	buf := c.acquireBuffer()
+	defer c.releaseBuffer(buf)
+	if err := jpeg.Encode(buf, dst, &jpeg.Options{Quality: 85}); err != nil {
 		return nil, fmt.Errorf("サムネイルの書き出しに失敗しました: %w", err)
 	}
-	return buf.Bytes(), nil
+
+	// buf はこの後プールへ返して使い回すので、内容を抜き出してコピーする。
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out, nil
+}
+
+// acquireRGBA はプールから使い回せる *image.RGBA を取り出す。
+// 容量が足りなければ新しく確保する。
+func (c *Cache) acquireRGBA(w, h int) *image.RGBA {
+	if v := c.dstPool.Get(); v != nil {
+		img := v.(*image.RGBA)
+		if need := w * h * 4; cap(img.Pix) >= need {
+			img.Rect = image.Rect(0, 0, w, h)
+			img.Stride = w * 4
+			img.Pix = img.Pix[:need]
+			return img
+		}
+	}
+	return image.NewRGBA(image.Rect(0, 0, w, h))
+}
+
+// releaseRGBA は使い終えた *image.RGBA をプールへ戻す。
+func (c *Cache) releaseRGBA(img *image.RGBA) {
+	c.dstPool.Put(img)
+}
+
+// acquireBuffer はプールから使い回せる *bytes.Buffer を取り出す。
+func (c *Cache) acquireBuffer() *bytes.Buffer {
+	if v := c.bufPool.Get(); v != nil {
+		buf := v.(*bytes.Buffer)
+		buf.Reset()
+		return buf
+	}
+	return &bytes.Buffer{}
+}
+
+// releaseBuffer は使い終えた *bytes.Buffer をプールへ戻す。
+func (c *Cache) releaseBuffer(buf *bytes.Buffer) {
+	c.bufPool.Put(buf)
 }

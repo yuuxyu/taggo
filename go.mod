@@ -13,6 +13,7 @@ require (
 	github.com/tidwall/buntdb v1.3.2
 	github.com/wailsapp/wails/v2 v2.16.0
 	golang.org/x/image v0.46.0
+	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
