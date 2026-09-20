@@ -7,8 +7,8 @@
 タグはファイル内埋め込み方式を採用しています。以下のファイル形式に対応しています。
 
 - Markdown
-- 画像ファイル (jpg, png, webp, gif, svg)
-- 音声ファイル (mp3, wav, aac, flac)
+- 画像ファイル (jpg, png, webp)
+- 音声ファイル (mp3, wav, flac)
 
 ## Markdown
 
@@ -41,17 +41,15 @@ Exif.Image.XPKeywords や XMP:Subject などの標準タグ領域に書き込み
 
 ## 対応状況
 
-| 種別 | 拡張子 | 読み取り | 書き込み | 保存先 |
-| --- | --- | --- | --- | --- |
-| Markdown | `.md` `.markdown` | ✓ | ✓ | YAML Front Matter の `tags` |
-| 画像 | `.jpg` `.jpeg` | ✓ | ✓ | Exif IFD0 の `XPKeywords`（読み取りは XMP `dc:subject` も併用） |
-| 画像 | `.png` | ✓ | ✓ | eXIf チャンクの `XPKeywords`（読み取りは `tEXt` / `iTXt` も併用） |
-| 画像 | `.webp` | ✓ | ✓ | `XMP ` チャンクの `dc:subject`（読み取りは `EXIF` チャンクも併用） |
-| 画像 | `.gif` `.svg` | ✓ | – | 表示のみ。SVG は埋め込み XMP を読み取る |
-| 音声 | `.mp3` | ✓ | ✓ | ID3v2 の `TXXX:KEYWORDS` |
-| 音声 | `.flac` | ✓ | ✓ | Vorbis Comment の `KEYWORDS` |
-| 音声 | `.wav` | ✓ | ✓ | RIFF `LIST/INFO` の `IKEY`（読み取りは `id3 ` チャンクも併用） |
-| 音声 | `.aac` `.m4a` | – | – | 再生のみ |
+| 種別     | 拡張子            | 読み取り | 書き込み | 保存先                                                             |
+| -------- | ----------------- | -------- | -------- | ------------------------------------------------------------------ |
+| Markdown | `.md` `.markdown` | ✓        | ✓        | YAML Front Matter の `tags`                                        |
+| 画像     | `.jpg` `.jpeg`    | ✓        | ✓        | Exif IFD0 の `XPKeywords`（読み取りは XMP `dc:subject` も併用）    |
+| 画像     | `.png`            | ✓        | ✓        | eXIf チャンクの `XPKeywords`（読み取りは `tEXt` / `iTXt` も併用）  |
+| 画像     | `.webp`           | ✓        | ✓        | `XMP ` チャンクの `dc:subject`（読み取りは `EXIF` チャンクも併用） |
+| 音声     | `.mp3`            | ✓        | ✓        | ID3v2 の `TXXX:KEYWORDS`                                           |
+| 音声     | `.flac`           | ✓        | ✓        | Vorbis Comment の `KEYWORDS`                                       |
+| 音声     | `.wav`            | ✓        | ✓        | RIFF `LIST/INFO` の `IKEY`（読み取りは `id3 ` チャンクも併用）     |
 
 書き込みは一時ファイルへ出力してから rename する方式で、途中で失敗しても元のファイルを壊しません。
 読み取り専用のファイルはエラーとして表示し、メモリ上だけ更新するような不整合は起こしません。
@@ -62,9 +60,11 @@ Exif.Image.XPKeywords や XMP:Subject などの標準タグ領域に書き込み
 taggo は先頭バイトから実際の形式を判定し、メタデータの読み書きも配信時の MIME タイプもそちらに合わせます。
 カードには実体の形式がバッジで表示されます。
 
-判定はできても taggo が扱えない形式（AVIF・HEIC・BMP・TIFF）は、
+判定はできても taggo が扱えない形式（AVIF・HEIC・BMP・TIFF・GIF・SVG・M4A）は、
 読み取り専用として理由を添えて表示します。正しい MIME タイプで配信するため、
-ブラウザが対応している形式（AVIF など）はプレビューできます。
+ブラウザが対応している形式（GIF・SVG・AVIF など）はプレビューできます。
+
+GIF・SVG・AAC・M4A はタグの標準的な埋め込み場所を持たないため、対応フォーマットから外しています。
 
 ## 動かし方
 
@@ -154,14 +154,14 @@ make lint   # gofmt / go vet / tsc --noEmit
 
 ### パッケージ構成
 
-| パッケージ | 役割 |
-| --- | --- |
-| `internal/model` | 共有するデータ型とタグの正規化 |
-| `internal/meta` | 形式ごとの埋め込みタグの読み書き |
-| `internal/store` | BuntDB への展開と検索・タグ索引・バックリンク |
-| `internal/search` | 検索バーの文字列を問い合わせへ変換する |
-| `internal/scan` | フォルダ走査とメタデータの並列読み取り |
-| `internal/watcher` | ファイル変更の検知 |
-| `internal/thumb` | サムネイルの生成とメモリ内キャッシュ |
-| `internal/app` | フロントエンドへ公開する API とローカルファイル配信 |
-| `frontend` | React + TypeScript + Vite の UI |
+| パッケージ         | 役割                                                |
+| ------------------ | --------------------------------------------------- |
+| `internal/model`   | 共有するデータ型とタグの正規化                      |
+| `internal/meta`    | 形式ごとの埋め込みタグの読み書き                    |
+| `internal/store`   | BuntDB への展開と検索・タグ索引・バックリンク       |
+| `internal/search`  | 検索バーの文字列を問い合わせへ変換する              |
+| `internal/scan`    | フォルダ走査とメタデータの並列読み取り              |
+| `internal/watcher` | ファイル変更の検知                                  |
+| `internal/thumb`   | サムネイルの生成とメモリ内キャッシュ                |
+| `internal/app`     | フロントエンドへ公開する API とローカルファイル配信 |
+| `frontend`         | React + TypeScript + Vite の UI                     |

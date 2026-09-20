@@ -13,8 +13,9 @@ import (
 	"github.com/yuuxyu/taggo/internal/model"
 )
 
-// ErrFormatReadOnly は、表示はできるが意図的にタグ編集を行わないフォーマット
-// （GIF・SVG・AAC）に対する WriteTags が返すエラー。
+// ErrFormatReadOnly は、拡張子と中身が食い違うファイルの中身が
+// taggo の対応フォーマット外（AVIF・HEIC・BMP・TIFF・GIF・SVG・M4A など）
+// だったときに WriteTags が返すエラー。
 var ErrFormatReadOnly = errors.New("このファイル形式はタグ編集に対応していません")
 
 // ErrUnsupported は taggo がまったく扱わない拡張子に対して返すエラー。

@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -163,6 +164,36 @@ func TestReadRecognizedButUnsupportedFormat(t *testing.T) {
 
 	if err := WriteTags(path, []string{"x"}); err == nil {
 		t.Fatal("扱えない形式への書き込みはエラーであるべき")
+	}
+}
+
+// TestGIFIsRecognizedButUnsupported は、GIF・SVG・AAC/M4A 用の専用ハンドラーを
+// 廃止したあとも、これらの形式が HEIC などと同じ「判定はできるが対応しない」
+// 枠として扱われ、書き込みが拒否されることを確かめる。
+func TestGIFIsRecognizedButUnsupported(t *testing.T) {
+	// 中身は GIF、名前は .png。
+	path := writeBytes(t, "実はgif.png", []byte("GIF89a"))
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := Read(path, info)
+	if err != nil {
+		t.Fatalf("読み取りに失敗: %v", err)
+	}
+	if entry.Format != ".gif" {
+		t.Fatalf("GIF と判定されていない: %q", entry.Format)
+	}
+	if entry.Writable {
+		t.Fatal("GIF は書き込み不可であるべき")
+	}
+	if entry.Err == "" {
+		t.Fatal("理由が記録されていない")
+	}
+
+	if err := WriteTags(path, []string{"x"}); !errors.Is(err, ErrFormatReadOnly) {
+		t.Fatalf("ErrFormatReadOnly を期待したが %v", err)
 	}
 }
 

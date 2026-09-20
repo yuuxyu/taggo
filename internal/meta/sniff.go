@@ -129,11 +129,17 @@ func isSVG(head []byte) bool {
 
 // recognizedFormats は、判定はできるが taggo がタグ編集に対応していない形式。
 // 拡張子を偽ったファイルを黙って壊さないよう、ここで明示的に区別する。
+//
+// GIF・SVG・AAC/M4A はタグの標準的な埋め込み場所を持たず実装コストに見合わないため、
+// 対応フォーマットからは外し、この「読み取り専用として理由を表示する」枠に含めている。
 var recognizedFormats = map[string]string{
 	".avif": "AVIF",
 	".heic": "HEIC / HEIF",
 	".bmp":  "BMP",
 	".tiff": "TIFF",
+	".gif":  "GIF",
+	".svg":  "SVG",
+	".m4a":  "M4A",
 }
 
 // ContentType は形式に対応する MIME タイプを返す。

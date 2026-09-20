@@ -100,14 +100,6 @@ func TestWAVDurationAndPlayback(t *testing.T) {
 	}
 }
 
-func TestReadOnlyFormatsRejectWrites(t *testing.T) {
-	for _, h := range []Handler{gifHandler{}, svgHandler{}, aacHandler{}} {
-		if err := h.WriteTags("dummy", []string{"x"}); err != ErrFormatReadOnly {
-			t.Fatalf("%T は ErrFormatReadOnly を返すべきだが %v", h, err)
-		}
-	}
-}
-
 func TestMP3Duration(t *testing.T) {
 	h := mp3Handler{}
 	path := copyFixture(t, "sample.mp3")

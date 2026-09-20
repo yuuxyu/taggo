@@ -129,9 +129,9 @@ func KindForExt(ext string) (Kind, bool) {
 	switch strings.ToLower(ext) {
 	case ".md", ".markdown":
 		return KindMarkdown, true
-	case ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg":
+	case ".jpg", ".jpeg", ".png", ".webp":
 		return KindImage, true
-	case ".mp3", ".wav", ".aac", ".m4a", ".flac":
+	case ".mp3", ".wav", ".flac":
 		return KindAudio, true
 	}
 	return "", false
