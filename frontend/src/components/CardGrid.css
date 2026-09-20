@@ -1,15 +1,25 @@
 /* 仮想スクロールするカードグリッド。 */
 
+/*
+ * react-window はセルを position: absolute で置く。絶対配置の基準はスクロール
+ * コンテナの「パディングボックス」なので、コンテナ側の padding はセルの位置に
+ * 反映されない（左と上だけ余白が消え、右と下に余る）。そのため外周の余白は
+ * このラッパーが持ち、スクロール領域そのものには padding を付けない。
+ */
 .cardgrid {
   height: 100%;
+  /* 間隔の半分はセルが持つので、外周はその差分だけを受け持つ。 */
+  padding: calc(var(--cardgrid-edge) - var(--cardgrid-gap) / 2);
 }
 
 .cardgrid__viewport {
-  /* react-window が内部でスクロールを持つので、外側では隠さない。 */
+  /* react-window が内部でスクロールを持つので、外側では隠さない。
+     スクロールバーの有無で列幅が揺れないよう、幅は常に確保する。 */
   scrollbar-gutter: stable;
 }
 
 .cardgrid__cell {
-  /* セルの矩形いっぱいにカードを置き、右下に間隔を作る。 */
-  padding: 0 14px 14px 0;
+  /* 間隔はセルの内側に半分ずつ持たせる。こうすると左右どちらの端でも
+     余白が同じになり、グリッド全体が中央に収まる。 */
+  padding: calc(var(--cardgrid-gap) / 2);
 }

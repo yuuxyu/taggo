@@ -5,7 +5,7 @@
  * 画面に入っている行だけを描く。列数は幅から計算し、ウィンドウ幅の変化に追従する。
  */
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Grid, type CellComponentProps } from "react-window";
 import type { Entry } from "../api/taggo";
 import { Card } from "./Card";
@@ -15,10 +15,29 @@ import "./CardGrid.css";
 const MIN_CARD_WIDTH = 236;
 /** カードの高さ。均一にすることで行の高さ計算を単純に保つ。 */
 const ROW_HEIGHT = 292;
-/** カード同士の間隔。 */
+/** カード同士の間隔。セルの内側に半分ずつ持たせる（CSS 側と共有する）。 */
 const GAP = 14;
-/** グリッド外周の余白。 */
+/** グリッド外周の余白。検索バーの左右余白と揃える。 */
 const PADDING = 18;
+
+/**
+ * 縦スクロールバーが占める幅を一度だけ測る。
+ *
+ * ビューポートには scrollbar-gutter: stable を指定してあり、スクロールバーの
+ * 有無にかかわらず常にこの幅が確保される。したがって外側の幅からこれを引いた
+ * ものが、実際にカードを置ける幅になる。
+ */
+let scrollbarWidthCache: number | null = null;
+function scrollbarWidth(): number {
+  if (scrollbarWidthCache !== null) return scrollbarWidthCache;
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:absolute;top:-9999px;width:100px;height:100px;overflow:scroll;visibility:hidden";
+  document.body.appendChild(probe);
+  scrollbarWidthCache = probe.offsetWidth - probe.clientWidth;
+  probe.remove();
+  return scrollbarWidthCache;
+}
 
 interface Props {
   entries: Entry[];
@@ -82,6 +101,7 @@ export function CardGrid({
   const [width, setWidth] = useState(0);
 
   // 列数は実際の表示幅から決めるので、幅の変化を監視する。
+  // 外周の余白はこの要素の padding なので、いずれも内容領域の幅を見る。
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -89,14 +109,23 @@ export function CardGrid({
       setWidth(entry.contentRect.width);
     });
     observer.observe(el);
-    setWidth(el.clientWidth);
+    const style = getComputedStyle(el);
+    setWidth(el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
     return () => observer.disconnect();
   }, []);
 
-  const usable = Math.max(width - PADDING * 2, MIN_CARD_WIDTH);
-  const columnCount = Math.max(1, Math.floor((usable + GAP) / (MIN_CARD_WIDTH + GAP)));
+  // 列はビューポートの内側を過不足なく分け合う。合計が 1px でも内側の幅を
+  // 超えると横スクロールバーが出てしまうので、整数に切り捨てたうえで、
+  // 余った端数を左の列から 1px ずつ配って合計を幅ちょうどに収める。
+  const usable = Math.max(Math.floor(width - scrollbarWidth()), MIN_CARD_WIDTH + GAP);
+  const columnCount = Math.max(1, Math.floor(usable / (MIN_CARD_WIDTH + GAP)));
   const rowCount = Math.ceil(entries.length / columnCount);
-  const columnWidth = (usable + GAP) / columnCount;
+  const baseColumnWidth = Math.floor(usable / columnCount);
+  const widerColumns = usable - baseColumnWidth * columnCount;
+  const columnWidth = useCallback(
+    (index: number) => baseColumnWidth + (index < widerColumns ? 1 : 0),
+    [baseColumnWidth, widerColumns],
+  );
 
   // 同じカードが並び替えで別のセルへ移っても状態を持ち越さないよう、パスをキーにする。
   const cellKey = useCallback(
@@ -105,8 +134,14 @@ export function CardGrid({
     [],
   );
 
+  // 外周の余白と間隔は CSS 側でも使うので、算出の元になる値をそのまま渡す。
+  const metrics = {
+    "--cardgrid-gap": `${GAP}px`,
+    "--cardgrid-edge": `${PADDING}px`,
+  } as CSSProperties;
+
   return (
-    <div className="cardgrid" ref={containerRef}>
+    <div className="cardgrid" ref={containerRef} style={metrics}>
       {width > 0 && (
         <Grid<CellProps>
           className="cardgrid__viewport"
@@ -127,7 +162,6 @@ export function CardGrid({
           rowKey={({ rowIndex }) => rowIndex}
           columnKey={cellKey}
           overscanCount={2}
-          style={{ padding: PADDING }}
         />
       )}
     </div>
