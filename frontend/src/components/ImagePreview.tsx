@@ -295,42 +295,8 @@ export function ImagePreview({ entry, uiVisible, onNavigate, index, total }: Pro
           uiVisible ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div
-          className={`flex flex-wrap items-center justify-between gap-2.5 ${
-            uiVisible ? "pointer-events-auto" : ""
-          }`}
-        >
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="hudGhost" onClick={() => step(-1)} title="縮小" aria-label="縮小">
-              <MinusIcon className="size-4" />
-            </Button>
-            <span className="min-w-16 text-center text-xs tabular-nums text-white/70">
-              {zoom === "fit-contain" ? "全体表示" : `${Math.round(zoom * 100)}%`}
-            </span>
-            <Button variant="hudGhost" onClick={() => step(1)} title="拡大" aria-label="拡大">
-              <PlusIcon className="size-4" />
-            </Button>
-            <Button
-              variant={modeVariant(zoom === "fit-contain")}
-              aria-pressed={zoom === "fit-contain"}
-              onClick={() => setZoom("fit-contain")}
-            >
-              <ArrowsPointingOutIcon className="size-4" aria-hidden="true" />
-              全体を表示
-            </Button>
-            <Button
-              variant={modeVariant(zoom === 1)}
-              aria-pressed={zoom === 1}
-              onClick={() => setZoom(1)}
-            >
-              <Square2StackIcon className="size-4" aria-hidden="true" />
-              原寸
-            </Button>
-          </div>
-
-          <Pager index={index} total={total} onNavigate={onNavigate} onImage />
-        </div>
-
+        {/* 撮影情報は操作の手前に置く。ボタンの下に置くと、Markdown や音声の
+            プレビューに対してページ送りの位置がその行のぶんだけ上へずれてしまう。 */}
         {hasMeta && (
           <dl
             className={`m-0 flex flex-wrap gap-x-4.5 gap-y-1 p-0 text-xs text-white/70 ${
@@ -367,6 +333,42 @@ export function ImagePreview({ entry, uiVisible, onNavigate, index, total }: Pro
             )}
           </dl>
         )}
+
+        <div
+          className={`flex flex-wrap items-center justify-between gap-2.5 ${
+            uiVisible ? "pointer-events-auto" : ""
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="hudGhost" onClick={() => step(-1)} title="縮小" aria-label="縮小">
+              <MinusIcon className="size-4" />
+            </Button>
+            <span className="min-w-16 text-center text-xs tabular-nums text-white/70">
+              {zoom === "fit-contain" ? "全体表示" : `${Math.round(zoom * 100)}%`}
+            </span>
+            <Button variant="hudGhost" onClick={() => step(1)} title="拡大" aria-label="拡大">
+              <PlusIcon className="size-4" />
+            </Button>
+            <Button
+              variant={modeVariant(zoom === "fit-contain")}
+              aria-pressed={zoom === "fit-contain"}
+              onClick={() => setZoom("fit-contain")}
+            >
+              <ArrowsPointingOutIcon className="size-4" aria-hidden="true" />
+              全体を表示
+            </Button>
+            <Button
+              variant={modeVariant(zoom === 1)}
+              aria-pressed={zoom === 1}
+              onClick={() => setZoom(1)}
+            >
+              <Square2StackIcon className="size-4" aria-hidden="true" />
+              原寸
+            </Button>
+          </div>
+
+          <Pager index={index} total={total} onNavigate={onNavigate} onImage />
+        </div>
       </div>
     </div>
   );

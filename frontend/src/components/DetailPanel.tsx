@@ -291,10 +291,12 @@ export function DetailPanel({
 
         {/* ---- 前後のファイルへの移動 ----
             画像は ImagePreview の HUD に倍率の操作と並べて出すので、
-            ここでは Markdown と音声のぶんだけを下部に置く。 */}
+            ここでは Markdown と音声のぶんだけを下部に置く。
+            左右と下の余白は画像の HUD と同じにしてあり、種類を切り替えても
+            ボタンが同じ位置に出る。 */}
         {!isImage && (
           <div
-            className={`absolute inset-x-0 bottom-0 z-10 flex justify-end border-t border-line bg-surface px-5 py-2 transition-opacity duration-300 ${
+            className={`absolute inset-x-0 bottom-0 z-10 flex justify-end border-t border-line bg-surface px-5 pt-3 pb-4 transition-opacity duration-300 ${
               overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
           >
