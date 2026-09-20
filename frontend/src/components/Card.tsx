@@ -4,7 +4,7 @@
  */
 
 import { memo, useState } from "react";
-import { CheckIcon, LockClosedIcon } from "@heroicons/react/16/solid";
+import { CheckIcon, CloudIcon, LockClosedIcon } from "@heroicons/react/16/solid";
 import { thumbURL, type Entry } from "../api/taggo";
 import { TagBadge } from "./TagBadge";
 
@@ -80,6 +80,17 @@ function describeImageFailure(entry: Entry): string {
 
 function CardPreview({ entry }: { entry: Entry }) {
   const [failed, setFailed] = useState(false);
+
+  // 中身がクラウド上にしか無いファイルは、サムネイルを要求した時点で
+  // ダウンロードが始まる。取り込むまでは取りに行かない。
+  if (entry.cloudOnly) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1.5 p-3 text-center text-xs text-ink-faint">
+        <CloudIcon className="size-6" aria-hidden="true" />
+        クラウド上のみ
+      </div>
+    );
+  }
 
   if (entry.kind === "image") {
     if (failed) {
@@ -204,11 +215,21 @@ export const Card = memo(function Card({
             </span>
           )}
           <span className="tabular-nums">{formatSize(entry.size)}</span>
-          {!entry.writable && (
-            <span className="inline-flex items-center gap-0.5 text-danger" title="読み取り専用">
-              <LockClosedIcon className="size-3" aria-hidden="true" />
-              読み取り専用
+          {entry.cloudOnly ? (
+            <span
+              className="inline-flex items-center gap-0.5 text-ink-muted"
+              title="中身はまだダウンロードされていません"
+            >
+              <CloudIcon className="size-3" aria-hidden="true" />
+              未ダウンロード
             </span>
+          ) : (
+            !entry.writable && (
+              <span className="inline-flex items-center gap-0.5 text-danger" title="読み取り専用">
+                <LockClosedIcon className="size-3" aria-hidden="true" />
+                読み取り専用
+              </span>
+            )
           )}
         </div>
 

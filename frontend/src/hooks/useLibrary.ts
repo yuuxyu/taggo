@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  cloudSyncHint,
   Events,
   on,
   openFolder,
@@ -30,6 +31,13 @@ export interface Notice {
   message: string;
 }
 
+/** 読み込み前に確認したいフォルダ。クラウド同期フォルダらしいときに立つ。 */
+export interface PendingFolder {
+  path: string;
+  /** 推測したサービス名（「Dropbox」など）。 */
+  service: string;
+}
+
 export interface Library {
   status: Status | null;
   progress: ScanProgress | null;
@@ -42,6 +50,12 @@ export interface Library {
   setQuery: (q: string) => void;
   setSort: (s: SortOrder) => void;
   chooseFolder: () => Promise<void>;
+  /** 確認待ちのフォルダ。null なら確認は要らない。 */
+  pendingFolder: PendingFolder | null;
+  /** 確認のうえ読み込む。 */
+  confirmPendingFolder: () => Promise<void>;
+  /** 確認をやめて、フォルダを開かない。 */
+  cancelPendingFolder: () => void;
   reload: () => Promise<void>;
   notify: (kind: Notice["kind"], message: string) => void;
   dismissNotice: (id: number) => void;
@@ -58,6 +72,7 @@ export function useLibrary(): Library {
   const [sort, setSort] = useState<SortOrder>("name_asc");
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
 
   const noticeSeq = useRef(0);
 
@@ -125,6 +140,13 @@ export function useLibrary(): Library {
       if (done.warning) {
         notify("error", done.warning);
       }
+      if (done.cloudOnly && done.cloudOnly > 0) {
+        notify(
+          "info",
+          `クラウド上にだけあるファイルが ${done.cloudOnly.toLocaleString()} 件ありました。` +
+            "ダウンロードを避けるため中身は読んでいません（一覧には出ています）。",
+        );
+      }
       if (done.limitReached && done.maxEntries) {
         notify(
           "error",
@@ -168,21 +190,47 @@ export function useLibrary(): Library {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryCount]);
 
+  /** 読み込みを実際に始める。ここから先はファイルを開くので、通信が起きうる。 */
+  const startOpen = useCallback(
+    async (dir: string) => {
+      try {
+        setLoading(true);
+        setEntries([]);
+        setTotal(0);
+        await openFolder(dir);
+      } catch (err) {
+        setLoading(false);
+        notify("error", `フォルダを開けませんでした: ${String(err)}`);
+      }
+    },
+    [notify],
+  );
+
+  // フォルダを選ぶところと読み込むところを分けてある。クラウド同期フォルダでは、
+  // 走査そのものがダウンロードを誘発しうるため、読み込む前に確認を挟む。
   const chooseFolder = useCallback(async () => {
     try {
-      setLoading(true);
       const dir = await selectFolder();
-      if (!dir) {
-        setLoading(false);
+      if (!dir) return;
+
+      const service = await cloudSyncHint(dir);
+      if (service !== "") {
+        setPendingFolder({ path: dir, service });
         return;
       }
-      setEntries([]);
-      setTotal(0);
+      await startOpen(dir);
     } catch (err) {
-      setLoading(false);
       notify("error", `フォルダを開けませんでした: ${String(err)}`);
     }
-  }, [notify]);
+  }, [notify, startOpen]);
+
+  const confirmPendingFolder = useCallback(async () => {
+    const target = pendingFolder;
+    setPendingFolder(null);
+    if (target) await startOpen(target.path);
+  }, [pendingFolder, startOpen]);
+
+  const cancelPendingFolder = useCallback(() => setPendingFolder(null), []);
 
   const replaceEntry = useCallback((entry: Entry) => {
     setEntries((prev) => {
@@ -207,6 +255,9 @@ export function useLibrary(): Library {
       setQuery,
       setSort,
       chooseFolder,
+      pendingFolder,
+      confirmPendingFolder,
+      cancelPendingFolder,
       reload,
       notify,
       dismissNotice,
@@ -222,6 +273,9 @@ export function useLibrary(): Library {
       loading,
       notices,
       chooseFolder,
+      pendingFolder,
+      confirmPendingFolder,
+      cancelPendingFolder,
       reload,
       notify,
       dismissNotice,

@@ -19,6 +19,7 @@ import { TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { setTags, type Entry } from "../api/taggo";
 import { AudioPreview } from "./AudioPreview";
 import { Button } from "./Button";
+import { CloudOnlyNotice } from "./CloudOnlyNotice";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Pager } from "./Pager";
@@ -57,7 +58,9 @@ export function DetailPanel({
   const [draft, setDraft] = useState<string[]>(entry.tags);
   const [saving, setSaving] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
-  const isImage = entry.kind === "image";
+  // 中身をまだ持っていないファイルは、画像であっても黒地のビューアにはしない。
+  // 取り込むかどうかを尋ねる案内を、通常のレイアウトで出す。
+  const isImage = entry.kind === "image" && !entry.cloudOnly;
 
   // 別のエントリに切り替わったら編集中の内容を捨て、編集フォームも閉じる。
   useEffect(() => {
@@ -183,7 +186,12 @@ export function DetailPanel({
             画像は ImagePreview 側が独自にスクロールを持つため、
             ここで二重にスクロールコンテナを作らない。 */}
         <div className={isImage ? "size-full overflow-hidden bg-black" : "size-full overflow-auto"}>
-          {entry.kind === "image" && (
+          {entry.cloudOnly && (
+            <div className="min-h-full" style={{ paddingTop: contentTop }}>
+              <CloudOnlyNotice entry={entry} onFetched={onEntryUpdated} onError={onError} />
+            </div>
+          )}
+          {!entry.cloudOnly && entry.kind === "image" && (
             <ImagePreview
               entry={entry}
               uiVisible={overlayVisible}
@@ -192,12 +200,12 @@ export function DetailPanel({
               total={total}
             />
           )}
-          {entry.kind === "markdown" && (
+          {!entry.cloudOnly && entry.kind === "markdown" && (
             <div className="mx-auto min-h-full max-w-205 px-7 pb-18" style={{ paddingTop: contentTop }}>
               <MarkdownPreview entry={entry} onFollowLink={onFollowLink} />
             </div>
           )}
-          {entry.kind === "audio" && (
+          {!entry.cloudOnly && entry.kind === "audio" && (
             <div className="mx-auto min-h-full max-w-205 px-7 pb-18" style={{ paddingTop: contentTop }}>
               <AudioPreview entry={entry} />
             </div>

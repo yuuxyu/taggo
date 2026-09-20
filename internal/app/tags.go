@@ -79,6 +79,11 @@ func (a *App) applyTags(path string, transform func(current []string) []string) 
 	if !ok {
 		return failed(path, fmt.Errorf("エントリが見つかりません: %s", path))
 	}
+	if entry.CloudOnly {
+		// 書き込むにはまず中身をダウンロードすることになる。黙って通信を起こさず、
+		// 取り込むかどうかは利用者に決めてもらう。
+		return failed(path, fmt.Errorf("クラウド上にだけあるファイルです。取り込んでから編集してください: %s", entry.Name))
+	}
 	if !entry.Writable {
 		return failed(path, fmt.Errorf("読み取り専用のファイルです: %s", entry.Name))
 	}

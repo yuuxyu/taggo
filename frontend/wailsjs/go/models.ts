@@ -7,6 +7,7 @@ export namespace app {
 	    scanning: boolean;
 	    limitReached: boolean;
 	    maxEntries: number;
+	    cloudOnly: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -20,6 +21,7 @@ export namespace app {
 	        this.scanning = source["scanning"];
 	        this.limitReached = source["limitReached"];
 	        this.maxEntries = source["maxEntries"];
+	        this.cloudOnly = source["cloudOnly"];
 	    }
 	}
 	export class TagEditResult {
@@ -127,6 +129,7 @@ export namespace model {
 	    image?: ImageMeta;
 	    audio?: AudioMeta;
 	    err?: string;
+	    cloudOnly?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Entry(source);
@@ -150,6 +153,7 @@ export namespace model {
 	        this.image = this.convertValues(source["image"], ImageMeta);
 	        this.audio = this.convertValues(source["audio"], AudioMeta);
 	        this.err = source["err"];
+	        this.cloudOnly = source["cloudOnly"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

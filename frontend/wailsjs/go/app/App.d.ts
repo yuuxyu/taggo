@@ -11,7 +11,11 @@ export function AppendTagToQuery(arg1:string,arg2:string):Promise<string>;
 
 export function Backlinks(arg1:string):Promise<Array<store.Backlink>>;
 
+export function CloudSyncHint(arg1:string):Promise<string>;
+
 export function Entry(arg1:string):Promise<model.Entry>;
+
+export function FetchCloudEntry(arg1:string):Promise<model.Entry>;
 
 export function MarkdownSource(arg1:string):Promise<string>;
 

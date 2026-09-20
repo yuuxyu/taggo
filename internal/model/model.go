@@ -60,6 +60,32 @@ type Entry struct {
 	// Err は致命的でないメタデータ読み取り失敗を記録する。
 	// 読み取りに失敗したことを隠さずに、ファイル自体は一覧に表示するため。
 	Err string `json:"err,omitempty"`
+
+	// CloudOnly は、中身がクラウド上にしか無いファイル（Dropbox や OneDrive の
+	// オンライン専用ファイル）であることを表す。true のとき taggo はその中身を
+	// 一度も開いておらず、埋まっているのはファイル一覧から分かる情報だけになる。
+	// 開けばダウンロードが始まるため、利用者が明示的に取り込むまでは触らない。
+	CloudOnly bool `json:"cloudOnly,omitempty"`
+}
+
+// NewCloudOnly は、中身を読まずに分かる情報だけでエントリを組み立てる。
+// クラウド上にしか無いファイルを、ダウンロードを起こさずに一覧へ出すために使う。
+func NewCloudOnly(path, name string, size int64, modTime time.Time) *Entry {
+	ext := Ext(path)
+	kind, _ := KindForExt(ext)
+	return &Entry{
+		Path:      path,
+		Name:      name,
+		Ext:       ext,
+		Format:    ext, // 中身を見ていないので、実際の形式は分からない
+		Kind:      kind,
+		Size:      size,
+		ModTime:   modTime,
+		Tags:      []string{},
+		Title:     name,
+		Writable:  false, // 書き込みもダウンロードを伴うため、編集は許さない
+		CloudOnly: true,
+	}
 }
 
 // ImageMeta は画像プレビューのメタデータパネルに表示する情報を保持する。

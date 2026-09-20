@@ -5,10 +5,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 	"github.com/yuuxyu/taggo/internal/scan"
@@ -34,12 +36,15 @@ type App struct {
 	store  *store.Store
 	thumbs *thumb.Cache
 
-	// mu は watcher と scanCancel を守る。フォルダの開き直しと
+	// mu は watcher と scanCancel、cloudOnly を守る。フォルダの開き直しと
 	// 進行中の走査キャンセルが競合しうるため。
 	mu          sync.Mutex
 	watcher     *watcher.Watcher
 	watcherStop context.CancelFunc
 	scanCancel  context.CancelFunc
+	// cloudOnly は直近の走査で、中身がクラウド上にしか無いため
+	// 読み込まなかったファイルの数。
+	cloudOnly int
 }
 
 // New はアプリを組み立てる。インメモリ DB の初期化に失敗した場合のみエラーを返す。
@@ -84,6 +89,8 @@ type Status struct {
 	LimitReached bool `json:"limitReached"`
 	// MaxEntries は展開件数の上限。UI の注意書きに使う。
 	MaxEntries int `json:"maxEntries"`
+	// CloudOnly は、中身がクラウド上にしか無いため読み込まなかった件数。
+	CloudOnly int `json:"cloudOnly"`
 }
 
 // ScanProgress は走査の進捗イベントのペイロード。
@@ -92,8 +99,12 @@ type ScanProgress struct {
 	Found int `json:"found"`
 }
 
-// SelectFolder はフォルダ選択ダイアログを開き、選ばれたフォルダを読み込む。
-// キャンセルされた場合は空文字を返し、何も変更しない。
+// SelectFolder はフォルダ選択ダイアログを開き、選ばれたフォルダのパスを返す。
+// キャンセルされた場合は空文字を返す。
+//
+// 選ぶことと読み込むことを分けてあるのは、クラウド同期フォルダのように
+// 走査でダウンロードが発生しうる場所では、読み込む前に確認を挟みたいため。
+// 実際の読み込みは呼び出し側が OpenFolder を呼んで始める。
 func (a *App) SelectFolder() (string, error) {
 	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "タグ管理するフォルダを選択",
@@ -101,13 +112,53 @@ func (a *App) SelectFolder() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("フォルダ選択ダイアログを開けませんでした: %w", err)
 	}
-	if dir == "" {
-		return "", nil
-	}
-	if err := a.OpenFolder(dir); err != nil {
-		return "", err
-	}
 	return dir, nil
+}
+
+// CloudSyncHint は、そのフォルダがクラウド同期フォルダらしい場合にサービス名を返す。
+// 該当しなければ空文字を返す。
+//
+// taggo は中身がローカルに無いファイルを属性から見分けて開かずに済ませるが、
+// Google ドライブのストリーミングのように属性が付かない方式もある。
+// そうした場合に備えて、走査を始める前の確認に使う。
+func (a *App) CloudSyncHint(path string) string {
+	return cloudfile.LooksLikeSyncFolder(path)
+}
+
+// FetchCloudEntry はクラウド上にだけあるファイルを、利用者の明示操作で取り込む。
+//
+// ここで初めてファイルを開くため、クラウドからのダウンロードが発生する。
+// 自動では決して呼ばず、画面上の操作から呼ぶこと。
+func (a *App) FetchCloudEntry(path string) (*model.Entry, error) {
+	entry, ok := a.store.Get(path)
+	if !ok {
+		return nil, fmt.Errorf("エントリが見つかりません: %s", path)
+	}
+	if !entry.CloudOnly {
+		return entry, nil // すでに取り込み済み
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("ファイルを読めませんでした: %w", err)
+	}
+	updated, err := meta.Read(path, info)
+	if err != nil {
+		return nil, fmt.Errorf("メタデータを読めませんでした: %w", err)
+	}
+	updated.RelPath = entry.RelPath
+
+	if err := a.store.Put(updated); err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	if a.cloudOnly > 0 {
+		a.cloudOnly--
+	}
+	a.mu.Unlock()
+
+	a.emit(EventEntryChanged, map[string]any{"path": path, "entry": updated})
+	return updated, nil
 }
 
 // OpenFolder は指定フォルダを走査してインメモリ DB へ展開する。
@@ -161,6 +212,7 @@ func (a *App) runScan(ctx context.Context, root string) {
 
 	a.mu.Lock()
 	a.scanCancel = nil
+	a.cloudOnly = result.CloudOnly
 	a.mu.Unlock()
 
 	a.startWatcher(root)
@@ -170,6 +222,7 @@ func (a *App) runScan(ctx context.Context, root string) {
 		TagCount:     a.store.TagCount(),
 		LimitReached: result.LimitReached,
 		MaxEntries:   store.MaxEntries,
+		CloudOnly:    result.CloudOnly,
 	})
 }
 
@@ -177,6 +230,7 @@ func (a *App) runScan(ctx context.Context, root string) {
 func (a *App) Status() Status {
 	a.mu.Lock()
 	scanning := a.scanCancel != nil
+	cloudOnly := a.cloudOnly
 	a.mu.Unlock()
 
 	return Status{
@@ -185,6 +239,7 @@ func (a *App) Status() Status {
 		TagCount:   a.store.TagCount(),
 		Scanning:   scanning,
 		MaxEntries: store.MaxEntries,
+		CloudOnly:  cloudOnly,
 	}
 }
 

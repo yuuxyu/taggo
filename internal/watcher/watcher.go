@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 )
@@ -150,6 +151,14 @@ func (w *Watcher) emit(path string) {
 	info, err := os.Stat(path)
 	if err != nil {
 		change.Removed = true
+	} else if cloudfile.IsPlaceholder(info) {
+		// 中身はまだクラウド上にしか無い。ここで読むとダウンロードが始まるので、
+		// 一覧に出すのに要る情報だけでエントリを作り直す。
+		entry := model.NewCloudOnly(path, info.Name(), info.Size(), info.ModTime())
+		if rel, err := filepath.Rel(w.root, path); err == nil {
+			entry.RelPath = rel
+		}
+		change.Entry = entry
 	} else {
 		entry, err := meta.Read(path, info)
 		if err != nil {

@@ -3,7 +3,7 @@
  * フォルダの選択、並び順の切り替え、読み込み状況の表示、一括編集の操作をまとめる。
  */
 
-import { CheckIcon, FolderOpenIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
+import { CheckIcon, CloudIcon, FolderOpenIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import type { ScanProgress, SortOrder, Status } from "../api/taggo";
 import { Button } from "./Button";
 
@@ -63,6 +63,16 @@ export function Toolbar({
       {progress && (
         <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs tabular-nums text-accent-ink">
           読み込み中 {progress.done.toLocaleString()} / {progress.found.toLocaleString()}
+        </span>
+      )}
+
+      {(status?.cloudOnly ?? 0) > 0 && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full bg-sunken px-2.5 py-0.5 text-xs tabular-nums text-ink-muted"
+          title="中身がクラウド上にしかないファイルです。ダウンロードを避けるため読み込んでいません。カードを開くと取り込めます。"
+        >
+          <CloudIcon className="size-3.5" aria-hidden="true" />
+          未ダウンロード {status?.cloudOnly.toLocaleString()} 件
         </span>
       )}
 

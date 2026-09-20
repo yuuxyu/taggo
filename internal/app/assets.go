@@ -122,6 +122,12 @@ func (a *App) resolveEntry(raw string) (*model.Entry, error) {
 	if !ok {
 		return nil, fmt.Errorf("エントリが見つかりません")
 	}
+	// 中身がクラウド上にしか無いファイルは、配信しようとした時点で
+	// ダウンロードが始まる。画面に出たカードのサムネイル要求だけで
+	// 通信が走らないよう、取り込むまでは配信しない。
+	if entry.CloudOnly {
+		return nil, fmt.Errorf("クラウド上にだけあるファイルのため配信しません")
+	}
 	return entry, nil
 }
 

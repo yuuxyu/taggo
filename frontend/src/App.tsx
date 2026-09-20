@@ -16,6 +16,7 @@ import { appendTagToQuery, type Entry, type TagEditResult } from "./api/taggo";
 import { BulkTagDialog } from "./components/BulkTagDialog";
 import { Button } from "./components/Button";
 import { CardGrid } from "./components/CardGrid";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DetailPanel } from "./components/DetailPanel";
 import { SearchBar } from "./components/SearchBar";
 import { Toolbar } from "./components/Toolbar";
@@ -248,6 +249,22 @@ export default function App() {
           entries={selectedEntries}
           onClose={closeBulk}
           onApplied={handleBulkApplied}
+        />
+      )}
+
+      {/* クラウド同期フォルダは、走査そのものがダウンロードを誘発しうる。
+          属性で見分けられない方式もあるため、読み込む前に一度確認する。 */}
+      {library.pendingFolder && (
+        <ConfirmDialog
+          title={`${library.pendingFolder.service} のフォルダを読み込みますか？`}
+          lines={[
+            library.pendingFolder.path,
+            "クラウド上にだけあるファイルは、見分けがつく限り中身を開かずに一覧へ出します。",
+            "ただしサービスによっては見分けがつかず、読み込みでダウンロードが始まることがあります。",
+          ]}
+          confirmLabel="読み込む"
+          onConfirm={() => void library.confirmPendingFolder()}
+          onCancel={library.cancelPendingFolder}
         />
       )}
     </div>

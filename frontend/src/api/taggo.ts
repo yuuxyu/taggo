@@ -32,6 +32,8 @@ export interface ScanDone {
   tagCount?: number;
   limitReached?: boolean;
   maxEntries?: number;
+  /** 中身がクラウド上にしか無いため、読み込まなかったファイルの数。 */
+  cloudOnly?: number;
   error?: string;
   warning?: string;
 }
@@ -49,8 +51,23 @@ export const Events = {
   entryChanged: "entry:changed",
 } as const;
 
-/** フォルダ選択ダイアログを開く。キャンセル時は空文字が返る。 */
+/**
+ * フォルダ選択ダイアログを開く。キャンセル時は空文字が返る。
+ * 選ぶだけで、読み込みは openFolder を呼ぶまで始まらない。
+ */
 export const selectFolder = (): Promise<string> => Backend.SelectFolder();
+
+/**
+ * そのフォルダがクラウド同期フォルダらしいか。該当すればサービス名が返る。
+ * 走査でダウンロードが起きうる場所かを、読み込む前に確かめるために使う。
+ */
+export const cloudSyncHint = (path: string): Promise<string> => Backend.CloudSyncHint(path);
+
+/**
+ * クラウド上にだけあるファイルを取り込む。
+ * この呼び出しで実際にダウンロードが発生するので、利用者の操作からのみ呼ぶこと。
+ */
+export const fetchCloudEntry = (path: string): Promise<Entry> => Backend.FetchCloudEntry(path);
 
 /** 指定フォルダを走査して読み込む。走査自体は非同期に進む。 */
 export const openFolder = (path: string): Promise<void> => Backend.OpenFolder(path);

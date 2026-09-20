@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 )
@@ -37,30 +38,55 @@ type Result struct {
 	Entries []*model.Entry
 	// Skipped は、対応拡張子だがメタデータを読めなかったファイルの数。
 	Skipped int
+	// CloudOnly は、中身がクラウド上にしか無いため開かなかったファイルの数。
+	// エントリ自体は一覧へ出しているので、利用者への注意書きに使う。
+	CloudOnly int
 	// LimitReached は上限に達して打ち切ったかどうか。
 	LimitReached bool
+}
+
+// candidate は走査で見つけた 1 ファイル。
+//
+// ディレクトリ列挙で得た FileInfo をそのまま持ち回るのは、あとで stat を
+// やり直さないため。クラウド上にしか無いファイルは、stat のためにハンドルを
+// 開くだけでも呼び戻しが走る方式があるので、触る回数を最小にする。
+type candidate struct {
+	path      string
+	info      fs.FileInfo
+	cloudOnly bool
 }
 
 // Scan は Root 配下を走査してエントリを組み立てる。
 // ctx がキャンセルされた場合は、そこまでに読めた分と ctx.Err() を返す。
 func Scan(ctx context.Context, opts Options) (Result, error) {
-	paths, limitReached, err := collectPaths(ctx, opts)
+	found, limitReached, err := collectPaths(ctx, opts)
 	if err != nil {
 		return Result{}, err
 	}
 
-	entries, skipped, err := readAll(ctx, paths, opts)
+	cloudOnly := 0
+	for _, c := range found {
+		if c.cloudOnly {
+			cloudOnly++
+		}
+	}
+
+	entries, skipped, err := readAll(ctx, found, opts)
 	return Result{
 		Entries:      entries,
 		Skipped:      skipped,
+		CloudOnly:    cloudOnly,
 		LimitReached: limitReached,
 	}, err
 }
 
-// collectPaths は対応拡張子のファイルパスを集める。
-// メタデータの読み取りより先にパスを全部確定させることで、
+// collectPaths は対応拡張子のファイルを集める。
+// メタデータの読み取りより先に対象を全部確定させることで、
 // 進捗の分母（発見総数）を最初から表示できるようにしている。
-func collectPaths(ctx context.Context, opts Options) ([]string, bool, error) {
+//
+// この段階ではファイルを一度も開かない。ディレクトリの列挙だけで済むため、
+// クラウド同期フォルダを走査してもダウンロードは起こらない。
+func collectPaths(ctx context.Context, opts Options) ([]candidate, bool, error) {
 	// 走査ルート自体が読めない場合だけは打ち切る。配下の個別エラーは飛ばして続ける。
 	info, err := os.Stat(opts.Root)
 	if err != nil {
@@ -76,7 +102,7 @@ func collectPaths(ctx context.Context, opts Options) ([]string, bool, error) {
 	}
 
 	var (
-		paths        []string
+		found        []candidate
 		limitReached bool
 	)
 	err = filepath.WalkDir(opts.Root, func(path string, d fs.DirEntry, err error) error {
@@ -97,17 +123,26 @@ func collectPaths(ctx context.Context, opts Options) ([]string, bool, error) {
 		if _, ok := supported[model.Ext(path)]; !ok {
 			return nil
 		}
-		if opts.Limit > 0 && len(paths) >= opts.Limit {
+		if opts.Limit > 0 && len(found) >= opts.Limit {
 			limitReached = true
 			return filepath.SkipAll
 		}
-		paths = append(paths, path)
+		// DirEntry の Info は列挙時の情報から作られるので、ここでファイルは開かれない。
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		found = append(found, candidate{
+			path:      path,
+			info:      info,
+			cloudOnly: cloudfile.IsPlaceholder(info),
+		})
 		return nil
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return nil, false, err
 	}
-	return paths, limitReached, ctx.Err()
+	return found, limitReached, ctx.Err()
 }
 
 // isSkippableDir は、走査対象から外すディレクトリ名かを判定する。
@@ -125,15 +160,15 @@ func isSkippableDir(name string) bool {
 }
 
 // readAll は各ファイルのメタデータを並列に読み取る。
-// 結果の順序は paths の順序と一致させ、走査のたびに並びが変わらないようにする。
-func readAll(ctx context.Context, paths []string, opts Options) ([]*model.Entry, int, error) {
+// 結果の順序は found の順序と一致させ、走査のたびに並びが変わらないようにする。
+func readAll(ctx context.Context, found []candidate, opts Options) ([]*model.Entry, int, error) {
 	workers := opts.Workers
 	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
-	workers = min(workers, max(len(paths), 1))
+	workers = min(workers, max(len(found), 1))
 
-	results := make([]*model.Entry, len(paths))
+	results := make([]*model.Entry, len(found))
 	var (
 		wg      sync.WaitGroup
 		next    = make(chan int)
@@ -147,7 +182,7 @@ func readAll(ctx context.Context, paths []string, opts Options) ([]*model.Entry,
 		go func() {
 			defer wg.Done()
 			for i := range next {
-				e := readOne(paths[i], opts.Root)
+				e := readOne(found[i], opts.Root)
 				results[i] = e
 
 				mu.Lock()
@@ -159,14 +194,14 @@ func readAll(ctx context.Context, paths []string, opts Options) ([]*model.Entry,
 				mu.Unlock()
 
 				if opts.OnProgress != nil {
-					opts.OnProgress(current, len(paths))
+					opts.OnProgress(current, len(found))
 				}
 			}
 		}()
 	}
 
 	var walkErr error
-	for i := range paths {
+	for i := range found {
 		if ctx.Err() != nil {
 			walkErr = ctx.Err()
 			break
@@ -176,7 +211,7 @@ func readAll(ctx context.Context, paths []string, opts Options) ([]*model.Entry,
 	close(next)
 	wg.Wait()
 
-	entries := make([]*model.Entry, 0, len(paths))
+	entries := make([]*model.Entry, 0, len(found))
 	for _, e := range results {
 		if e != nil {
 			entries = append(entries, e)
@@ -186,19 +221,25 @@ func readAll(ctx context.Context, paths []string, opts Options) ([]*model.Entry,
 }
 
 // readOne は 1 ファイルを読み取る。読めない場合は nil を返し、呼び出し側で数える。
-func readOne(path, root string) *model.Entry {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil
+//
+// 中身がクラウド上にしか無いファイルは開かない。開いた時点でダウンロードが
+// 始まり、フォルダを開いただけで同期フォルダ全体を引き落としてしまうため、
+// 一覧に出すのに要る情報（名前・サイズ・更新日時）だけでエントリを作る。
+func readOne(c candidate, root string) *model.Entry {
+	var e *model.Entry
+	if c.cloudOnly {
+		e = model.NewCloudOnly(c.path, c.info.Name(), c.info.Size(), c.info.ModTime())
+	} else {
+		var err error
+		e, err = meta.Read(c.path, c.info)
+		if err != nil {
+			return nil
+		}
 	}
-	e, err := meta.Read(path, info)
-	if err != nil {
-		return nil
-	}
-	if rel, err := filepath.Rel(root, path); err == nil {
+	if rel, err := filepath.Rel(root, c.path); err == nil {
 		e.RelPath = rel
 	} else {
-		e.RelPath = path
+		e.RelPath = c.path
 	}
 	return e
 }

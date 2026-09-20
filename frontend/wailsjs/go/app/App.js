@@ -14,8 +14,16 @@ export function Backlinks(arg1) {
   return window['go']['app']['App']['Backlinks'](arg1);
 }
 
+export function CloudSyncHint(arg1) {
+  return window['go']['app']['App']['CloudSyncHint'](arg1);
+}
+
 export function Entry(arg1) {
   return window['go']['app']['App']['Entry'](arg1);
+}
+
+export function FetchCloudEntry(arg1) {
+  return window['go']['app']['App']['FetchCloudEntry'](arg1);
 }
 
 export function MarkdownSource(arg1) {
