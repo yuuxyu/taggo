@@ -1,5 +1,6 @@
 # ビルド成果物
 build/bin
+*.exe
 
 # フロントエンドのビルド結果。main.go が //go:embed で参照するため、
 # 新規クローンでもビルドが通るよう placeholder だけは残す。
@@ -11,3 +12,6 @@ node_modules
 
 # Wails が npm install の要否判定に使う生成ファイル
 frontend/package.json.md5
+
+# ログファイル
+*.log
