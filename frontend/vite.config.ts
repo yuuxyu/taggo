@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 /**
  * taggo の内部エンドポイント（/taggo/file, /taggo/thumb）は Go 側のアセットハンドラーが返す。
@@ -36,5 +37,5 @@ function taggoBackendFallthrough(): Plugin {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), taggoBackendFallthrough()],
+  plugins: [react(), tailwindcss(), taggoBackendFallthrough()],
 });

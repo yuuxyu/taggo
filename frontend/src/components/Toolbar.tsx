@@ -3,9 +3,9 @@
  * フォルダの選択、並び順の切り替え、読み込み状況の表示、一括編集の操作をまとめる。
  */
 
-import type { SortOrder, Status } from "../api/taggo";
-import type { ScanProgress } from "../api/taggo";
-import "./Toolbar.css";
+import { CheckIcon, FolderOpenIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
+import type { ScanProgress, SortOrder, Status } from "../api/taggo";
+import { Button } from "./Button";
 
 interface Props {
   status: Status | null;
@@ -48,45 +48,52 @@ export function Toolbar({
   const root = status?.root ?? "";
 
   return (
-    <div className="toolbar">
-      <button className="btn" type="button" onClick={onChooseFolder}>
-        <span aria-hidden="true">🗀</span>
+    <div className="flex flex-wrap items-center gap-2.5 text-sm">
+      <Button onClick={onChooseFolder}>
+        <FolderOpenIcon className="size-4" aria-hidden="true" />
         フォルダを選択
-      </button>
+      </Button>
 
       {root !== "" && (
-        <span className="toolbar__root" title={root}>
+        <span className="truncate text-ink-muted" title={root}>
           {shortenPath(root)}
         </span>
       )}
 
       {progress && (
-        <span className="toolbar__progress">
+        <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs tabular-nums text-accent-ink">
           読み込み中 {progress.done.toLocaleString()} / {progress.found.toLocaleString()}
         </span>
       )}
 
-      <span className="toolbar__spacer" />
+      <span className="flex-1" />
 
       {selectedCount > 0 ? (
-        <span className="toolbar__selection">
-          <strong>{selectedCount}</strong> 件を選択中
-          <button className="btn btn--primary" type="button" onClick={onOpenBulkEditor}>
+        <span className="flex items-center gap-2 text-ink-muted">
+          <strong className="tabular-nums text-ink">{selectedCount}</strong> 件を選択中
+          <Button variant="primary" onClick={onOpenBulkEditor}>
+            <TagIcon className="size-4" aria-hidden="true" />
             タグを一括編集
-          </button>
-          <button className="btn btn--ghost" type="button" onClick={onClearSelection}>
+          </Button>
+          <Button variant="ghost" onClick={onClearSelection}>
+            <XMarkIcon className="size-4" aria-hidden="true" />
             選択を解除
-          </button>
+          </Button>
         </span>
       ) : (
-        <button className="btn btn--ghost" type="button" onClick={onSelectAll}>
+        <Button variant="ghost" onClick={onSelectAll}>
+          <CheckIcon className="size-4" aria-hidden="true" />
           表示中をすべて選択
-        </button>
+        </Button>
       )}
 
-      <label className="toolbar__sort">
+      <label className="inline-flex items-center gap-1.5 text-ink-muted">
         並び順
-        <select value={sort} onChange={(e) => onSortChange(e.target.value as SortOrder)}>
+        <select
+          className="rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
+          value={sort}
+          onChange={(e) => onSortChange(e.target.value as SortOrder)}
+        >
           {(Object.keys(SORT_LABELS) as SortOrder[]).map((key) => (
             <option key={key} value={key}>
               {SORT_LABELS[key]}

@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { suggestTags, type TagSuggestion } from "../api/taggo";
 import { TagBadge } from "./TagBadge";
-import "./TagEditor.css";
+import { TagSuggestions } from "./TagSuggestions";
 
 interface Props {
   /** 現在のタグ。一括編集では「これから追加するタグ」を表す。 */
@@ -83,8 +83,13 @@ export function TagEditor({ tags, onChange, disabled, placeholder }: Props) {
   };
 
   return (
-    <div className={`tageditor${disabled ? " is-disabled" : ""}`}>
-      <div className="tageditor__tags" onClick={() => inputRef.current?.focus()}>
+    <div className="relative">
+      <div
+        className={`flex flex-wrap items-center gap-1.5 rounded-lg border border-line px-2.5 py-2 focus-within:border-accent focus-within:ring-3 focus-within:ring-accent-soft ${
+          disabled ? "cursor-not-allowed bg-sunken opacity-70" : "cursor-text bg-surface"
+        }`}
+        onClick={() => inputRef.current?.focus()}
+      >
         {tags.map((tag) => (
           <TagBadge
             key={tag}
@@ -95,8 +100,8 @@ export function TagEditor({ tags, onChange, disabled, placeholder }: Props) {
         ))}
         <input
           ref={inputRef}
-          className="tageditor__input"
           type="text"
+          className="min-w-36 flex-1 bg-transparent py-0.5 text-sm outline-hidden placeholder:text-ink-faint"
           value={draft}
           disabled={disabled}
           placeholder={placeholder ?? "タグを追加（Enter で確定）"}
@@ -107,24 +112,12 @@ export function TagEditor({ tags, onChange, disabled, placeholder }: Props) {
         />
       </div>
 
-      {suggestions.length > 0 && (
-        <ul className="tageditor__suggestions">
-          {suggestions.map((s, i) => (
-            <li key={s.tag}>
-              <button
-                type="button"
-                className={`tageditor__suggestion${i === highlighted ? " is-active" : ""}`}
-                onMouseEnter={() => setHighlighted(i)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => add(s.tag)}
-              >
-                <span>#{s.tag}</span>
-                <span className="tageditor__suggestion-count">{s.count}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <TagSuggestions
+        suggestions={suggestions}
+        highlighted={highlighted}
+        onHighlight={setHighlighted}
+        onCommit={add}
+      />
     </div>
   );
 }

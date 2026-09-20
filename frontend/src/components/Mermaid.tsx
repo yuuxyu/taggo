@@ -54,7 +54,7 @@ export function Mermaid({ source }: { source: string }) {
 
   if (error) {
     return (
-      <pre className="mermaid-error">
+      <pre className="overflow-x-auto rounded-lg bg-danger-soft p-3 text-xs text-danger">
         図を描画できませんでした: {error}
         {"\n\n"}
         {source}
@@ -62,8 +62,16 @@ export function Mermaid({ source }: { source: string }) {
     );
   }
   if (svg === null) {
-    return <div className="mermaid-loading">図を描画中…</div>;
+    return (
+      <div className="rounded-lg bg-sunken p-5 text-center text-sm text-ink-faint">図を描画中…</div>
+    );
   }
   // mermaid が生成する SVG は自前で組み立てたものなので、そのまま埋め込む。
-  return <div className="mermaid" ref={containerRef} dangerouslySetInnerHTML={{ __html: svg }} />;
+  return (
+    <div
+      className="my-5 flex justify-center overflow-x-auto rounded-lg border border-line bg-sunken p-3 [&_svg]:h-auto [&_svg]:max-w-full"
+      ref={containerRef}
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
 }

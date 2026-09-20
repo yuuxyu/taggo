@@ -5,20 +5,30 @@
  * 画面に入っている行だけを描く。列数は幅から計算し、ウィンドウ幅の変化に追従する。
  */
 
-import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Grid, type CellComponentProps } from "react-window";
 import type { Entry } from "../api/taggo";
 import { Card } from "./Card";
-import "./CardGrid.css";
 
 /** カード 1 枚の目標幅。実際の幅は、この値を下回らない範囲で列数から決まる。 */
 const MIN_CARD_WIDTH = 236;
 /** カードの高さ。均一にすることで行の高さ計算を単純に保つ。 */
 const ROW_HEIGHT = 292;
-/** カード同士の間隔。セルの内側に半分ずつ持たせる（CSS 側と共有する）。 */
+/** カード同士の間隔。セルの内側に半分ずつ持たせる。 */
 const GAP = 14;
 /** グリッド外周の余白。検索バーの左右余白と揃える。 */
 const PADDING = 18;
+
+/**
+ * react-window はセルを position: absolute で置く。絶対配置の基準はスクロール
+ * コンテナの「パディングボックス」なので、コンテナ側の padding はセルの位置に
+ * 反映されない（左と上だけ余白が消え、右と下に余る）。そのため外周の余白は
+ * ラッパーが持ち、スクロール領域そのものには padding を付けない。
+ *
+ * 間隔の半分はセルが内側に持つので、ラッパーはその差分だけを受け持つ。
+ */
+const WRAPPER_PADDING = PADDING - GAP / 2;
+const CELL_PADDING = GAP / 2;
 
 /**
  * 縦スクロールバーが占める幅を一度だけ測る。
@@ -76,7 +86,7 @@ function Cell({
   if (!entry) return null;
 
   return (
-    <div style={style} className="cardgrid__cell">
+    <div style={{ ...style, padding: CELL_PADDING }}>
       <Card
         entry={entry}
         selected={selected.has(entry.path)}
@@ -134,17 +144,11 @@ export function CardGrid({
     [],
   );
 
-  // 外周の余白と間隔は CSS 側でも使うので、算出の元になる値をそのまま渡す。
-  const metrics = {
-    "--cardgrid-gap": `${GAP}px`,
-    "--cardgrid-edge": `${PADDING}px`,
-  } as CSSProperties;
-
   return (
-    <div className="cardgrid" ref={containerRef} style={metrics}>
+    <div className="h-full" style={{ padding: WRAPPER_PADDING }} ref={containerRef}>
       {width > 0 && (
         <Grid<CellProps>
-          className="cardgrid__viewport"
+          className="[scrollbar-gutter:stable]"
           cellComponent={Cell}
           cellProps={{
             entries,

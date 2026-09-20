@@ -1,170 +1,106 @@
 /*
  * taggo の基本スタイル。
- * 余白と情報密度を優先し、装飾は最小限にとどめる。配色は OS のテーマ設定に追従する。
+ *
+ * 見た目は Tailwind CSS のユーティリティで組み立て、ここには
+ *  1. 配色・影などのデザイントークン（@theme）
+ *  2. 要素そのものの既定値（@layer base）
+ * だけを置く。個々の部品の装飾は各コンポーネントのクラス指定に書く。
+ *
+ * 配色は OS のテーマ設定に追従する。明るいテーマの値を @theme で定義し、
+ * 暗いテーマでは同じ変数を上書きする。ユーティリティ（bg-surface など）は
+ * 変数を参照するだけなので、これだけで両テーマに追従する。
  */
 
-:root {
-  /* 明るいテーマの配色。暗いテーマでは下の media query で上書きする。 */
-  --bg: #faf9f7;
-  --bg-elevated: #ffffff;
-  --bg-sunken: #f1efec;
-  --border: #e2ded8;
-  --border-strong: #cfc9c1;
-  --text: #2c2a28;
-  --text-muted: #7b756d;
-  --text-faint: #a8a199;
-  --accent: #2f7d6e;
-  --accent-soft: #e2f0ec;
-  --accent-text: #1d5b50;
-  --danger: #b4452f;
-  --danger-soft: #f8e7e3;
-  --selection: #d9ebe6;
-  --shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
-  --shadow-lg: 0 8px 40px rgb(0 0 0 / 18%);
-  --radius: 8px;
-  --radius-sm: 5px;
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
-  color-scheme: light dark;
-  font-family: "Inter", "Helvetica Neue", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.6;
+@theme {
+  /* 面の色。canvas（地）→ surface（カードなど手前）→ sunken（一段沈めた面）。 */
+  --color-canvas: #faf9f7;
+  --color-surface: #ffffff;
+  --color-sunken: #f1efec;
+
+  /* 罫線。strong はホバーなどで少し強めたいとき。 */
+  --color-line: #e2ded8;
+  --color-line-strong: #cfc9c1;
+
+  /* 文字。ink → ink-muted → ink-faint の順に弱くなる。 */
+  --color-ink: #2c2a28;
+  --color-ink-muted: #7b756d;
+  --color-ink-faint: #a8a199;
+
+  /* アクセント。soft は塗り、ink は soft の上に置く文字色。 */
+  --color-accent: #2f7d6e;
+  --color-accent-soft: #e2f0ec;
+  --color-accent-ink: #1d5b50;
+
+  --color-danger: #b4452f;
+  --color-danger-soft: #f8e7e3;
+
+  --color-selection: #d9ebe6;
+
+  --font-sans: "Inter", "Helvetica Neue", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
+  --shadow-pop: 0 8px 40px rgb(0 0 0 / 18%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1a1918;
-    --bg-elevated: #232220;
-    --bg-sunken: #131211;
-    --border: #35332f;
-    --border-strong: #4a4740;
-    --text: #e8e4de;
-    --text-muted: #9c968c;
-    --text-faint: #6e6860;
-    --accent: #5fb3a1;
-    --accent-soft: #1e332f;
-    --accent-text: #8fd3c3;
-    --danger: #e0755c;
-    --danger-soft: #3a2320;
-    --selection: #234039;
-    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 12px rgb(0 0 0 / 30%);
-    --shadow-lg: 0 8px 40px rgb(0 0 0 / 60%);
+    --color-canvas: #1a1918;
+    --color-surface: #232220;
+    --color-sunken: #131211;
+
+    --color-line: #35332f;
+    --color-line-strong: #4a4740;
+
+    --color-ink: #e8e4de;
+    --color-ink-muted: #9c968c;
+    --color-ink-faint: #6e6860;
+
+    --color-accent: #5fb3a1;
+    --color-accent-soft: #1e332f;
+    --color-accent-ink: #8fd3c3;
+
+    --color-danger: #e0755c;
+    --color-danger-soft: #3a2320;
+
+    --color-selection: #234039;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 12px rgb(0 0 0 / 30%);
+    --shadow-pop: 0 8px 40px rgb(0 0 0 / 60%);
   }
 }
 
-* {
-  box-sizing: border-box;
-}
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
 
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  overflow: hidden; /* スクロールは仮想スクロール側が受け持つ */
-  -webkit-font-smoothing: antialiased;
-}
+  body {
+    /* スクロールは仮想スクロール側が受け持つ。 */
+    overflow: hidden;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+  }
 
-button {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  background: none;
-  border: none;
-}
+  /* Tailwind の Preflight はボタンを cursor: default にするため、
+     押せるものは指カーソルに戻す。 */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 
-input,
-textarea {
-  font: inherit;
-  color: inherit;
-}
-
-::selection {
-  background: var(--selection);
-}
-
-/* アプリ全体のレイアウト。検索バーを最上部に固定し、残りをグリッドに割り当てる。 */
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  /* WebView 側の既定の背景は透過なので、アプリのルートで必ず塗りつぶす。 */
-  background: var(--bg);
-}
-
-.app__body {
-  flex: 1;
-  min-height: 0; /* flex 子要素が内容で押し広がらないようにする */
-  background: var(--bg);
-}
-
-/* --- 汎用パーツ --- */
-
-.btn {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  padding: 5px 12px;
-  white-space: nowrap;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.btn:hover {
-  background: var(--bg-sunken);
-  border-color: var(--border-strong);
-}
-
-.btn--primary {
-  color: #fff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.btn--primary:hover {
-  background: var(--accent-text);
-  border-color: var(--accent-text);
-}
-
-.btn--ghost {
-  background: none;
-  border-color: transparent;
-}
-
-.btn--danger {
-  color: var(--danger);
-}
-
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.empty {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 40px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.empty__title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.empty__hint {
-  max-width: 420px;
-  font-size: 13px;
+  ::selection {
+    background: var(--color-selection);
+  }
 }

@@ -8,8 +8,9 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { suggestTags, type TagSuggestion } from "../api/taggo";
-import "./SearchBar.css";
+import { TagSuggestions } from "./TagSuggestions";
 
 interface Props {
   value: string;
@@ -120,15 +121,13 @@ export function SearchBar({ value, onChange, total, entryCount, disabled, focusS
   };
 
   return (
-    <div className="searchbar">
-      <div className="searchbar__field">
-        <span className="searchbar__icon" aria-hidden="true">
-          ⌕
-        </span>
+    <div className="relative z-20">
+      <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3.5 transition-colors focus-within:border-accent focus-within:ring-3 focus-within:ring-accent-soft">
+        <MagnifyingGlassIcon className="size-5 shrink-0 text-ink-faint" aria-hidden="true" />
         <input
           ref={inputRef}
-          className="searchbar__input"
           type="text"
+          className="min-w-0 flex-1 bg-transparent py-2.5 text-base outline-hidden placeholder:text-ink-faint"
           value={value}
           disabled={disabled}
           placeholder="検索 — #タグ で絞り込み / -#タグ で除外 / OR で候補を広げる"
@@ -140,41 +139,32 @@ export function SearchBar({ value, onChange, total, entryCount, disabled, focusS
         />
         {value !== "" && (
           <button
-            className="searchbar__clear"
             type="button"
+            className="shrink-0 rounded-full p-0.5 text-ink-faint hover:bg-sunken hover:text-ink"
             title="検索条件をクリア"
+            aria-label="検索条件をクリア"
             onClick={() => {
               onChange("");
               inputRef.current?.focus();
             }}
           >
-            ×
+            <XMarkIcon className="size-4.5" />
           </button>
         )}
-        <span className="searchbar__count">
-          {value === "" ? `${entryCount.toLocaleString()} 件` : `${total.toLocaleString()} / ${entryCount.toLocaleString()} 件`}
+        <span className="shrink-0 text-xs tabular-nums text-ink-faint">
+          {value === ""
+            ? `${entryCount.toLocaleString()} 件`
+            : `${total.toLocaleString()} / ${entryCount.toLocaleString()} 件`}
         </span>
       </div>
 
       {open && (
-        <ul className="searchbar__suggestions" role="listbox">
-          {suggestions.map((s, i) => (
-            <li key={s.tag}>
-              <button
-                type="button"
-                className={`searchbar__suggestion${i === highlighted ? " is-active" : ""}`}
-                role="option"
-                aria-selected={i === highlighted}
-                onMouseEnter={() => setHighlighted(i)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => commit(s.tag)}
-              >
-                <span className="searchbar__suggestion-tag">#{s.tag}</span>
-                <span className="searchbar__suggestion-count">{s.count}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <TagSuggestions
+          suggestions={suggestions}
+          highlighted={highlighted}
+          onHighlight={setHighlighted}
+          onCommit={commit}
+        />
       )}
     </div>
   );

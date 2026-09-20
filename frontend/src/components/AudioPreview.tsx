@@ -6,9 +6,19 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowPathRoundedSquareIcon,
+  BackwardIcon,
+  ForwardIcon,
+  MusicalNoteIcon,
+  PauseIcon,
+  PlayIcon,
+  SpeakerWaveIcon,
+  SpeakerXMarkIcon,
+} from "@heroicons/react/20/solid";
 import WaveSurfer from "wavesurfer.js";
 import { fileURL, type Entry } from "../api/taggo";
-import "./AudioPreview.css";
+import { Button } from "./Button";
 
 interface Props {
   entry: Entry;
@@ -27,8 +37,8 @@ function formatTime(seconds: number): string {
 function waveColors() {
   const styles = getComputedStyle(document.documentElement);
   return {
-    wave: styles.getPropertyValue("--border-strong").trim() || "#cfc9c1",
-    progress: styles.getPropertyValue("--accent").trim() || "#2f7d6e",
+    wave: styles.getPropertyValue("--color-line-strong").trim() || "#cfc9c1",
+    progress: styles.getPropertyValue("--color-accent").trim() || "#2f7d6e",
   };
 }
 
@@ -118,60 +128,76 @@ export function AudioPreview({ entry }: Props) {
   const meta = entry.audio;
 
   return (
-    <div className="audiopreview">
-      <header className="audiopreview__header">
-        <div className="audiopreview__cover" aria-hidden="true">
-          {meta?.hasCoverArt ? "♫" : "♪"}
+    <div className="flex flex-col gap-3.5">
+      <header className="flex items-center gap-3.5">
+        <div className="grid size-16 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-ink">
+          <MusicalNoteIcon className="size-7" aria-hidden="true" />
         </div>
-        <div className="audiopreview__info">
-          <h3>{meta?.title || entry.title}</h3>
-          <p>
+        <div className="min-w-0">
+          <h3 className="m-0 truncate text-base font-semibold">{meta?.title || entry.title}</h3>
+          <p className="mt-0.5 mb-0 text-xs text-ink-muted">
             {[meta?.artist, meta?.album, meta?.year].filter(Boolean).join(" · ") || "情報なし"}
           </p>
-          {meta?.genre && <p className="audiopreview__genre">{meta.genre}</p>}
+          {meta?.genre && <p className="mt-0.5 mb-0 text-xs text-ink-faint">{meta.genre}</p>}
         </div>
       </header>
 
       {error ? (
-        <div className="audiopreview__error">音声を読み込めませんでした: {error}</div>
+        <div className="rounded-lg bg-danger-soft p-4 text-sm text-danger">
+          音声を読み込めませんでした: {error}
+        </div>
       ) : (
-        <div className="audiopreview__wave" ref={containerRef} />
+        <div className="rounded-lg border border-line bg-sunken p-2" ref={containerRef} />
       )}
 
-      {!ready && !error && <p className="audiopreview__loading">波形を解析中…</p>}
+      {!ready && !error && <p className="m-0 text-xs text-ink-faint">波形を解析中…</p>}
 
-      <div className="audiopreview__controls">
-        <button className="btn" type="button" onClick={() => seekBy(-10)} disabled={!ready}>
-          −10秒
-        </button>
-        <button className="btn btn--primary" type="button" onClick={togglePlay} disabled={!ready}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => seekBy(-10)} disabled={!ready} title="10 秒戻る">
+          <BackwardIcon className="size-4" aria-hidden="true" />
+          10秒
+        </Button>
+        <Button variant="primary" onClick={togglePlay} disabled={!ready}>
+          {playing ? (
+            <PauseIcon className="size-4" aria-hidden="true" />
+          ) : (
+            <PlayIcon className="size-4" aria-hidden="true" />
+          )}
           {playing ? "一時停止" : "再生"}
-        </button>
-        <button className="btn" type="button" onClick={() => seekBy(10)} disabled={!ready}>
-          +10秒
-        </button>
+        </Button>
+        <Button onClick={() => seekBy(10)} disabled={!ready} title="10 秒進む">
+          <ForwardIcon className="size-4" aria-hidden="true" />
+          10秒
+        </Button>
 
-        <span className="audiopreview__time">
+        <span className="min-w-24 text-center text-xs tabular-nums text-ink-muted">
           {formatTime(current)} / {formatTime(duration)}
         </span>
 
-        <button
-          className={`btn${loop ? " btn--primary" : ""}`}
-          type="button"
+        <Button
+          variant={loop ? "primary" : "default"}
+          aria-pressed={loop}
           onClick={() => setLoop((v) => !v)}
           title="ループ再生"
         >
+          <ArrowPathRoundedSquareIcon className="size-4" aria-hidden="true" />
           ループ
-        </button>
+        </Button>
 
-        <button className="btn" type="button" onClick={() => setMuted((v) => !v)}>
+        <Button aria-pressed={muted} onClick={() => setMuted((v) => !v)}>
+          {muted ? (
+            <SpeakerXMarkIcon className="size-4" aria-hidden="true" />
+          ) : (
+            <SpeakerWaveIcon className="size-4" aria-hidden="true" />
+          )}
           {muted ? "ミュート解除" : "ミュート"}
-        </button>
+        </Button>
 
-        <label className="audiopreview__volume">
+        <label className="inline-flex items-center gap-2 text-xs text-ink-muted">
           音量
           <input
             type="range"
+            className="w-24 accent-accent"
             min={0}
             max={1}
             step={0.01}
@@ -184,7 +210,7 @@ export function AudioPreview({ entry }: Props) {
         </label>
       </div>
 
-      <p className="audiopreview__hint">波形をクリックすると、その位置から再生します。</p>
+      <p className="m-0 text-xs text-ink-faint">波形をクリックすると、その位置から再生します。</p>
     </div>
   );
 }

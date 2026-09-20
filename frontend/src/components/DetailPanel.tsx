@@ -9,16 +9,20 @@
  * タグ編集の入力欄はコンテンツの邪魔になるため常には出さず、タグは読み取り専用の
  * バッジで表示するだけにして、「タグを編集」ボタンを押したときだけ編集フォーム
  * （入力欄・候補・保存操作）を表示する。
+ *
+ * 画像の上では背景の色が予測できないため、ヘッダーとタグ UI は暗いグラデーション
+ * ＋白文字に固定する（isImage で配色を切り替える）。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { setTags, type Entry } from "../api/taggo";
 import { AudioPreview } from "./AudioPreview";
+import { Button } from "./Button";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { TagBadge } from "./TagBadge";
 import { TagEditor } from "./TagEditor";
-import "./DetailPanel.css";
 
 interface Props {
   entry: Entry;
@@ -91,6 +95,19 @@ export function DetailPanel({
     };
   }, [entry.path]);
 
+  // ヘッダーはコンテンツの上に重なるので、Markdown と音声では本文の先頭が
+  // 隠れないよう、実際のヘッダーの高さぶんだけ上に余白を取る。
+  // （画像は全面表示が主役なので、あえて重ねたままにする。）
+  const [overlayHeight, setOverlayHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = overlayRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setOverlayHeight(el.offsetHeight));
+    observer.observe(el);
+    setOverlayHeight(el.offsetHeight);
+    return () => observer.disconnect();
+  }, []);
+
   // タグ編集フォームの外側をクリックしたら閉じる。
   const tagBarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -134,8 +151,7 @@ export function DetailPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose, isImage, onNavigateImage, tagsOpen]);
 
-  const dirty =
-    draft.length !== entry.tags.length || draft.some((t, i) => t !== entry.tags[i]);
+  const dirty = draft.length !== entry.tags.length || draft.some((t, i) => t !== entry.tags[i]);
 
   const save = async () => {
     setSaving(true);
@@ -154,83 +170,19 @@ export function DetailPanel({
     }
   };
 
-  const headerAndTags = (
-    <>
-      <header className="detail__header">
-        <div className="detail__heading">
-          <h2 className="detail__title">{entry.title}</h2>
-          <p className="detail__path" title={entry.path}>
-            {entry.relPath}
-          </p>
-        </div>
-        <button className="btn btn--ghost detail__close" type="button" onClick={onClose}>
-          閉じる
-        </button>
-      </header>
-
-      <div className="detail__tagbar" ref={tagBarRef}>
-        {tagsOpen ? (
-          <div className="detail__tagform">
-            <TagEditor
-              tags={draft}
-              onChange={setDraft}
-              disabled={!entry.writable || saving}
-              placeholder={entry.writable ? "タグを追加（Enter で確定）" : "読み取り専用のため編集できません"}
-            />
-            <div className="detail__tagactions">
-              {!entry.writable && (
-                <span className="detail__warning">
-                  このファイルは読み取り専用のため、タグを書き込めません。
-                </span>
-              )}
-              <span className="detail__spacer" />
-              <button
-                className="btn"
-                type="button"
-                disabled={!dirty || saving}
-                onClick={() => setDraft(entry.tags)}
-              >
-                変更を取り消す
-              </button>
-              <button
-                className="btn btn--primary"
-                type="button"
-                disabled={!dirty || saving || !entry.writable}
-                onClick={() => void save()}
-              >
-                {saving ? "保存中…" : "ファイルへ保存"}
-              </button>
-              <button className="btn btn--ghost" type="button" onClick={() => setTagsOpen(false)}>
-                閉じる
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="detail__tagsummary">
-            {entry.tags.length > 0 ? (
-              entry.tags.map((tag) => <TagBadge key={tag} tag={tag} onClick={onTagClick} />)
-            ) : (
-              <span className="detail__tagempty">タグなし</span>
-            )}
-            <button
-              className="btn btn--ghost detail__tagtoggle"
-              type="button"
-              aria-expanded={false}
-              onClick={() => setTagsOpen(true)}
-            >
-              <span aria-hidden="true">🏷</span>
-              タグを編集
-            </button>
-          </div>
-        )}
-      </div>
-    </>
-  );
+  // 画像の上かどうかで、文字色と地味なボタンの見た目を切り替える。
+  const plainVariant = isImage ? "hud" : "default";
+  const ghostVariant = isImage ? "hudGhost" : "ghost";
+  // ヘッダーの高さ＋ひと呼吸ぶん下から本文を始める。
+  const contentTop = overlayHeight + 24;
 
   return (
-    <div className={`detail${isImage ? " detail--image" : ""}`} role="dialog" aria-modal="true">
-      <div className="detail__panel">
-        <div className={`detail__stage detail__stage--${entry.kind}`}>
+    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true">
+      <div className="relative size-full overflow-hidden bg-canvas">
+        {/* ---- コンテンツ本体（種別ごとに切り替え） ----
+            画像は ImagePreview 側が独自にスクロールを持つため、
+            ここで二重にスクロールコンテナを作らない。 */}
+        <div className={isImage ? "size-full overflow-hidden bg-black" : "size-full overflow-auto"}>
           {entry.kind === "image" && (
             <ImagePreview
               entry={entry}
@@ -241,22 +193,100 @@ export function DetailPanel({
             />
           )}
           {entry.kind === "markdown" && (
-            <div className="detail__stagepad">
+            <div className="mx-auto min-h-full max-w-205 px-7 pb-18" style={{ paddingTop: contentTop }}>
               <MarkdownPreview entry={entry} onFollowLink={onFollowLink} />
             </div>
           )}
           {entry.kind === "audio" && (
-            <div className="detail__stagepad">
+            <div className="mx-auto min-h-full max-w-205 px-7 pb-18" style={{ paddingTop: contentTop }}>
               <AudioPreview entry={entry} />
             </div>
           )}
         </div>
 
+        {/* ---- ヘッダー／タグのオーバーレイ ---- */}
         <div
           ref={overlayRef}
-          className={`detail__overlay${overlayVisible ? " is-visible" : ""}`}
+          className={`absolute inset-x-0 top-0 z-10 transition-opacity duration-300 ${
+            isImage
+              ? "bg-linear-to-b from-black/70 to-transparent pb-7 text-white"
+              : "border-b border-line bg-surface pb-3"
+          } ${overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
-          {headerAndTags}
+          <header className="flex items-start gap-4 px-5 pt-4 pb-2.5">
+            <div className="min-w-0 flex-1">
+              <h2 className="m-0 text-lg leading-snug break-words">{entry.title}</h2>
+              <p
+                className={`mt-0.5 mb-0 truncate text-xs ${isImage ? "text-white/70" : "text-ink-faint"}`}
+                title={entry.path}
+              >
+                {entry.relPath}
+              </p>
+            </div>
+            <Button variant={ghostVariant} onClick={onClose} title="閉じる（Esc）">
+              <XMarkIcon className="size-4" aria-hidden="true" />
+              閉じる
+            </Button>
+          </header>
+
+          <div className="px-5 pb-3" ref={tagBarRef}>
+            {tagsOpen ? (
+              <div className="flex flex-col gap-2">
+                <TagEditor
+                  tags={draft}
+                  onChange={setDraft}
+                  disabled={!entry.writable || saving}
+                  placeholder={
+                    entry.writable ? "タグを追加（Enter で確定）" : "読み取り専用のため編集できません"
+                  }
+                />
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {!entry.writable && (
+                    <span className={isImage ? "text-[#ff8a72]" : "text-danger"}>
+                      このファイルは読み取り専用のため、タグを書き込めません。
+                    </span>
+                  )}
+                  <span className="flex-1" />
+                  <Button
+                    variant={plainVariant}
+                    disabled={!dirty || saving}
+                    onClick={() => setDraft(entry.tags)}
+                  >
+                    変更を取り消す
+                  </Button>
+                  <Button
+                    variant="primary"
+                    disabled={!dirty || saving || !entry.writable}
+                    onClick={() => void save()}
+                  >
+                    {saving ? "保存中…" : "ファイルへ保存"}
+                  </Button>
+                  <Button variant={ghostVariant} onClick={() => setTagsOpen(false)}>
+                    閉じる
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2">
+                {entry.tags.length > 0 ? (
+                  entry.tags.map((tag) => <TagBadge key={tag} tag={tag} onClick={onTagClick} />)
+                ) : (
+                  <span className={`text-xs ${isImage ? "text-white/70" : "text-ink-faint"}`}>
+                    タグなし
+                  </span>
+                )}
+                <Button
+                  variant={ghostVariant}
+                  className="ml-auto"
+                  aria-expanded={false}
+                  onClick={() => setTagsOpen(true)}
+                >
+                  <TagIcon className="size-4" aria-hidden="true" />
+                  タグを編集
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

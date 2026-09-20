@@ -3,22 +3,75 @@
  *
  * CommonMark / GFM に準拠してレンダリングし、コードハイライト・テーブル・mermaid を扱う。
  * Front Matter はバックエンド側で本文から切り離されているため、ここには届かない。
+ *
+ * 本文は react-markdown が生成する素の HTML なので、装飾は Tailwind の
+ * typography プラグイン（prose）に任せ、配色だけをアプリのトークンへ差し替える。
  */
 
-import { isValidElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useMemo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { getBacklinks, getMarkdownSource, type Backlink, type Entry } from "../api/taggo";
 import { Mermaid } from "./Mermaid";
 import "highlight.js/styles/github.css";
-import "./MarkdownPreview.css";
 
 interface Props {
   entry: Entry;
   /** WikiLink をたどるときに呼ぶ。解決できない場合は検索に落とす。 */
   onFollowLink: (target: string) => void;
 }
+
+/**
+ * prose の配色をアプリのテーマトークンへ結び付ける。
+ * トークン自体が OS のテーマに追従するので、prose-invert は要らない。
+ */
+const PROSE_COLORS = [
+  "[--tw-prose-body:var(--color-ink)]",
+  "[--tw-prose-headings:var(--color-ink)]",
+  "[--tw-prose-bold:var(--color-ink)]",
+  "[--tw-prose-links:var(--color-accent-ink)]",
+  "[--tw-prose-counters:var(--color-ink-muted)]",
+  "[--tw-prose-bullets:var(--color-line-strong)]",
+  "[--tw-prose-hr:var(--color-line)]",
+  "[--tw-prose-quotes:var(--color-ink-muted)]",
+  "[--tw-prose-quote-borders:var(--color-line-strong)]",
+  "[--tw-prose-captions:var(--color-ink-faint)]",
+  "[--tw-prose-code:var(--color-ink)]",
+  "[--tw-prose-pre-code:var(--color-ink)]",
+  "[--tw-prose-pre-bg:var(--color-sunken)]",
+  "[--tw-prose-th-borders:var(--color-line)]",
+  "[--tw-prose-td-borders:var(--color-line)]",
+].join(" ");
+
+/**
+ * これまでの見た目に合わせた上書き。
+ * 引用の飾り引用符とインラインコードのバッククォートは出さず、
+ * 見出し・表・コードブロックには罫線を入れる。
+ */
+const PROSE_TWEAKS = [
+  "prose-headings:font-semibold",
+  "prose-h2:border-b prose-h2:border-line prose-h2:pb-[0.3em]",
+  "prose-blockquote:font-normal prose-blockquote:not-italic",
+  "[&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none",
+  "prose-code:rounded prose-code:bg-sunken prose-code:px-1 prose-code:py-0.5 prose-code:font-normal",
+  "prose-code:before:content-none prose-code:after:content-none",
+  "prose-pre:rounded-lg prose-pre:border prose-pre:border-line",
+  "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
+  "prose-th:border prose-th:border-line prose-th:bg-sunken prose-th:px-3 prose-th:py-1.5",
+  "prose-td:border prose-td:border-line prose-td:px-3 prose-td:py-1.5",
+  "prose-img:rounded-md",
+].join(" ");
+
+/** 暗いテーマでも読めるよう、highlight.js（github テーマ）の配色を調整する。 */
+const HLJS_DARK = [
+  "dark:[&_.hljs]:text-ink dark:[&_.hljs]:bg-transparent",
+  "dark:[&_.hljs-comment]:text-ink-faint dark:[&_.hljs-quote]:text-ink-faint",
+  "dark:[&_.hljs-keyword]:text-[#d08fd0] dark:[&_.hljs-selector-tag]:text-[#d08fd0] dark:[&_.hljs-literal]:text-[#d08fd0]",
+  "dark:[&_.hljs-string]:text-[#8fd3c3] dark:[&_.hljs-attr]:text-[#8fd3c3]",
+  "dark:[&_.hljs-number]:text-[#e0b070] dark:[&_.hljs-built_in]:text-[#e0b070]",
+  "dark:[&_.hljs-title]:text-[#83b4e8] dark:[&_.hljs-section]:text-[#83b4e8]",
+].join(" ");
 
 /**
  * [[WikiLink]] は Markdown の標準記法ではないので、レンダリング前に通常のリンクへ置き換える。
@@ -48,7 +101,6 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,65 +127,75 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
   const prepared = useMemo(() => (source === null ? "" : rewriteWikiLinks(source)), [source]);
 
   if (error) {
-    return <div className="mdpreview__error">本文を読み込めませんでした: {error}</div>;
+    return <div className="py-6 text-danger">本文を読み込めませんでした: {error}</div>;
   }
   if (source === null) {
-    return <div className="mdpreview__loading">読み込み中…</div>;
+    return <div className="py-6 text-ink-muted">読み込み中…</div>;
   }
 
   return (
-    <div className="mdpreview" ref={containerRef}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={{
-          a({ href, children, ...rest }) {
-            if (href?.startsWith("taggo:")) {
-              const target = decodeURIComponent(href.slice("taggo:".length));
+    <>
+      <div
+        className={`prose prose-sm max-w-none break-words ${PROSE_COLORS} ${PROSE_TWEAKS} ${HLJS_DARK}`}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeHighlight]}
+          components={{
+            a({ href, children, ...rest }) {
+              if (href?.startsWith("taggo:")) {
+                const target = decodeURIComponent(href.slice("taggo:".length));
+                return (
+                  <a
+                    href={href}
+                    className="rounded-sm bg-accent-soft px-0.5 no-underline"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onFollowLink(target);
+                    }}
+                  >
+                    {children}
+                  </a>
+                );
+              }
+              // 外部リンクは既定のブラウザへ委ねる。
               return (
-                <a
-                  href={href}
-                  className="mdpreview__wikilink"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onFollowLink(target);
-                  }}
-                >
+                <a href={href} target="_blank" rel="noreferrer" {...rest}>
                   {children}
                 </a>
               );
-            }
-            // 外部リンクは既定のブラウザへ委ねる。
-            return (
-              <a href={href} target="_blank" rel="noreferrer" {...rest}>
-                {children}
-              </a>
-            );
-          },
-          code({ className, children, ...rest }) {
-            // mermaid のコードブロックは図として描く。
-            // rehype-highlight が "hljs" などのクラスを足すため、完全一致では判定できない。
-            if (className?.split(/\s+/).includes("language-mermaid")) {
-              return <Mermaid source={toPlainText(children).trimEnd()} />;
-            }
-            return (
-              <code className={className} {...rest}>
-                {children}
-              </code>
-            );
-          },
-        }}
-      >
-        {prepared}
-      </ReactMarkdown>
+            },
+            code({ className, children, ...rest }) {
+              // mermaid のコードブロックは図として描く。
+              // rehype-highlight が "hljs" などのクラスを足すため、完全一致では判定できない。
+              if (className?.split(/\s+/).includes("language-mermaid")) {
+                return <Mermaid source={toPlainText(children).trimEnd()} />;
+              }
+              return (
+                <code className={className} {...rest}>
+                  {children}
+                </code>
+              );
+            },
+          }}
+        >
+          {prepared}
+        </ReactMarkdown>
+      </div>
 
       {backlinks.length > 0 && (
-        <section className="mdpreview__backlinks">
-          <h4>このノートを参照しているノート</h4>
-          <ul>
+        <section className="mt-10 border-t border-line pt-4">
+          <h4 className="m-0 mb-2 text-xs font-semibold tracking-wide text-ink-muted">
+            このノートを参照しているノート
+          </h4>
+          <ul className="flex list-none flex-wrap gap-2 p-0">
             {backlinks.map((link) => (
               <li key={link.path}>
-                <button type="button" onClick={() => onFollowLink(link.title)}>
+                <button
+                  type="button"
+                  className="rounded-full border border-line bg-sunken px-2.5 py-0.5 text-xs hover:border-accent"
+                  onClick={() => onFollowLink(link.title)}
+                >
                   {link.title}
                 </button>
               </li>
@@ -141,6 +203,6 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
           </ul>
         </section>
       )}
-    </div>
+    </>
   );
 }

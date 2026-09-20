@@ -151,6 +151,9 @@ make lint   # gofmt / go vet / tsc --noEmit
   起動時・フォルダ選択時に配下を走査して展開します。終了時にメモリごと破棄されます。
 - RAM の消費を抑えるため、1 回の走査で展開する件数に上限（20,000 件）を設けています。
 - ファイルウォッチャーが外部エディタによる変更も検知し、該当レコードを同期・削除します。
+- 画面のスタイルは Tailwind CSS のユーティリティで組み立てています。独自に書く CSS は
+  `frontend/src/styles/global.css` の配色トークン（`@theme`）と要素の既定値だけで、
+  配色は OS のテーマ設定に追従します。アイコンは [Heroicons](https://heroicons.com/) を使っています。
 
 ### パッケージ構成
 
@@ -164,4 +167,4 @@ make lint   # gofmt / go vet / tsc --noEmit
 | `internal/watcher` | ファイル変更の検知                                  |
 | `internal/thumb`   | サムネイルの生成とメモリ内キャッシュ                |
 | `internal/app`     | フロントエンドへ公開する API とローカルファイル配信 |
-| `frontend`         | React + TypeScript + Vite の UI                     |
+| `frontend`         | React + TypeScript + Vite + Tailwind CSS の UI      |

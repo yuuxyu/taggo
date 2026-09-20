@@ -6,14 +6,20 @@
  */
 
 import { useCallback, useMemo, useState } from "react";
+import {
+  ExclamationTriangleIcon,
+  FolderOpenIcon,
+  InformationCircleIcon,
+  XMarkIcon,
+} from "@heroicons/react/20/solid";
 import { appendTagToQuery, type Entry, type TagEditResult } from "./api/taggo";
 import { BulkTagDialog } from "./components/BulkTagDialog";
+import { Button } from "./components/Button";
 import { CardGrid } from "./components/CardGrid";
 import { DetailPanel } from "./components/DetailPanel";
 import { SearchBar } from "./components/SearchBar";
 import { Toolbar } from "./components/Toolbar";
 import { useLibrary } from "./hooks/useLibrary";
-import "./App.css";
 
 export default function App() {
   const library = useLibrary();
@@ -127,8 +133,8 @@ export default function App() {
   const hasFolder = (library.status?.root ?? "") !== "";
 
   return (
-    <div className="app">
-      <header className="app__header">
+    <div className="flex h-full flex-col bg-canvas text-sm">
+      <header className="sticky top-0 z-10 flex flex-col gap-2.5 border-b border-line bg-canvas px-4.5 pt-3.5 pb-3">
         <SearchBar
           value={query}
           onChange={setQuery}
@@ -151,40 +157,70 @@ export default function App() {
       </header>
 
       {library.notices.length > 0 && (
-        <ul className="app__notices">
+        <ul className="m-0 flex list-none flex-col gap-1.5 px-4.5 pt-2.5">
           {library.notices.map((notice) => (
-            <li key={notice.id} className={`app__notice app__notice--${notice.kind}`}>
-              <span>{notice.message}</span>
-              <button type="button" onClick={() => library.dismissNotice(notice.id)}>
-                ×
+            <li
+              key={notice.id}
+              className={`flex items-start gap-3 rounded-md px-3 py-2 text-xs ${
+                notice.kind === "error"
+                  ? "bg-danger-soft text-danger"
+                  : "bg-accent-soft text-accent-ink"
+              }`}
+            >
+              {notice.kind === "error" ? (
+                <ExclamationTriangleIcon className="mt-px size-4 shrink-0" aria-hidden="true" />
+              ) : (
+                <InformationCircleIcon className="mt-px size-4 shrink-0" aria-hidden="true" />
+              )}
+              <span className="flex-1">{notice.message}</span>
+              <button
+                type="button"
+                className="shrink-0 opacity-60 hover:opacity-100"
+                aria-label="この通知を閉じる"
+                onClick={() => library.dismissNotice(notice.id)}
+              >
+                <XMarkIcon className="size-4" />
               </button>
             </li>
           ))}
         </ul>
       )}
 
-      <main className="app__body">
+      <main className="min-h-0 flex-1 bg-canvas">
         {!hasFolder ? (
-          <div className="empty">
-            <p className="empty__title">フォルダを選ぶとタグ管理を始められます</p>
-            <p className="empty__hint">
+          <div className="flex h-full flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
+            <FolderOpenIcon className="size-10 text-ink-faint" aria-hidden="true" />
+            <p className="m-0 text-base font-semibold text-ink">
+              フォルダを選ぶとタグ管理を始められます
+            </p>
+            <p className="m-0 max-w-105">
               選んだフォルダ配下の Markdown・画像・音声を読み込み、
               ファイルに埋め込まれたタグでそのまま検索できます。
               タグはファイル自身に書き込むので、taggo を使わなくなっても情報は残ります。
             </p>
-            <button className="btn btn--primary" type="button" onClick={() => void library.chooseFolder()}>
+            <Button variant="primary" onClick={() => void library.chooseFolder()}>
+              <FolderOpenIcon className="size-4" aria-hidden="true" />
               フォルダを選択
-            </button>
+            </Button>
           </div>
         ) : entries.length === 0 ? (
-          <div className="empty">
-            <p className="empty__title">
+          <div className="flex h-full flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
+            <p className="m-0 text-base font-semibold text-ink">
               {library.progress ? "読み込み中です…" : "条件に合うファイルがありません"}
             </p>
             {!library.progress && query !== "" && (
-              <p className="empty__hint">
-                検索条件を緩めてみてください。<code>#タグ</code> は完全一致、
-                <code>-#タグ</code> は除外、<code>OR</code> でタグの候補を広げられます。
+              <p className="m-0 max-w-105">
+                検索条件を緩めてみてください。
+                <code className="rounded-sm bg-sunken px-1.5 py-px font-mono text-[0.9em]">
+                  #タグ
+                </code>
+                は完全一致、
+                <code className="rounded-sm bg-sunken px-1.5 py-px font-mono text-[0.9em]">
+                  -#タグ
+                </code>
+                は除外、
+                <code className="rounded-sm bg-sunken px-1.5 py-px font-mono text-[0.9em]">OR</code>
+                でタグの候補を広げられます。
               </p>
             )}
           </div>

@@ -2,22 +2,27 @@
  * "#タグ" のバッジ。クリックするとそのタグが検索バーへ挿入される。
  */
 
-import "./TagBadge.css";
+import { XMarkIcon } from "@heroicons/react/16/solid";
 
 interface Props {
   tag: string;
   onClick?: (tag: string) => void;
   onRemove?: (tag: string) => void;
-  /** 見出し的に大きく出したい場面（詳細プレビューのヘッダー）で使う。 */
+  /** 見出し的に大きく出したい場面（タグ編集フォーム）で md を使う。 */
   size?: "sm" | "md";
 }
 
+const LABEL_SIZE = {
+  sm: "px-2 py-px text-xs",
+  md: "px-2.5 py-0.5 text-sm",
+} as const;
+
 export function TagBadge({ tag, onClick, onRemove, size = "sm" }: Props) {
   return (
-    <span className={`tagbadge tagbadge--${size}`}>
+    <span className="inline-flex max-w-full items-center rounded-full bg-accent-soft">
       <button
         type="button"
-        className="tagbadge__label"
+        className={`max-w-full truncate text-accent-ink hover:underline ${LABEL_SIZE[size]}`}
         title={`#${tag} で絞り込む`}
         onClick={(e) => {
           e.stopPropagation();
@@ -29,14 +34,14 @@ export function TagBadge({ tag, onClick, onRemove, size = "sm" }: Props) {
       {onRemove && (
         <button
           type="button"
-          className="tagbadge__remove"
+          className="pr-2 pl-0.5 text-accent-ink opacity-60 hover:opacity-100"
           title={`#${tag} を外す`}
           onClick={(e) => {
             e.stopPropagation();
             onRemove(tag);
           }}
         >
-          ×
+          <XMarkIcon className="size-3.5" />
         </button>
       )}
     </span>

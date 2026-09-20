@@ -4,9 +4,9 @@
  */
 
 import { memo, useState } from "react";
+import { CheckIcon, LockClosedIcon } from "@heroicons/react/16/solid";
 import { thumbURL, type Entry } from "../api/taggo";
 import { TagBadge } from "./TagBadge";
-import "./Card.css";
 
 interface Props {
   entry: Entry;
@@ -53,7 +53,12 @@ function WaveformGlyph({ seed }: { seed: string }) {
     return <rect key={i} x={i * 8} y={(100 - height) / 2} width={4} height={height} rx={2} />;
   });
   return (
-    <svg className="card__waveform" viewBox="0 0 224 100" preserveAspectRatio="none" aria-hidden="true">
+    <svg
+      className="h-16 w-full fill-accent opacity-55"
+      viewBox="0 0 224 100"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
       {bars}
     </svg>
   );
@@ -78,11 +83,15 @@ function CardPreview({ entry }: { entry: Entry }) {
 
   if (entry.kind === "image") {
     if (failed) {
-      return <div className="card__fallback">{describeImageFailure(entry)}</div>;
+      return (
+        <div className="grid h-full place-items-center p-3 text-center text-xs text-ink-faint">
+          {describeImageFailure(entry)}
+        </div>
+      );
     }
     return (
       <img
-        className="card__image"
+        className="block size-full object-cover"
         src={thumbURL(entry.path)}
         alt={entry.title}
         loading="lazy"
@@ -94,19 +103,23 @@ function CardPreview({ entry }: { entry: Entry }) {
 
   if (entry.kind === "audio") {
     return (
-      <div className="card__audio">
+      <div className="flex h-full flex-col justify-center px-3.5 py-3">
         <WaveformGlyph seed={entry.path} />
-        <div className="card__audio-meta">
-          {entry.audio?.artist && <span>{entry.audio.artist}</span>}
-          {entry.audio?.durationSec ? <span>{formatDuration(entry.audio.durationSec)}</span> : null}
+        <div className="mt-2 flex justify-between gap-2.5 overflow-hidden text-xs whitespace-nowrap text-ink-faint">
+          {entry.audio?.artist && <span className="truncate">{entry.audio.artist}</span>}
+          {entry.audio?.durationSec ? (
+            <span className="tabular-nums">{formatDuration(entry.audio.durationSec)}</span>
+          ) : null}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="card__markdown">
-      <p className="card__excerpt">{entry.preview || "（本文なし）"}</p>
+    <div className="h-full overflow-hidden px-3.5 py-3">
+      <p className="m-0 line-clamp-6 text-xs leading-relaxed text-ink-muted">
+        {entry.preview || "（本文なし）"}
+      </p>
     </div>
   );
 }
@@ -141,7 +154,13 @@ export const Card = memo(function Card({
 
   return (
     <article
-      className={`card${selected ? " is-selected" : ""}${entry.err ? " has-error" : ""}`}
+      className={`group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-lg border bg-surface transition hover:-translate-y-px hover:shadow-card focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-accent-soft ${
+        selected
+          ? "border-accent ring-2 ring-accent-soft"
+          : entry.err
+            ? "border-danger hover:border-line-strong"
+            : "border-line hover:border-line-strong"
+      }`}
       role="button"
       tabIndex={0}
       aria-label={`${entry.title} を開く`}
@@ -149,50 +168,56 @@ export const Card = memo(function Card({
       onKeyDown={handleKeyDown}
     >
       <button
-        className="card__checkbox"
         type="button"
         role="checkbox"
         aria-checked={selected}
         aria-label={selected ? "選択を解除" : "選択に追加"}
+        className={`absolute top-2 left-2 z-2 grid size-5 place-items-center rounded-md border transition group-hover:opacity-100 focus-visible:opacity-100 ${
+          selected
+            ? "border-accent bg-accent text-white opacity-100"
+            : "border-white/55 bg-black/35 text-white"
+        } ${selected || selectionMode ? "opacity-100" : "opacity-0"}`}
         onClick={(e) => {
           e.stopPropagation();
           onToggleSelect(entry);
         }}
       >
-        {selected ? "✓" : ""}
+        {selected && <CheckIcon className="size-3.5" />}
       </button>
 
-      <div className="card__preview">
+      <div className="relative h-35 shrink-0 overflow-hidden border-b border-line bg-sunken">
         <CardPreview entry={entry} />
       </div>
 
-      <div className="card__body">
-        <h3 className="card__title" title={entry.relPath}>
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 px-3 pt-2.5 pb-3">
+        <h3 className="m-0 line-clamp-2 text-sm leading-snug font-semibold" title={entry.relPath}>
           {entry.title}
         </h3>
-        <div className="card__meta">
-          <span className="card__ext">{entry.ext.replace(".", "")}</span>
+        <div className="flex items-center gap-2 text-xs text-ink-faint">
+          <span className="rounded-sm bg-sunken px-1.5 uppercase">{entry.ext.replace(".", "")}</span>
           {entry.format && entry.format !== entry.ext && (
-            <span className="card__format" title={`中身は ${entry.format} 形式です`}>
+            <span
+              className="rounded-sm bg-accent-soft px-1.5 uppercase text-accent-ink"
+              title={`中身は ${entry.format} 形式です`}
+            >
               実体 {entry.format.replace(".", "")}
             </span>
           )}
-          <span>{formatSize(entry.size)}</span>
-          {!entry.writable && <span className="card__readonly">読み取り専用</span>}
+          <span className="tabular-nums">{formatSize(entry.size)}</span>
+          {!entry.writable && (
+            <span className="inline-flex items-center gap-0.5 text-danger" title="読み取り専用">
+              <LockClosedIcon className="size-3" aria-hidden="true" />
+              読み取り専用
+            </span>
+          )}
         </div>
 
-        {entry.err && <p className="card__error">{entry.err}</p>}
+        {entry.err && <p className="m-0 line-clamp-2 text-xs text-danger">{entry.err}</p>}
 
         {entry.tags.length > 0 && (
-          <div className="card__tags">
+          <div className="mt-auto flex max-h-11 flex-wrap content-start gap-1 overflow-hidden">
             {entry.tags.map((tag) => (
-              <TagBadge
-                key={tag}
-                tag={tag}
-                onClick={(t) => {
-                  onTagClick(t);
-                }}
-              />
+              <TagBadge key={tag} tag={tag} onClick={onTagClick} />
             ))}
           </div>
         )}
