@@ -10,7 +10,7 @@
  * 倍率指定（＋ / 原寸 / Ctrl+ホイール）で足りる。
  *
  * 操作の割り当ては次のとおり。
- *  - ホイール          … 前後の画像へページ送り
+ *  - ホイール          … 前後のファイルへページ送り
  *  - Ctrl + ホイール   … カーソル位置を軸にした拡大・縮小
  *  - ドラッグ          … はみ出しているときの画像の移動
  */
@@ -18,23 +18,23 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowsPointingOutIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
   MinusIcon,
   PlusIcon,
   Square2StackIcon,
 } from "@heroicons/react/20/solid";
 import { fileURL, type Entry } from "../api/taggo";
 import { Button } from "./Button";
+import { Pager } from "./Pager";
 
 interface Props {
   entry: Entry;
   /** true の間だけ操作 HUD を表示する。DetailPanel がマウス移動から判定する。 */
   uiVisible: boolean;
+  /** 前後のファイルへの移動。種類を問わず一覧の並び順で動く。 */
   onNavigate: (direction: 1 | -1) => void;
-  /** 画像一覧での現在位置（0 始まり）。-1 ならページ送り UI を出さない。 */
-  imageIndex: number;
-  imageTotal: number;
+  /** 一覧での現在位置（0 始まり）。-1 ならページ送り UI を出さない。 */
+  index: number;
+  total: number;
 }
 
 /** 倍率の刻み。1 が原寸。 */
@@ -97,7 +97,7 @@ function steppedZoom(base: number, direction: 1 | -1): number | null {
   return smaller.length > 0 ? smaller[smaller.length - 1] : null;
 }
 
-export function ImagePreview({ entry, uiVisible, onNavigate, imageIndex, imageTotal }: Props) {
+export function ImagePreview({ entry, uiVisible, onNavigate, index, total }: Props) {
   // 既定は「全体を表示」。縦長画像は高さが、横長画像は幅が自動でウィンドウに
   // 合うため、画像の向きによらず全体が常に見える（object-fit: contain の性質）。
   const [zoom, setZoom] = useState<ZoomMode>("fit-contain");
@@ -232,8 +232,6 @@ export function ImagePreview({ entry, uiVisible, onNavigate, imageIndex, imageTo
   const hasMeta = Boolean(meta?.width || meta?.taken || meta?.make || meta?.model || meta?.lens);
   // 原寸が分からないうちは幅を指定せず、画像そのものの大きさに任せる。
   const baseWidth = meta?.width || naturalWidth;
-  const hasPrev = imageIndex > 0;
-  const hasNext = imageIndex >= 0 && imageIndex < imageTotal - 1;
 
   // 表示方式の切り替えボタン。いま選ばれているものが分かるよう、
   // 選択中は押し込んだ見た目（hud）にする。
@@ -330,21 +328,7 @@ export function ImagePreview({ entry, uiVisible, onNavigate, imageIndex, imageTo
             </Button>
           </div>
 
-          {imageIndex >= 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Button variant="hudGhost" disabled={!hasPrev} onClick={() => onNavigate(-1)}>
-                <ChevronLeftIcon className="size-4" aria-hidden="true" />
-                前へ
-              </Button>
-              <span className="min-w-16 text-center text-xs tabular-nums text-white/70">
-                {imageIndex + 1} / {imageTotal}
-              </span>
-              <Button variant="hudGhost" disabled={!hasNext} onClick={() => onNavigate(1)}>
-                次へ
-                <ChevronRightIcon className="size-4" aria-hidden="true" />
-              </Button>
-            </div>
-          )}
+          <Pager index={index} total={total} onNavigate={onNavigate} onImage />
         </div>
 
         {hasMeta && (

@@ -21,6 +21,7 @@ import { AudioPreview } from "./AudioPreview";
 import { Button } from "./Button";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { Pager } from "./Pager";
 import { TagBadge } from "./TagBadge";
 import { TagEditor } from "./TagEditor";
 
@@ -32,11 +33,11 @@ interface Props {
   /** 保存後の最新状態を一覧へ返す。 */
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
-  /** 画像プレビューでの前後移動。画像以外を見ているときは呼ばれない。 */
-  onNavigateImage: (direction: 1 | -1) => void;
-  /** 画像一覧における現在位置（0 始まり）。画像でなければ -1。 */
-  imageIndex: number;
-  imageTotal: number;
+  /** 前後のファイルへの移動。種類を問わず一覧の並び順で動く。 */
+  onNavigate: (direction: 1 | -1) => void;
+  /** 一覧における現在位置（0 始まり）。 */
+  index: number;
+  total: number;
 }
 
 /** UI オーバーレイを自動で隠すまでの無操作時間。 */
@@ -49,9 +50,9 @@ export function DetailPanel({
   onFollowLink,
   onEntryUpdated,
   onError,
-  onNavigateImage,
-  imageIndex,
-  imageTotal,
+  onNavigate,
+  index,
+  total,
 }: Props) {
   const [draft, setDraft] = useState<string[]>(entry.tags);
   const [saving, setSaving] = useState(false);
@@ -122,7 +123,7 @@ export function DetailPanel({
   }, [tagsOpen]);
 
   // Esc はまずタグ編集フォームを閉じ、閉じていればプレビュー自体を閉じる。
-  // 画像プレビュー中は左右キーで前後の画像へ移動する。
+  // 左右キーで前後のファイルへ移動する。画像に限らず種類は問わない。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -133,7 +134,6 @@ export function DetailPanel({
         }
         return;
       }
-      if (!isImage) return;
       // タグ入力中の左右キーはキャレット移動に使うので奪わない。
       const active = document.activeElement;
       const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
@@ -141,15 +141,15 @@ export function DetailPanel({
 
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        onNavigateImage(-1);
+        onNavigate(-1);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        onNavigateImage(1);
+        onNavigate(1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, isImage, onNavigateImage, tagsOpen]);
+  }, [onClose, onNavigate, tagsOpen]);
 
   const dirty = draft.length !== entry.tags.length || draft.some((t, i) => t !== entry.tags[i]);
 
@@ -187,9 +187,9 @@ export function DetailPanel({
             <ImagePreview
               entry={entry}
               uiVisible={overlayVisible}
-              onNavigate={onNavigateImage}
-              imageIndex={imageIndex}
-              imageTotal={imageTotal}
+              onNavigate={onNavigate}
+              index={index}
+              total={total}
             />
           )}
           {entry.kind === "markdown" && (
@@ -288,6 +288,19 @@ export function DetailPanel({
             )}
           </div>
         </div>
+
+        {/* ---- 前後のファイルへの移動 ----
+            画像は ImagePreview の HUD に倍率の操作と並べて出すので、
+            ここでは Markdown と音声のぶんだけを下部に置く。 */}
+        {!isImage && (
+          <div
+            className={`absolute inset-x-0 bottom-0 z-10 flex justify-end border-t border-line bg-surface px-5 py-2 transition-opacity duration-300 ${
+              overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+          >
+            <Pager index={index} total={total} onNavigate={onNavigate} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -32,30 +32,23 @@ export default function App() {
   const { entries, query, setQuery, notify, replaceEntry } = library;
 
   // 一覧が入れ替わっても、開いているプレビューは最新のエントリを指し続ける。
-  const detailEntry = useMemo(
-    () => (detailPath === null ? null : entries.find((e) => e.path === detailPath) ?? null),
+  // 「前へ／次へ」で隣のファイルへ移れるよう、位置も一緒に持つ。
+  const detailIndex = useMemo(
+    () => (detailPath === null ? -1 : entries.findIndex((e) => e.path === detailPath)),
     [detailPath, entries],
   );
+  const detailEntry = detailIndex < 0 ? null : entries[detailIndex];
 
-  // 画像の詳細プレビューは「前へ／次へ」で画像だけを順に辿れるようにする。
-  // 現在の検索結果・並び順に対する画像だけの部分列として扱う。
-  const imageEntries = useMemo(() => entries.filter((e) => e.kind === "image"), [entries]);
-  const imageIndex = useMemo(
-    () =>
-      detailEntry?.kind === "image"
-        ? imageEntries.findIndex((e) => e.path === detailEntry.path)
-        : -1,
-    [detailEntry, imageEntries],
-  );
+  // 詳細プレビューの前後移動。いまの検索結果・並び順のまま、種類を問わず隣へ動く。
   // 端では止める（ループしない）。
-  const navigateImage = useCallback(
+  const navigate = useCallback(
     (direction: 1 | -1) => {
-      if (imageIndex < 0) return;
-      const next = imageIndex + direction;
-      if (next < 0 || next >= imageEntries.length) return;
-      setDetailPath(imageEntries[next].path);
+      if (detailIndex < 0) return;
+      const next = detailIndex + direction;
+      if (next < 0 || next >= entries.length) return;
+      setDetailPath(entries[next].path);
     },
-    [imageIndex, imageEntries],
+    [detailIndex, entries],
   );
 
   const selectedEntries = useMemo(
@@ -244,9 +237,9 @@ export default function App() {
           onFollowLink={handleFollowLink}
           onEntryUpdated={replaceEntry}
           onError={(message) => notify("error", message)}
-          onNavigateImage={navigateImage}
-          imageIndex={imageIndex}
-          imageTotal={imageEntries.length}
+          onNavigate={navigate}
+          index={detailIndex}
+          total={entries.length}
         />
       )}
 
