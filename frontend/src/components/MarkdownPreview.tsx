@@ -51,6 +51,8 @@ const PROSE_COLORS = [
  */
 const PROSE_TWEAKS = [
   "prose-headings:font-semibold",
+  // prose-lg の h1 は本文の 2.67 倍と大きすぎるので、ブラウザ標準の h1 と同じ 2 倍に抑える。
+  "prose-h1:text-[2em]",
   "prose-h2:border-b prose-h2:border-line prose-h2:pb-[0.3em]",
   "prose-blockquote:font-normal prose-blockquote:not-italic",
   "[&_blockquote_p]:before:content-none [&_blockquote_p]:after:content-none",
@@ -243,7 +245,9 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
 
   return (
     <div
-      className={`prose prose-sm max-w-none break-words ${PROSE_COLORS} ${PROSE_TWEAKS} ${HLJS_DARK}`}
+      // 全角文字は 1 文字がちょうど 1em なので、幅を 38em にすると 1 行に全角 38 文字が入る。
+      // 文字の大きさを変えても 1 行の文字数が保たれるよう、幅は em で決める。
+      className={`prose prose-lg max-w-[38em] break-words ${PROSE_COLORS} ${PROSE_TWEAKS} ${HLJS_DARK}`}
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
