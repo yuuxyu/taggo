@@ -73,6 +73,8 @@ export function useLibrary(): Library {
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
+  // 走査が終わった回数。件数が前と同じでも、走査のたびに一覧を引き直すきっかけにする。
+  const [scanSeq, setScanSeq] = useState(0);
 
   const noticeSeq = useRef(0);
 
@@ -154,6 +156,7 @@ export function useLibrary(): Library {
         );
       }
       void getStatus().then(setStatus);
+      setScanSeq((n) => n + 1);
     });
 
     const offChanged = on<EntryChanged>(Events.entryChanged, (change) => {
@@ -182,13 +185,15 @@ export function useLibrary(): Library {
     };
   }, [notify]);
 
-  // 走査完了後に検索結果へ反映する。件数が変わったタイミングで引き直す。
+  // 走査完了後と、件数が変わったタイミングで検索結果を引き直す。
+  // 件数だけを見ると、同じフォルダを開き直したときに件数が変わらず、
+  // 開く時点で空にした一覧がそのまま残ってしまうため、走査の完了も見る。
   const entryCount = status?.entryCount ?? 0;
   useEffect(() => {
     void runSearch(query, sort);
-    // query / sort の変更は別の effect が拾うので、ここでは件数だけを見る。
+    // query / sort の変更は別の effect が拾うので、ここでは件数と走査の完了だけを見る。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryCount]);
+  }, [entryCount, scanSeq]);
 
   /** 読み込みを実際に始める。ここから先はファイルを開くので、通信が起きうる。 */
   const startOpen = useCallback(
