@@ -37,15 +37,26 @@ type App struct {
 	store  *store.Store
 	thumbs *thumb.Cache
 
-	// mu は watcher と scanCancel、cloudOnly を守る。フォルダの開き直しと
-	// 進行中の走査キャンセルが競合しうるため。
+	// maxEntries は 1 回の読み込みで展開する件数の上限。
+	// 本番では store.MaxEntries で、テストでは小さくして上限まわりを確かめる。
+	maxEntries int
+
+	// mu は watcher と scanCancel、cloudOnly、続きの読み込み位置を守る。
+	// フォルダの開き直しと進行中の走査キャンセルが競合しうるため。
 	mu          sync.Mutex
 	watcher     *watcher.Watcher
 	watcherStop context.CancelFunc
 	scanCancel  context.CancelFunc
-	// cloudOnly は直近の走査で、中身がクラウド上にしか無いため
-	// 読み込まなかったファイルの数。
+	// loadingMore は、進行中の走査が続きの読み込み（LoadMore）かどうか。
+	loadingMore bool
+	// cloudOnly は読み込んだファイルのうち、中身がクラウド上にしか無いため
+	// 開かなかったファイルの数。
 	cloudOnly int
+	// cursor は上限で打ち切ったときの再開位置（ルートからの相対パス）。
+	// 空なら、フォルダの対応ファイルは全部読み込み済み。
+	cursor string
+	// remaining は、まだ読み込んでいない対応ファイルの数。
+	remaining int
 }
 
 // New はアプリを組み立てる。インメモリ DB の初期化に失敗した場合のみエラーを返す。
@@ -54,7 +65,7 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{store: s, thumbs: thumb.NewCache()}, nil
+	return &App{store: s, thumbs: thumb.NewCache(), maxEntries: store.MaxEntries}, nil
 }
 
 // Startup は Wails の起動フックから呼ばれ、以降 runtime API を使えるようにする。
@@ -86,18 +97,33 @@ type Status struct {
 	TagCount   int    `json:"tagCount"`
 	// Scanning は走査が進行中かどうか。
 	Scanning bool `json:"scanning"`
-	// LimitReached は上限件数に達して打ち切ったかどうか。
-	LimitReached bool `json:"limitReached"`
-	// MaxEntries は展開件数の上限。UI の注意書きに使う。
+	// MaxEntries は 1 回の読み込みで展開する件数の上限。
+	// 「続きを読み込む」で増える件数の表示に使う。
 	MaxEntries int `json:"maxEntries"`
+	// Remaining は、上限で打ち切ったためにまだ読み込んでいない対応ファイルの数。
+	// 0 より大きければ、LoadMore で続きを読み込める。
+	Remaining int `json:"remaining"`
 	// CloudOnly は、中身がクラウド上にしか無いため読み込まなかった件数。
 	CloudOnly int `json:"cloudOnly"`
+}
+
+// ScanDone は走査完了イベントのペイロード。
+type ScanDone struct {
+	Status
+	// LoadedMore は、続きの読み込み（LoadMore）の完了かどうか。
+	LoadedMore bool `json:"loadedMore,omitempty"`
+	// Added は今回の読み込みで一覧に加わった件数。
+	Added int `json:"added,omitempty"`
+	// Cancelled は、利用者の操作で続きの読み込みを取りやめたかどうか。
+	Cancelled bool `json:"cancelled,omitempty"`
 }
 
 // ScanProgress は走査の進捗イベントのペイロード。
 type ScanProgress struct {
 	Done  int `json:"done"`
 	Found int `json:"found"`
+	// LoadingMore は、続きの読み込み（LoadMore）の進捗かどうか。
+	LoadingMore bool `json:"loadingMore,omitempty"`
 }
 
 // SelectFolder はフォルダ選択ダイアログを開き、選ばれたフォルダのパスを返す。
@@ -222,6 +248,8 @@ func (a *App) OpenFolder(root string) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.scanCancel = cancel
+	a.loadingMore = false
+	a.cursor, a.remaining = "", 0
 	a.mu.Unlock()
 
 	a.stopWatcher()
@@ -238,7 +266,7 @@ func (a *App) OpenFolder(root string) error {
 func (a *App) runScan(ctx context.Context, root string) {
 	result, err := scan.Scan(ctx, scan.Options{
 		Root:  root,
-		Limit: store.MaxEntries,
+		Limit: a.maxEntries,
 		OnProgress: func(done, found int) {
 			a.emit(EventScanProgress, ScanProgress{Done: done, Found: found})
 		},
@@ -260,17 +288,116 @@ func (a *App) runScan(ctx context.Context, root string) {
 	a.mu.Lock()
 	a.scanCancel = nil
 	a.cloudOnly = result.CloudOnly
+	a.setCursor(result)
 	a.mu.Unlock()
 
 	a.startWatcher(root)
-	a.emit(EventScanDone, Status{
-		Root:         root,
-		EntryCount:   len(result.Entries),
-		TagCount:     a.store.TagCount(),
-		LimitReached: result.LimitReached,
-		MaxEntries:   store.MaxEntries,
-		CloudOnly:    result.CloudOnly,
+	a.emit(EventScanDone, ScanDone{Status: a.Status(), Added: len(result.Entries)})
+}
+
+// setCursor は走査結果から、続きの読み込み位置と残り件数を覚える。
+// 呼び出し元が a.mu を握っていること。
+func (a *App) setCursor(result scan.Result) {
+	if result.LimitReached {
+		a.cursor, a.remaining = result.Cursor, result.Remaining
+	} else {
+		a.cursor, a.remaining = "", 0
+	}
+}
+
+// LoadMore は、上限で打ち切ったフォルダの続きを読み込む。
+// all が false なら上限と同じ件数だけ、true なら残りをすべて読み込む。
+//
+// 読み込みはバックグラウンドで進み、その間も今の一覧はそのまま使える。
+// 読み込んだ分は最後にまとめて DB へ入れるので、検索結果が途中で欠けることはない。
+func (a *App) LoadMore(all bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.scanCancel != nil {
+		return errors.New("読み込みの途中です。終わってからもう一度お試しください")
+	}
+	if a.cursor == "" {
+		return errors.New("読み込んでいないファイルはありません")
+	}
+
+	limit := a.maxEntries
+	if all {
+		limit = 0
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.scanCancel = cancel
+	a.loadingMore = true
+	go a.runLoadMore(ctx, a.store.Root(), a.cursor, limit)
+	return nil
+}
+
+// CancelLoadMore は続きの読み込みを取りやめる。読み込み途中の分は捨て、
+// 再開位置は変えないので、あとで同じところからやり直せる。
+func (a *App) CancelLoadMore() {
+	a.mu.Lock()
+	cancel := a.scanCancel
+	if !a.loadingMore || cancel == nil {
+		a.mu.Unlock()
+		return
+	}
+	a.scanCancel = nil
+	a.loadingMore = false
+	a.mu.Unlock()
+
+	cancel()
+	a.emit(EventScanDone, ScanDone{Status: a.Status(), LoadedMore: true, Cancelled: true})
+}
+
+// runLoadMore は再開位置から続きを走査し、今の DB へ追加する。
+func (a *App) runLoadMore(ctx context.Context, root, cursor string, limit int) {
+	result, err := scan.Scan(ctx, scan.Options{
+		Root:       root,
+		Limit:      limit,
+		StartAfter: cursor,
+		OnProgress: func(done, found int) {
+			a.emit(EventScanProgress, ScanProgress{Done: done, Found: found, LoadingMore: true})
+		},
 	})
+	if ctx.Err() != nil {
+		return // 取りやめたか、別のフォルダが選ばれた
+	}
+	if err == nil {
+		err = a.store.PutAll(result.Entries)
+	}
+
+	a.mu.Lock()
+	a.scanCancel = nil
+	a.loadingMore = false
+	if err == nil {
+		a.cloudOnly += result.CloudOnly
+		a.setCursor(result)
+	}
+	a.mu.Unlock()
+
+	if err != nil {
+		a.emit(EventScanDone, map[string]any{"error": err.Error(), "loadedMore": true})
+		return
+	}
+	a.emit(EventScanDone, ScanDone{Status: a.Status(), LoadedMore: true, Added: len(result.Entries)})
+}
+
+// notLoadedYet は、そのパスが続きをまだ読み込んでいない範囲にあるかを判定する。
+// ウォッチャーの通知でそうしたファイルが 1 件だけ一覧へ紛れ込むのを防ぐ。
+func (a *App) notLoadedYet(path string) bool {
+	a.mu.Lock()
+	cursor := a.cursor
+	a.mu.Unlock()
+	if cursor == "" {
+		return false
+	}
+	if _, ok := a.store.Get(path); ok {
+		return false
+	}
+	rel, err := filepath.Rel(a.store.Root(), path)
+	if err != nil {
+		return false
+	}
+	return scan.IsAfter(rel, cursor)
 }
 
 // Status は現在の読み込み状況を返す。
@@ -278,6 +405,7 @@ func (a *App) Status() Status {
 	a.mu.Lock()
 	scanning := a.scanCancel != nil
 	cloudOnly := a.cloudOnly
+	remaining := a.remaining
 	a.mu.Unlock()
 
 	return Status{
@@ -285,7 +413,8 @@ func (a *App) Status() Status {
 		EntryCount: a.store.Count(),
 		TagCount:   a.store.TagCount(),
 		Scanning:   scanning,
-		MaxEntries: store.MaxEntries,
+		MaxEntries: a.maxEntries,
+		Remaining:  remaining,
 		CloudOnly:  cloudOnly,
 	}
 }
@@ -380,6 +509,9 @@ func (a *App) consumeChanges(w *watcher.Watcher) {
 
 		if change.Removed {
 			prev, had := a.store.Get(change.Path)
+			if !had {
+				continue // 読み込んでいないファイルが消えただけ
+			}
 			if err := a.store.Delete(change.Path); err != nil {
 				continue
 			}
@@ -388,6 +520,9 @@ func (a *App) consumeChanges(w *watcher.Watcher) {
 				"path":    change.Path,
 				"removed": true,
 			})
+			continue
+		}
+		if a.notLoadedYet(change.Path) {
 			continue
 		}
 		if err := a.putEntry(change.Entry); err != nil {

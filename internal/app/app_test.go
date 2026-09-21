@@ -353,3 +353,93 @@ func TestRelatedPagesDoNotMixSameNameNotes(t *testing.T) {
 		t.Fatalf("リンク先が同じフォルダの README になっていない: %+v", from.Outgoing)
 	}
 }
+
+// newLimitedApp は上限を小さくしたアプリで、フォルダを 1 つ読み込む。
+func newLimitedApp(t *testing.T, maxEntries int, files []string) (*App, string) {
+	t.Helper()
+
+	root := t.TempDir()
+	for _, rel := range files {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("ディレクトリ作成に失敗: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("---\ntags: [共通]\n---\n\n# "+rel+"\n"), 0o644); err != nil {
+			t.Fatalf("ファイル作成に失敗: %v", err)
+		}
+	}
+
+	a, err := New()
+	if err != nil {
+		t.Fatalf("アプリの初期化に失敗: %v", err)
+	}
+	a.maxEntries = maxEntries
+	t.Cleanup(func() { a.Shutdown(context.Background()) })
+
+	if err := a.OpenFolder(root); err != nil {
+		t.Fatalf("フォルダの読み込みに失敗: %v", err)
+	}
+	waitForIdle(t, a)
+	return a, root
+}
+
+// waitForIdle は進行中の走査が終わるまで待つ。
+func waitForIdle(t *testing.T, a *App) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !a.Status().Scanning {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("走査が完了しない")
+}
+
+func TestLoadMoreReadsTheRest(t *testing.T) {
+	a, _ := newLimitedApp(t, 2, []string{"a.md", "b.md", "c.md", "d.md", "e.md"})
+
+	st := a.Status()
+	if st.EntryCount != 2 || st.Remaining != 3 {
+		t.Fatalf("初回の読み込みが想定外: %+v", st)
+	}
+
+	// 上限と同じ件数だけ続きを読む。
+	if err := a.LoadMore(false); err != nil {
+		t.Fatalf("続きの読み込みに失敗: %v", err)
+	}
+	waitForIdle(t, a)
+	if st := a.Status(); st.EntryCount != 4 || st.Remaining != 1 {
+		t.Fatalf("続きの読み込み結果が想定外: %+v", st)
+	}
+
+	// 残りをすべて読む。読んだ分はすべて検索できる。
+	if err := a.LoadMore(true); err != nil {
+		t.Fatalf("残りの読み込みに失敗: %v", err)
+	}
+	waitForIdle(t, a)
+	if st := a.Status(); st.EntryCount != 5 || st.Remaining != 0 {
+		t.Fatalf("残りの読み込み結果が想定外: %+v", st)
+	}
+	r, _ := a.Search(store.SearchOptions{Query: "#共通"})
+	if r.Total != 5 {
+		t.Fatalf("読み込んだ分が検索に出ない: %d 件", r.Total)
+	}
+
+	if err := a.LoadMore(false); err == nil {
+		t.Fatal("読み切ったあとの続きの読み込みはエラーにすべき")
+	}
+}
+
+func TestWatcherIgnoresFilesNotLoadedYet(t *testing.T) {
+	a, root := newLimitedApp(t, 1, []string{"a.md", "b.md"})
+
+	// まだ読み込んでいない範囲に作られたファイルは、一覧に紛れ込ませない。
+	if !a.notLoadedYet(filepath.Join(root, "c.md")) {
+		t.Fatal("再開位置より後ろのファイルを読み込み済みとみなしている")
+	}
+	// 読み込んだ範囲のファイルは、そのまま反映する。
+	if a.notLoadedYet(filepath.Join(root, "a.md")) || a.notLoadedYet(filepath.Join(root, "0.md")) {
+		t.Fatal("読み込み済みの範囲のファイルを除外している")
+	}
+}

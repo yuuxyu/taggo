@@ -26,10 +26,17 @@ import { Button } from "./components/Button";
 import { CardGrid } from "./components/CardGrid";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DetailPanel } from "./components/DetailPanel";
+import { LoadMoreBanner, NotLoadedHint } from "./components/LoadMore";
 import { SearchBar } from "./components/SearchBar";
 import { Toolbar } from "./components/Toolbar";
 import { useDetailHistory } from "./hooks/useDetailHistory";
 import { useLibrary } from "./hooks/useLibrary";
+
+/**
+ * 読み込み後の合計がこれを超える「すべて読み込む」は、確認を挟む。
+ * 上限は RAM の使いすぎを防ぐ安全弁なので、大きく超えるときは一度立ち止まってもらう。
+ */
+const LOAD_ALL_CONFIRM_THRESHOLD = 100_000;
 
 export default function App() {
   const library = useLibrary();
@@ -43,6 +50,8 @@ export default function App() {
   // リンク先は絞り込みの外にあることが多いので、一覧とは別に持っておく。
   const [outside, setOutside] = useState<ReadonlyMap<string, Entry>>(new Map());
   const [bulkOpen, setBulkOpen] = useState(false);
+  // 「すべて読み込む」の確認ダイアログを出しているか。
+  const [confirmLoadAll, setConfirmLoadAll] = useState(false);
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
   const [focusSignal, setFocusSignal] = useState(0);
 
@@ -217,6 +226,23 @@ export default function App() {
   );
 
   const hasFolder = (library.status?.root ?? "") !== "";
+  const remaining = library.status?.remaining ?? 0;
+  // 読み込み中は重ねて始められないので、続きを読む操作は出さないか押せなくする。
+  const busy = library.progress !== null;
+
+  const { loadMore, setLoadMoreBannerOpen } = library;
+  const requestLoadMore = useCallback(
+    (all: boolean) => {
+      const total = (library.status?.entryCount ?? 0) + remaining;
+      if (all && total > LOAD_ALL_CONFIRM_THRESHOLD) {
+        setConfirmLoadAll(true);
+        return;
+      }
+      setLoadMoreBannerOpen(false);
+      void loadMore(all);
+    },
+    [library.status?.entryCount, remaining, loadMore, setLoadMoreBannerOpen],
+  );
 
   return (
     <div className="flex h-full flex-col bg-canvas text-sm">
@@ -235,6 +261,8 @@ export default function App() {
           sort={library.sort}
           onSortChange={library.setSort}
           onChooseFolder={() => void library.chooseFolder()}
+          onShowLoadMore={() => setLoadMoreBannerOpen(true)}
+          onCancelLoadMore={() => void library.cancelLoadMore()}
           selectedCount={selected.size}
           onClearSelection={() => setSelected(new Set())}
           onOpenBulkEditor={() => setBulkOpen(true)}
@@ -272,7 +300,15 @@ export default function App() {
         </ul>
       )}
 
-      <main className="min-h-0 flex-1 bg-canvas">
+      {library.status && remaining > 0 && library.loadMoreBannerOpen && !busy && (
+        <LoadMoreBanner
+          status={library.status}
+          onLoadMore={requestLoadMore}
+          onDismiss={() => setLoadMoreBannerOpen(false)}
+        />
+      )}
+
+      <main className="flex min-h-0 flex-1 flex-col bg-canvas">
         {!hasFolder ? (
           <div className="flex h-full flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
             <FolderOpenIcon className="size-10 text-ink-faint" aria-hidden="true" />
@@ -309,16 +345,35 @@ export default function App() {
                 でタグの候補を広げられます。
               </p>
             )}
+            {!library.progress && remaining > 0 && (
+              <NotLoadedHint remaining={remaining} onLoadMore={() => requestLoadMore(false)} />
+            )}
           </div>
         ) : (
-          <CardGrid
-            entries={entries}
-            selected={selected}
-            selectionMode={selected.size > 0}
-            onOpen={(entry) => startHistory(entry.path, entry.title)}
-            onToggleSelect={toggleSelect}
-            onTagClick={handleTagClick}
-          />
+          <>
+            <div className="min-h-0 flex-1">
+              <CardGrid
+                entries={entries}
+                selected={selected}
+                selectionMode={selected.size > 0}
+                onOpen={(entry) => startHistory(entry.path, entry.title)}
+                onToggleSelect={toggleSelect}
+                onTagClick={handleTagClick}
+              />
+            </div>
+            {/* 絞り込んでいるときは、読み込んでいない分が結果に入っていないことを
+                常に見える位置で伝える。グリッドの末尾に置くと、2 万件を
+                スクロールしきるまで気付けないため、下端に固定する。 */}
+            {query !== "" && remaining > 0 && (
+              <div className="border-t border-line px-4.5 py-1.5">
+                <NotLoadedHint
+                  remaining={remaining}
+                  onLoadMore={() => requestLoadMore(false)}
+                  disabled={busy}
+                />
+              </div>
+            )}
+          </>
         )}
       </main>
 
@@ -343,6 +398,24 @@ export default function App() {
           entries={selectedEntries}
           onClose={closeBulk}
           onApplied={handleBulkApplied}
+        />
+      )}
+
+      {confirmLoadAll && library.status && (
+        <ConfirmDialog
+          title={`残りの ${remaining.toLocaleString()} 件をすべて読み込みますか？`}
+          lines={[
+            `読み込み後は合計 ${(library.status.entryCount + remaining).toLocaleString()} 件になり、` +
+              "メモリを多く使います。読み込み中も一覧は使えます。",
+            `少しずつ読みたい場合は「続きを読み込む」で ${library.status.maxEntries.toLocaleString()} 件ずつ読めます。`,
+          ]}
+          confirmLabel="すべて読み込む"
+          onConfirm={() => {
+            setConfirmLoadAll(false);
+            setLoadMoreBannerOpen(false);
+            void loadMore(true);
+          }}
+          onCancel={() => setConfirmLoadAll(false)}
         />
       )}
 

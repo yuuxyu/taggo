@@ -13,6 +13,10 @@ interface Props {
   sort: SortOrder;
   onSortChange: (next: SortOrder) => void;
   onChooseFolder: () => void;
+  /** 読み込み状況の表示を押したとき。続きを読み込むバナーを出し直す。 */
+  onShowLoadMore: () => void;
+  /** 続きの読み込みを取りやめる。 */
+  onCancelLoadMore: () => void;
   /** 選択中のファイル数。0 なら一括編集バーは出さない。 */
   selectedCount: number;
   onClearSelection: () => void;
@@ -40,6 +44,8 @@ export function Toolbar({
   sort,
   onSortChange,
   onChooseFolder,
+  onShowLoadMore,
+  onCancelLoadMore,
   selectedCount,
   onClearSelection,
   onOpenBulkEditor,
@@ -60,10 +66,46 @@ export function Toolbar({
         </span>
       )}
 
-      {progress && (
+      {progress?.loadingMore ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft py-0.5 pr-1 pl-2.5 text-xs tabular-nums text-accent-ink">
+          続きを読み込み中 {progress.done.toLocaleString()} / {progress.found.toLocaleString()}
+          <button
+            type="button"
+            className="rounded-full px-1.5 opacity-70 hover:bg-accent/15 hover:opacity-100"
+            onClick={onCancelLoadMore}
+          >
+            中止
+          </button>
+        </span>
+      ) : progress ? (
         <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs tabular-nums text-accent-ink">
           読み込み中 {progress.done.toLocaleString()} / {progress.found.toLocaleString()}
         </span>
+      ) : (
+        status &&
+        status.remaining > 0 && (
+          // バナーを閉じたあとも、ここから続きの読み込みへ戻れる。
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-full bg-sunken px-2.5 py-0.5 text-xs tabular-nums text-ink-muted hover:text-ink"
+            title="まだ読み込んでいないファイルがあります。押すと続きを読み込めます。"
+            onClick={onShowLoadMore}
+          >
+            {status.entryCount.toLocaleString()} /{" "}
+            {(status.entryCount + status.remaining).toLocaleString()} 件
+            <span
+              className="h-1 w-12 overflow-hidden rounded-full bg-line"
+              aria-hidden="true"
+            >
+              <span
+                className="block h-full bg-accent"
+                style={{
+                  width: `${(status.entryCount / (status.entryCount + status.remaining)) * 100}%`,
+                }}
+              />
+            </span>
+          </button>
+        )
       )}
 
       {(status?.cloudOnly ?? 0) > 0 && (

@@ -9,11 +9,15 @@ export function AddTags(arg1:Array<string>,arg2:Array<string>):Promise<Array<app
 
 export function AppendTagToQuery(arg1:string,arg2:string):Promise<string>;
 
+export function CancelLoadMore():Promise<void>;
+
 export function CloudSyncHint(arg1:string):Promise<string>;
 
 export function Entry(arg1:string):Promise<model.Entry>;
 
 export function FetchCloudEntry(arg1:string):Promise<model.Entry>;
+
+export function LoadMore(arg1:boolean):Promise<void>;
 
 export function MarkdownSource(arg1:string):Promise<string>;
 

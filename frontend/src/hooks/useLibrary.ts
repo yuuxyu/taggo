@@ -7,8 +7,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  cancelLoadMore as cancelLoadMoreApi,
   cloudSyncHint,
   Events,
+  loadMore as loadMoreApi,
   on,
   openFolder,
   getStatus,
@@ -61,6 +63,13 @@ export interface Library {
   dismissNotice: (id: number) => void;
   /** 単一エントリを差し替える。タグ編集後に一覧へ即反映するために使う。 */
   replaceEntry: (entry: Entry) => void;
+  /** 上限で打ち切ったことを知らせるバナーを出しているか。 */
+  loadMoreBannerOpen: boolean;
+  setLoadMoreBannerOpen: (open: boolean) => void;
+  /** 続きを読み込む。all なら残りをすべて読む。 */
+  loadMore: (all: boolean) => Promise<void>;
+  /** 続きの読み込みを取りやめる。 */
+  cancelLoadMore: () => Promise<void>;
 }
 
 export function useLibrary(): Library {
@@ -73,6 +82,7 @@ export function useLibrary(): Library {
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
+  const [loadMoreBannerOpen, setLoadMoreBannerOpen] = useState(false);
   // 走査が終わった回数。件数が前と同じでも、走査のたびに一覧を引き直すきっかけにする。
   const [scanSeq, setScanSeq] = useState(0);
 
@@ -136,24 +146,23 @@ export function useLibrary(): Library {
       setProgress(null);
       setLoading(false);
       if (done.error) {
-        notify("error", `フォルダの読み込みに失敗しました: ${done.error}`);
+        const what = done.loadedMore ? "続きの読み込み" : "フォルダの読み込み";
+        notify("error", `${what}に失敗しました: ${done.error}`);
         return;
       }
       if (done.warning) {
         notify("error", done.warning);
       }
-      if (done.cloudOnly && done.cloudOnly > 0) {
-        notify(
-          "info",
-          `クラウド上にだけあるファイルが ${done.cloudOnly.toLocaleString()} 件ありました。` +
-            "ダウンロードを避けるため中身は読んでいません（一覧には出ています）。",
-        );
-      }
-      if (done.limitReached && done.maxEntries) {
-        notify(
-          "error",
-          `対象ファイルが上限 ${done.maxEntries.toLocaleString()} 件に達したため、以降は読み込んでいません。`,
-        );
+      if (done.loadedMore) {
+        if (done.cancelled) {
+          notify("info", "続きの読み込みを取りやめました。");
+        } else {
+          notify("info", `${(done.added ?? 0).toLocaleString()} 件を追加で読み込みました。`);
+        }
+      } else {
+        // クラウド上にだけあるファイルの件数はツールバーに常に出ているので、通知はしない。
+        // 上限で打ち切ったことは、すぐ消える通知ではなく、閉じるまで残るバナーで伝える。
+        setLoadMoreBannerOpen((done.remaining ?? 0) > 0);
       }
       void getStatus().then(setStatus);
       setScanSeq((n) => n + 1);
@@ -202,6 +211,7 @@ export function useLibrary(): Library {
         setLoading(true);
         setEntries([]);
         setTotal(0);
+        setLoadMoreBannerOpen(false);
         await openFolder(dir);
       } catch (err) {
         setLoading(false);
@@ -239,6 +249,26 @@ export function useLibrary(): Library {
 
   const cancelPendingFolder = useCallback(() => setPendingFolder(null), []);
 
+  // 続きの読み込み中も一覧は消さない。読み終わったら走査完了イベントで引き直す。
+  const loadMore = useCallback(
+    async (all: boolean) => {
+      // 最初の進捗イベントが届くまでの間も、読み込み中だと分かるようにしておく。
+      // 呼び出しの完了より先にイベントが届くことがあるので、呼ぶ前に立てる。
+      setProgress({ done: 0, found: 0, loadingMore: true });
+      try {
+        await loadMoreApi(all);
+      } catch (err) {
+        setProgress(null);
+        notify("error", `続きを読み込めませんでした: ${String(err)}`);
+      }
+    },
+    [notify],
+  );
+
+  const cancelLoadMore = useCallback(async () => {
+    await cancelLoadMoreApi();
+  }, []);
+
   const replaceEntry = useCallback((entry: Entry) => {
     setEntries((prev) => {
       const idx = prev.findIndex((e) => e.path === entry.path);
@@ -269,6 +299,10 @@ export function useLibrary(): Library {
       notify,
       dismissNotice,
       replaceEntry,
+      loadMoreBannerOpen,
+      setLoadMoreBannerOpen,
+      loadMore,
+      cancelLoadMore,
     }),
     [
       status,
@@ -287,6 +321,9 @@ export function useLibrary(): Library {
       notify,
       dismissNotice,
       replaceEntry,
+      loadMoreBannerOpen,
+      loadMore,
+      cancelLoadMore,
     ],
   );
 }
