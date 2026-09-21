@@ -8,7 +8,7 @@
  * typography プラグイン（prose）に任せ、配色だけをアプリのトークンへ差し替える。
  */
 
-import { isValidElement, useEffect, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -201,15 +201,29 @@ function toPlainText(node: ReactNode): string {
 export function MarkdownPreview({ entry, onFollowLink }: Props) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 最後に本文を読み込んだファイル。同じファイルの読み直しかどうかを見分ける。
+  const loadedPath = useRef<string | null>(null);
+
+  // 別のエディタで保存されると、フォルダ監視が更新日時とサイズの変わったエントリを
+  // 届けてくる。それを合図に本文を読み直し、プレビューを最新の内容へ追従させる。
+  const version = `${String(entry.modTime)}:${entry.size}`;
 
   useEffect(() => {
     let cancelled = false;
-    setSource(null);
-    setError(null);
+    // 同じファイルの読み直しでは、読み込み中の表示へ切り替えない。
+    // 本文が一瞬消えてスクロール位置が先頭へ戻ってしまうのを避けるため。
+    const reload = loadedPath.current === entry.path;
+    loadedPath.current = entry.path;
+    if (!reload) {
+      setSource(null);
+      setError(null);
+    }
 
     void getMarkdownSource(entry.path)
       .then((text) => {
-        if (!cancelled) setSource(text);
+        if (cancelled) return;
+        setSource(text);
+        setError(null);
       })
       .catch((err) => {
         if (!cancelled) setError(String(err));
@@ -218,7 +232,7 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [entry.path]);
+  }, [entry.path, version]);
 
   if (error) {
     return <div className="py-6 text-danger">本文を読み込めませんでした: {error}</div>;
