@@ -1,16 +1,12 @@
-# Linux では webkit2gtk-4.1 しか入っていない環境が一般的になったため、
-# wails のビルドには毎回このタグが要る。忘れると 4.0 を探して失敗する。
-WAILS_TAGS := webkit2_41
-
 .PHONY: dev build test lint bindings clean
 
 ## dev: ホットリロード付きで起動する
 dev:
-	wails dev -tags $(WAILS_TAGS)
+	wails dev
 
-## build: デスクトップアプリを build/bin/taggo へ書き出す
+## build: デスクトップアプリを build/bin/taggo.exe へ書き出す
 build:
-	wails build -tags $(WAILS_TAGS)
+	wails build
 
 ## test: Go 側のテストを実行する
 test:

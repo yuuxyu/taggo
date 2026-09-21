@@ -27,6 +27,8 @@ import (
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
+
+	"github.com/yuuxyu/taggo/internal/cloudfile"
 )
 
 const (
@@ -90,7 +92,8 @@ func (c *Cache) Get(path string, width int) ([]byte, error) {
 	}
 	width = min(width, maxWidth)
 
-	info, err := os.Stat(path)
+	// 中身がクラウド上にしか無ければ、開いた時点でダウンロードが始まるので生成しない。
+	info, err := cloudfile.StatLocal(path)
 	if err != nil {
 		return nil, err
 	}

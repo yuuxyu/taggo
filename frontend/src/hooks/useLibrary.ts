@@ -31,10 +31,10 @@ export interface Notice {
   message: string;
 }
 
-/** 読み込み前に確認したいフォルダ。クラウド同期フォルダらしいときに立つ。 */
+/** 読み込み前に確認したいフォルダ。クラウド同期フォルダの中にあるときに立つ。 */
 export interface PendingFolder {
   path: string;
-  /** 推測したサービス名（「Dropbox」など）。 */
+  /** 同期サービスが Windows に登録した名前（「Dropbox」など）。 */
   service: string;
 }
 
@@ -201,9 +201,11 @@ export function useLibrary(): Library {
       } catch (err) {
         setLoading(false);
         notify("error", `フォルダを開けませんでした: ${String(err)}`);
+        // 断られた場合、バックエンドは前のフォルダを開いたままなので、一覧をそれに戻す。
+        void reload();
       }
     },
-    [notify],
+    [notify, reload],
   );
 
   // フォルダを選ぶところと読み込むところを分けてある。クラウド同期フォルダでは、

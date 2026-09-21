@@ -87,6 +87,11 @@ func (a *App) applyTags(path string, transform func(current []string) []string) 
 	if !entry.Writable {
 		return failed(path, fmt.Errorf("読み取り専用のファイルです: %s", entry.Name))
 	}
+	// タグの書き換えは中身の読み直しを伴う。走査のあとで「オンラインのみ」へ
+	// 戻っていれば、ここで開くとダウンロードが始まるので確かめ直す。
+	if err := a.ensureLocal(entry); err != nil {
+		return failed(path, err)
+	}
 
 	next := model.NormalizeTags(transform(entry.Tags))
 	if err := meta.WriteTags(path, next); err != nil {

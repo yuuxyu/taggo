@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,14 +116,13 @@ func (a *App) SelectFolder() (string, error) {
 	return dir, nil
 }
 
-// CloudSyncHint は、そのフォルダがクラウド同期フォルダらしい場合にサービス名を返す。
+// CloudSyncHint は、そのフォルダがクラウド同期フォルダの中にある場合にサービス名を返す。
 // 該当しなければ空文字を返す。
 //
-// taggo は中身がローカルに無いファイルを属性から見分けて開かずに済ませるが、
-// Google ドライブのストリーミングのように属性が付かない方式もある。
-// そうした場合に備えて、走査を始める前の確認に使う。
+// 中身がローカルに無いファイルは属性から見分けて開かずに済ませるが、
+// 同期フォルダを読み込むこと自体を利用者が意識できるよう、走査を始める前の確認に使う。
 func (a *App) CloudSyncHint(path string) string {
-	return cloudfile.LooksLikeSyncFolder(path)
+	return cloudfile.SyncRootProvider(path)
 }
 
 // FetchCloudEntry はクラウド上にだけあるファイルを、利用者の明示操作で取り込む。
@@ -148,17 +148,57 @@ func (a *App) FetchCloudEntry(path string) (*model.Entry, error) {
 	}
 	updated.RelPath = entry.RelPath
 
-	if err := a.store.Put(updated); err != nil {
+	if err := a.putEntry(updated); err != nil {
 		return nil, err
 	}
-	a.mu.Lock()
-	if a.cloudOnly > 0 {
-		a.cloudOnly--
-	}
-	a.mu.Unlock()
-
 	a.emit(EventEntryChanged, map[string]any{"path": path, "entry": updated})
 	return updated, nil
+}
+
+// ensureLocal は、これから中身を開くファイルが今もローカルにあるかを確かめる。
+//
+// 走査のあとで同期サービスがファイルを「オンラインのみ」へ戻しても、変わるのは属性だけで
+// 更新日時は変わらないため、ウォッチャーでは気付けない。DB 上はローカルのままなので、
+// 確かめずに開くとその場でダウンロードが始まってしまう。属性の問い合わせはファイルを
+// 開かずに済むので、開く直前に毎回確かめる。
+//
+// クラウド上にしか無くなっていたら、DB と画面をその状態へ直したうえでエラーを返す。
+func (a *App) ensureLocal(entry *model.Entry) error {
+	info, err := cloudfile.StatLocal(entry.Path)
+	if !errors.Is(err, cloudfile.ErrCloudOnly) {
+		return err
+	}
+
+	cloud := model.NewCloudOnly(entry.Path, info.Name(), info.Size(), info.ModTime())
+	cloud.RelPath = entry.RelPath
+	a.thumbs.Invalidate(entry.Path)
+	if err := a.putEntry(cloud); err == nil {
+		a.emit(EventEntryChanged, map[string]any{"path": entry.Path, "entry": cloud})
+	}
+	return fmt.Errorf("クラウド上にだけあるファイルに戻っていたため開きません: %s", entry.Name)
+}
+
+// putEntry はエントリを DB へ入れ、クラウド上にだけある件数を前の状態との差で数え直す。
+// 走査のあとでローカルとクラウドの間を行き来したファイルも、件数に正しく反映するため。
+func (a *App) putEntry(e *model.Entry) error {
+	prev, had := a.store.Get(e.Path)
+	if err := a.store.Put(e); err != nil {
+		return err
+	}
+	a.adjustCloudOnly(had && prev.CloudOnly, e.CloudOnly)
+	return nil
+}
+
+// adjustCloudOnly は、1 件のエントリがクラウド上にだけあるかどうかの変化を件数へ反映する。
+func (a *App) adjustCloudOnly(was, now bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	switch {
+	case !was && now:
+		a.cloudOnly++
+	case was && !now && a.cloudOnly > 0:
+		a.cloudOnly--
+	}
 }
 
 // OpenFolder は指定フォルダを走査してインメモリ DB へ展開する。
@@ -167,6 +207,13 @@ func (a *App) OpenFolder(root string) error {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("フォルダのパスを解決できませんでした: %w", err)
+	}
+	// 走査を始めると中身の読み取りでダウンロードが始まってしまうので、
+	// 開いているフォルダの状態を捨てる前に断る。
+	if cloudfile.IsGoogleDriveStreaming(abs) {
+		return fmt.Errorf("Google ドライブのストリーミング用ドライブは対象外です。" +
+			"クラウド上にだけあるファイルを見分けられず、読み込むとダウンロードが始まるためです。" +
+			"Google ドライブの設定で「ファイルをミラーリング」にしたフォルダなら読み込めます")
 	}
 
 	a.mu.Lock()
@@ -282,6 +329,12 @@ func (a *App) MarkdownSource(path string) (string, error) {
 	if e.Kind != model.KindMarkdown {
 		return "", fmt.Errorf("Markdown ファイルではありません: %s", path)
 	}
+	if e.CloudOnly {
+		return "", fmt.Errorf("クラウド上にだけあるファイルのため読み込みません: %s", e.Name)
+	}
+	if err := a.ensureLocal(e); err != nil {
+		return "", err
+	}
 	return readMarkdownBody(path)
 }
 
@@ -326,16 +379,18 @@ func (a *App) consumeChanges(w *watcher.Watcher) {
 		a.thumbs.Invalidate(change.Path)
 
 		if change.Removed {
+			prev, had := a.store.Get(change.Path)
 			if err := a.store.Delete(change.Path); err != nil {
 				continue
 			}
+			a.adjustCloudOnly(had && prev.CloudOnly, false)
 			a.emit(EventEntryChanged, map[string]any{
 				"path":    change.Path,
 				"removed": true,
 			})
 			continue
 		}
-		if err := a.store.Put(change.Entry); err != nil {
+		if err := a.putEntry(change.Entry); err != nil {
 			continue
 		}
 		a.emit(EventEntryChanged, map[string]any{

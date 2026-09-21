@@ -128,6 +128,10 @@ func (a *App) resolveEntry(raw string) (*model.Entry, error) {
 	if entry.CloudOnly {
 		return nil, fmt.Errorf("クラウド上にだけあるファイルのため配信しません")
 	}
+	// 走査のあとで「オンラインのみ」へ戻っていることもあるので、開く前に属性を確かめ直す。
+	if err := a.ensureLocal(entry); err != nil {
+		return nil, err
+	}
 	return entry, nil
 }
 
