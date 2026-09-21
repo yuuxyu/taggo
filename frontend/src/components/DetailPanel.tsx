@@ -221,6 +221,22 @@ export function DetailPanel({
     };
   }, [isImage, isMarkdown, tagsOpen, onNavigate]);
 
+  // ヘッダーがスクロールバーの上に重なると、どこまで読んだかが分かりにくい。
+  // スクロールバーの幅を測って、ヘッダーの右端をその手前で止める。
+  // スクロールバーは本文の長さやウィンドウの大きさで出たり消えたりするので、
+  // スクロール領域とその中身の両方の大きさの変化を見て測り直す。
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const measure = () => setScrollbarWidth(el.offsetWidth - el.clientWidth);
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    for (const child of el.children) observer.observe(child);
+    measure();
+    return () => observer.disconnect();
+  }, [entry.path, entry.kind, entry.cloudOnly]);
+
   const dirty = draft.length !== entry.tags.length || draft.some((t, i) => t !== entry.tags[i]);
 
   const save = async () => {
@@ -319,6 +335,8 @@ export function DetailPanel({
             isImage
               ? "bg-linear-to-b from-black/70 to-transparent pb-7 text-white"
               : "border-b border-line bg-surface pb-3"
+          // スクロールバーを隠さないよう、右端はスクロールバーの手前で止める。
+          style={{ right: scrollbarWidth }}
           } ${overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
           <header className="flex items-start gap-4 px-5 pt-4 pb-2.5">
