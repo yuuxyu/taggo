@@ -2,6 +2,7 @@
  * Markdown のプレビュー。
  *
  * CommonMark / GFM に準拠してレンダリングし、コードハイライト・テーブル・mermaid を扱う。
+ * URL だけを書いた段落は、リンク先の OGP をもとにしたリンクカードにする。
  * Front Matter はバックエンド側で本文から切り離されているため、ここには届かない。
  *
  * 本文は react-markdown が生成する素の HTML なので、装飾は Tailwind の
@@ -9,11 +10,12 @@
  */
 
 import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import { fileURL, getMarkdownSource, type Entry } from "../api/taggo";
+import { LinkCard } from "./LinkCard";
 import { Mermaid } from "./Mermaid";
 import "highlight.js/styles/github.css";
 
@@ -218,6 +220,39 @@ function MarkdownImage({
   );
 }
 
+/** 壊れたエスケープで例外にならない decodeURI。 */
+function safeDecodeURI(s: string): string {
+  try {
+    return decodeURI(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * 段落が URL 1 つだけでできていれば、その URL を返す。リンクカードにする段落を見分ける。
+ *
+ * `https://…` をそのまま書いたもの（GFM の自動リンク）と `<https://…>` が対象で、
+ * 文中のリンクや、表示名を付けた `[名前](https://…)` はリンクのまま残す。
+ * GFM は日本語などを含む URL の href をエスケープし、`www.` 始まりには http:// を
+ * 補うので、表示されている文字と href はそれを踏まえて比べる。
+ */
+function bareURL(node: ExtraProps["node"]): string | null {
+  if (!node) return null;
+  const children = node.children.filter((c) => !(c.type === "text" && c.value.trim() === ""));
+  if (children.length !== 1) return null;
+  const link = children[0];
+  if (link.type !== "element" || link.tagName !== "a") return null;
+
+  const href = link.properties.href;
+  if (typeof href !== "string" || !/^https?:\/\//i.test(href)) return null;
+  if (link.children.length !== 1 || link.children[0].type !== "text") return null;
+
+  const text = link.children[0].value;
+  const target = safeDecodeURI(href);
+  return text === href || text === target || `http://${text}` === target ? href : null;
+}
+
 /** リンクの行き先が一覧に無いときに、検索へ落とすための言葉。拡張子なしのファイル名。 */
 function noteLabel(href: string): string {
   const path = href.replace(/#.*$/, "");
@@ -298,6 +333,12 @@ export function MarkdownPreview({ entry, onFollowLink, onOpenImage, onLoaded }: 
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
+          p({ node, children, ...rest }) {
+            const url = bareURL(node);
+            const paragraph = <p {...rest}>{children}</p>;
+            // 取得できなかったときは、ただのリンクの段落として出す。
+            return url === null ? paragraph : <LinkCard url={url} fallback={paragraph} />;
+          },
           a({ href, children, ...rest }) {
             // 他のノートへのリンクは、ブラウザに渡さずその場でプレビューを切り替える。
             const notePath = resolveNotePath(href, entry);

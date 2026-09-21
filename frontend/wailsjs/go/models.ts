@@ -63,6 +63,35 @@ export namespace app {
 
 }
 
+export namespace linkcard {
+	
+	export class Preview {
+	    url: string;
+	    kind: string;
+	    title: string;
+	    description?: string;
+	    image?: string;
+	    siteName?: string;
+	    author?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Preview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.kind = source["kind"];
+	        this.title = source["title"];
+	        this.description = source["description"];
+	        this.image = source["image"];
+	        this.siteName = source["siteName"];
+	        this.author = source["author"];
+	    }
+	}
+
+}
+
 export namespace model {
 	
 	export class AudioMeta {
