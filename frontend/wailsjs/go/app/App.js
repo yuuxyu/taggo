@@ -10,6 +10,10 @@ export function AppendTagToQuery(arg1, arg2) {
   return window['go']['app']['App']['AppendTagToQuery'](arg1, arg2);
 }
 
+export function CancelLoadMore() {
+  return window['go']['app']['App']['CancelLoadMore']();
+}
+
 export function CloudSyncHint(arg1) {
   return window['go']['app']['App']['CloudSyncHint'](arg1);
 }
@@ -20,6 +24,10 @@ export function Entry(arg1) {
 
 export function FetchCloudEntry(arg1) {
   return window['go']['app']['App']['FetchCloudEntry'](arg1);
+}
+
+export function LoadMore(arg1) {
+  return window['go']['app']['App']['LoadMore'](arg1);
 }
 
 export function MarkdownSource(arg1) {

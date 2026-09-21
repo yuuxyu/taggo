@@ -5,8 +5,8 @@ export namespace app {
 	    entryCount: number;
 	    tagCount: number;
 	    scanning: boolean;
-	    limitReached: boolean;
 	    maxEntries: number;
+	    remaining: number;
 	    cloudOnly: number;
 	
 	    static createFrom(source: any = {}) {
@@ -19,8 +19,8 @@ export namespace app {
 	        this.entryCount = source["entryCount"];
 	        this.tagCount = source["tagCount"];
 	        this.scanning = source["scanning"];
-	        this.limitReached = source["limitReached"];
 	        this.maxEntries = source["maxEntries"];
+	        this.remaining = source["remaining"];
 	        this.cloudOnly = source["cloudOnly"];
 	    }
 	}

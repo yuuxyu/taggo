@@ -17,16 +17,15 @@ import (
 	"github.com/yuuxyu/taggo/internal/model"
 )
 
-// ErrLimitReached は、展開件数の上限に達して走査を打ち切ったことを表す。
-// 走査結果そのものは有効なので、呼び出し側は警告として扱えばよい。
-var ErrLimitReached = errors.New("走査対象が上限件数に達したため、以降のファイルを読み込みませんでした")
-
 // Options は走査の設定。
 type Options struct {
 	// Root は走査の起点となるフォルダ。
 	Root string
 	// Limit は展開するファイル件数の上限。0 以下なら無制限。
 	Limit int
+	// StartAfter は続きから読み込むときの再開位置で、Root からの相対パス。
+	// 走査順でこのパス以前にあるファイルは飛ばす。空なら先頭から読む。
+	StartAfter string
 	// Workers はメタデータ読み取りの並列数。0 以下なら CPU 数を使う。
 	Workers int
 	// OnProgress は進捗通知。読み取り済み件数と発見総数を受け取る。nil でもよい。
@@ -43,6 +42,12 @@ type Result struct {
 	CloudOnly int
 	// LimitReached は上限に達して打ち切ったかどうか。
 	LimitReached bool
+	// Remaining は上限で打ち切ったあとに残っている対応ファイルの数。
+	// 数えるのはディレクトリの列挙だけで、ファイルは開かない。
+	Remaining int
+	// Cursor は今回の対象にした最後のファイルの相対パス。
+	// 続きを読むときは、これを StartAfter に渡す。
+	Cursor string
 }
 
 // candidate は走査で見つけた 1 ファイル。
@@ -59,10 +64,11 @@ type candidate struct {
 // Scan は Root 配下を走査してエントリを組み立てる。
 // ctx がキャンセルされた場合は、そこまでに読めた分と ctx.Err() を返す。
 func Scan(ctx context.Context, opts Options) (Result, error) {
-	found, limitReached, err := collectPaths(ctx, opts)
+	c, err := collectPaths(ctx, opts)
 	if err != nil {
 		return Result{}, err
 	}
+	found := c.found
 
 	cloudOnly := 0
 	for _, c := range found {
@@ -71,29 +77,50 @@ func Scan(ctx context.Context, opts Options) (Result, error) {
 		}
 	}
 
+	cursor := ""
+	if len(found) > 0 {
+		cursor = relPath(opts.Root, found[len(found)-1].path)
+	}
+
 	entries, skipped, err := readAll(ctx, found, opts)
 	return Result{
 		Entries:      entries,
 		Skipped:      skipped,
 		CloudOnly:    cloudOnly,
-		LimitReached: limitReached,
+		LimitReached: c.limitReached,
+		Remaining:    c.remaining,
+		Cursor:       cursor,
 	}, err
+}
+
+// collected は collectPaths の結果。
+type collected struct {
+	found        []candidate
+	limitReached bool
+	// remaining は上限を超えた分の件数。
+	remaining int
 }
 
 // collectPaths は対応拡張子のファイルを集める。
 // メタデータの読み取りより先に対象を全部確定させることで、
 // 進捗の分母（発見総数）を最初から表示できるようにしている。
 //
+// 上限に達したあとも、残りの件数を数えるために最後まで列挙を続ける。
 // この段階ではファイルを一度も開かない。ディレクトリの列挙だけで済むため、
 // クラウド同期フォルダを走査してもダウンロードは起こらない。
-func collectPaths(ctx context.Context, opts Options) ([]candidate, bool, error) {
+func collectPaths(ctx context.Context, opts Options) (collected, error) {
 	// 走査ルート自体が読めない場合だけは打ち切る。配下の個別エラーは飛ばして続ける。
 	info, err := os.Stat(opts.Root)
 	if err != nil {
-		return nil, false, fmt.Errorf("走査フォルダを開けません: %w", err)
+		return collected{}, fmt.Errorf("走査フォルダを開けません: %w", err)
 	}
 	if !info.IsDir() {
-		return nil, false, fmt.Errorf("走査フォルダではありません: %s", opts.Root)
+		return collected{}, fmt.Errorf("走査フォルダではありません: %s", opts.Root)
+	}
+
+	var after []string
+	if opts.StartAfter != "" {
+		after = splitPath(opts.StartAfter)
 	}
 
 	supported := map[string]struct{}{}
@@ -101,10 +128,7 @@ func collectPaths(ctx context.Context, opts Options) ([]candidate, bool, error) 
 		supported[ext] = struct{}{}
 	}
 
-	var (
-		found        []candidate
-		limitReached bool
-	)
+	var c collected
 	err = filepath.WalkDir(opts.Root, func(path string, d fs.DirEntry, err error) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -115,24 +139,38 @@ func collectPaths(ctx context.Context, opts Options) ([]candidate, bool, error) 
 			return nil
 		}
 		if d.IsDir() {
-			if isSkippableDir(d.Name()) && path != opts.Root {
+			if path == opts.Root {
+				return nil
+			}
+			if isSkippableDir(d.Name()) {
 				return filepath.SkipDir
+			}
+			// 再開位置より前にあるフォルダは、中身も全部読み込み済みなので潜らない。
+			if after != nil {
+				dir := splitPath(relPath(opts.Root, path))
+				if !hasPrefix(after, dir) && compareWalkOrder(dir, after) < 0 {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}
 		if _, ok := supported[model.Ext(path)]; !ok {
 			return nil
 		}
-		if opts.Limit > 0 && len(found) >= opts.Limit {
-			limitReached = true
-			return filepath.SkipAll
+		if after != nil && compareWalkOrder(splitPath(relPath(opts.Root, path)), after) <= 0 {
+			return nil
+		}
+		if c.limitReached || (opts.Limit > 0 && len(c.found) >= opts.Limit) {
+			c.limitReached = true
+			c.remaining++
+			return nil
 		}
 		// DirEntry の Info は列挙時の情報から作られるので、ここでファイルは開かれない。
 		info, err := d.Info()
 		if err != nil {
 			return nil
 		}
-		found = append(found, candidate{
+		c.found = append(c.found, candidate{
 			path:      path,
 			info:      info,
 			cloudOnly: cloudfile.IsPlaceholder(info),
@@ -140,9 +178,55 @@ func collectPaths(ctx context.Context, opts Options) ([]candidate, bool, error) 
 		return nil
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
-		return nil, false, err
+		return collected{}, err
 	}
-	return found, limitReached, ctx.Err()
+	return c, ctx.Err()
+}
+
+// IsAfter は、Root からの相対パス rel が、走査順で cursor より後ろにあるかを判定する。
+// 続きをまだ読み込んでいない範囲のファイルかどうかを見分けるのに使う。
+func IsAfter(rel, cursor string) bool {
+	return compareWalkOrder(splitPath(rel), splitPath(cursor)) > 0
+}
+
+// compareWalkOrder は 2 つの相対パスを filepath.WalkDir の訪問順で比べる。
+//
+// WalkDir は各フォルダの中身を名前のバイト順に並べ、フォルダに出会うとその場で潜る。
+// そのためパス文字列のまま比べると、区切り文字と「.」などの大小でずれる
+// （「a」は「a.md」より先に訪れるが、文字列では後ろになる）。要素ごとに比べれば一致する。
+func compareWalkOrder(a, b []string) int {
+	for i := range min(len(a), len(b)) {
+		if c := strings.Compare(a[i], b[i]); c != 0 {
+			return c
+		}
+	}
+	return len(a) - len(b)
+}
+
+// hasPrefix は、パス要素の並び path が prefix で始まるかを判定する。
+func hasPrefix(path, prefix []string) bool {
+	if len(prefix) > len(path) {
+		return false
+	}
+	for i := range prefix {
+		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// splitPath は相対パスを要素に分ける。
+func splitPath(rel string) []string {
+	return strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/")
+}
+
+// relPath は root からの相対パスを返す。求められなければ path をそのまま返す。
+func relPath(root, path string) string {
+	if rel, err := filepath.Rel(root, path); err == nil {
+		return rel
+	}
+	return path
 }
 
 // isSkippableDir は、走査対象から外すディレクトリ名かを判定する。
@@ -236,10 +320,6 @@ func readOne(c candidate, root string) *model.Entry {
 			return nil
 		}
 	}
-	if rel, err := filepath.Rel(root, c.path); err == nil {
-		e.RelPath = rel
-	} else {
-		e.RelPath = c.path
-	}
+	e.RelPath = relPath(root, c.path)
 	return e
 }

@@ -24,6 +24,8 @@ export type SortOrder = "modified_desc" | "name_asc" | "relevance";
 export interface ScanProgress {
   done: number;
   found: number;
+  /** 続きの読み込み（loadMore）の進捗かどうか。 */
+  loadingMore?: boolean;
 }
 
 /** 走査完了イベントのペイロード。エラーや警告だけが届く場合もある。 */
@@ -31,8 +33,15 @@ export interface ScanDone {
   root?: string;
   entryCount?: number;
   tagCount?: number;
-  limitReached?: boolean;
   maxEntries?: number;
+  /** 上限で打ち切ったため、まだ読み込んでいない対応ファイルの数。 */
+  remaining?: number;
+  /** 続きの読み込み（loadMore）の完了かどうか。 */
+  loadedMore?: boolean;
+  /** 今回の読み込みで一覧に加わった件数。 */
+  added?: number;
+  /** 利用者の操作で続きの読み込みを取りやめたかどうか。 */
+  cancelled?: boolean;
   /** 中身がクラウド上にしか無いため、読み込まなかったファイルの数。 */
   cloudOnly?: number;
   error?: string;
@@ -72,6 +81,15 @@ export const fetchCloudEntry = (path: string): Promise<Entry> => Backend.FetchCl
 
 /** 指定フォルダを走査して読み込む。走査自体は非同期に進む。 */
 export const openFolder = (path: string): Promise<void> => Backend.OpenFolder(path);
+
+/**
+ * 上限で打ち切ったフォルダの続きを読み込む。all なら残りをすべて、
+ * そうでなければ上限と同じ件数だけ読む。読み込み自体は非同期に進む。
+ */
+export const loadMore = (all: boolean): Promise<void> => Backend.LoadMore(all);
+
+/** 続きの読み込みを取りやめる。読み込み途中の分は捨てられる。 */
+export const cancelLoadMore = (): Promise<void> => Backend.CancelLoadMore();
 
 /** 現在の読み込み状況を取得する。 */
 export const getStatus = (): Promise<Status> => Backend.Status();
