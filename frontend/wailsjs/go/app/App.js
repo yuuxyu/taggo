@@ -10,10 +10,6 @@ export function AppendTagToQuery(arg1, arg2) {
   return window['go']['app']['App']['AppendTagToQuery'](arg1, arg2);
 }
 
-export function Backlinks(arg1) {
-  return window['go']['app']['App']['Backlinks'](arg1);
-}
-
 export function CloudSyncHint(arg1) {
   return window['go']['app']['App']['CloudSyncHint'](arg1);
 }
@@ -32,6 +28,10 @@ export function MarkdownSource(arg1) {
 
 export function OpenFolder(arg1) {
   return window['go']['app']['App']['OpenFolder'](arg1);
+}
+
+export function RelatedPages(arg1) {
+  return window['go']['app']['App']['RelatedPages'](arg1);
 }
 
 export function RemoveTags(arg1, arg2) {

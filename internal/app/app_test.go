@@ -202,15 +202,19 @@ func TestMarkdownSourceStripsFrontMatter(t *testing.T) {
 	}
 }
 
-func TestBacklinks(t *testing.T) {
+func TestRelatedPages(t *testing.T) {
 	a, root := newTestApp(t, map[string]string{
-		"目次.md":   "# 目次\n",
-		"memo.md": "# メモ\n\n[[目次]] を参照。\n",
+		"目次.md":   "# 目次\n\n[メモ](./memo.md) からどうぞ。\n",
+		"memo.md": "# メモ\n\n[目次](目次.md) を参照。\n",
 	})
 
-	got := a.Backlinks(filepath.Join(root, "目次.md"))
-	if len(got) != 1 || got[0].Title != "メモ" {
-		t.Fatalf("バックリンクが取れていない: %+v", got)
+	got := a.RelatedPages(filepath.Join(root, "目次.md"))
+	if len(got.Incoming) != 1 || got.Incoming[0].Title != "メモ" {
+		t.Fatalf("バックリンクが取れていない: %+v", got.Incoming)
+	}
+	// 通常の Markdown リンクも関連ページとして扱う。
+	if len(got.Outgoing) != 1 || got.Outgoing[0].Title != "メモ" {
+		t.Fatalf("リンク先が取れていない: %+v", got.Outgoing)
 	}
 }
 
@@ -324,5 +328,28 @@ func TestEntryReportsFormatMismatch(t *testing.T) {
 	}
 	if entry.Err == "" {
 		t.Fatal("理由が伝わっていない")
+	}
+}
+
+// 同じ名前のノートが別のフォルダにあるとき、関連ページが混ざらないこと。
+// README.md のようにありふれた名前で起きやすい。
+func TestRelatedPagesDoNotMixSameNameNotes(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{
+		filepath.Join("a", "note.md"):   "# メモ\n\n[README](./README.md) を見てください。\n",
+		filepath.Join("a", "README.md"): "# A の説明\n",
+		filepath.Join("b", "README.md"): "# B の説明\n",
+	})
+
+	here := a.RelatedPages(filepath.Join(root, "a", "README.md"))
+	if len(here.Incoming) != 1 || here.Incoming[0].Title != "メモ" {
+		t.Fatalf("同じフォルダの README にリンク元が付いていない: %+v", here.Incoming)
+	}
+	if got := a.RelatedPages(filepath.Join(root, "b", "README.md")); len(got.Incoming) != 0 {
+		t.Fatalf("無関係なフォルダの README に関連が出ている: %+v", got.Incoming)
+	}
+
+	from := a.RelatedPages(filepath.Join(root, "a", "note.md"))
+	if len(from.Outgoing) != 1 || from.Outgoing[0].Path != filepath.Join(root, "a", "README.md") {
+		t.Fatalf("リンク先が同じフォルダの README になっていない: %+v", from.Outgoing)
 	}
 }

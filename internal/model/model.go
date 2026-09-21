@@ -46,7 +46,8 @@ type Entry struct {
 	// Preview はカードに表示する短い本文抜粋。Markdown エントリのみが値を持つ。
 	Preview string `json:"preview,omitempty"`
 
-	// Links は Markdown 本文から見つかった WikiLink の参照先。バックリンクグラフの構築に使う。
+	// Links は Markdown 本文から見つかった、他のノートへのリンク。書かれたままの
+	// 相対パス（"./sub/impl.md" など）で、関連ページのグラフ構築に使う。
 	Links []string `json:"links,omitempty"`
 
 	// Writable は taggo がこのファイルのタグを編集してよいかを表す。

@@ -28,7 +28,7 @@ created: 2026-09-18
 
 # ここから本文
 
-本文の 1 行目です。[[別のノート]] と [[参照先|別名]] を参照。
+本文の 1 行目です。[別のノート](./other.md) と [参照先](sub/ref.markdown) を参照。
 
 `+"```go\nfmt.Println(\"コードは抜粋に含めない\")\n```"+`
 
@@ -45,8 +45,8 @@ created: 2026-09-18
 	if got.Title != "ここから本文" {
 		t.Fatalf("タイトルが見出しから取れていない: %q", got.Title)
 	}
-	if want := []string{"別のノート", "参照先"}; !reflect.DeepEqual(got.Links, want) {
-		t.Fatalf("WikiLink が一致しない: got %v, want %v", got.Links, want)
+	if want := []string{"./other.md", "sub/ref.markdown"}; !reflect.DeepEqual(got.Links, want) {
+		t.Fatalf("リンクが一致しない: got %v, want %v", got.Links, want)
 	}
 	if strings.Contains(got.Preview, "コードは抜粋に含めない") {
 		t.Fatalf("コードブロックが抜粋に混ざっている: %q", got.Preview)
@@ -54,8 +54,11 @@ created: 2026-09-18
 	if !strings.Contains(got.Preview, "本文の 1 行目です") {
 		t.Fatalf("本文が抜粋に入っていない: %q", got.Preview)
 	}
-	if strings.Contains(got.Preview, "[[") {
-		t.Fatalf("WikiLink の括弧が抜粋に残っている: %q", got.Preview)
+	if strings.Contains(got.Preview, "](") {
+		t.Fatalf("リンクの URL が抜粋に残っている: %q", got.Preview)
+	}
+	if !strings.Contains(got.Preview, "別のノート") {
+		t.Fatalf("リンクの表示文字が抜粋から消えている: %q", got.Preview)
 	}
 }
 
@@ -151,5 +154,22 @@ func TestMarkdownCommaSeparatedTags(t *testing.T) {
 	}
 	if len(got.Tags) != 3 {
 		t.Fatalf("カンマ区切りタグが分割されていない: %v", got.Tags)
+	}
+}
+
+func TestNoteLinks(t *testing.T) {
+	body := []byte(`[通常リンク](./sub/別のノート.md) と
+[アンカー付き](other.markdown#見出し) と [空白入り](note%20a.md)。
+外部は対象外: [web](https://example.com/page.md)。
+画像も対象外: ![図](./img/a.png)、![md風](./x.md)。
+Markdown 以外へのリンクも対象外: [メモ帳](./memo.txt)。
+WikiLink 記法は使わない: [[別のノート]]。
+同じ行き先は 1 回だけ: [再掲](./SUB/別のノート.md)。
+`)
+
+	// 行き先はパスのまま残す。どのノートを指すかの解決は store 側。
+	want := []string{"./sub/別のノート.md", "other.markdown", "note a.md"}
+	if got := noteLinks(body); !reflect.DeepEqual(got, want) {
+		t.Fatalf("リンクの抽出が一致しない: got %v, want %v", got, want)
 	}
 }

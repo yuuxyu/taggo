@@ -262,13 +262,14 @@ func (a *App) Entry(path string) (*model.Entry, error) {
 	return e, nil
 }
 
-// Backlinks は、そのエントリを WikiLink で参照している Markdown を返す。
-func (a *App) Backlinks(path string) []store.Backlink {
+// RelatedPages は、そのノートがリンクしているページと、そのノートへ
+// リンクしているページを返す。Markdown プレビューの右側に並べる。
+func (a *App) RelatedPages(path string) store.Related {
 	e, ok := a.store.Get(path)
 	if !ok {
-		return nil
+		return store.Related{Outgoing: []store.RelatedPage{}, Incoming: []store.RelatedPage{}}
 	}
-	return a.store.Backlinks(e)
+	return a.store.Related(e)
 }
 
 // MarkdownSource は Markdown ファイルの本文（Front Matter を除いた部分）を返す。

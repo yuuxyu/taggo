@@ -49,8 +49,11 @@ type Store struct {
 	tagCounts map[string]int
 	// tagSpelling は正規化キー（小文字）から、実際に使われている表記への対応。
 	tagSpelling map[string]string
-	// backlinks は WikiLink の逆引き。キーはリンク先の正規化名。
+	// backlinks はノート間リンクの逆引き。キーはリンクの行き先を解決したパス。
 	backlinks map[string]map[string]struct{}
+	// notePaths はリンクの順引き。Markdown の拡張子を除いた小文字のパスから、
+	// その実体のパスを引く。
+	notePaths map[string]map[string]struct{}
 	// root は現在展開しているフォルダ。
 	root string
 }
@@ -67,6 +70,7 @@ func Open() (*Store, error) {
 		tagCounts:   map[string]int{},
 		tagSpelling: map[string]string{},
 		backlinks:   map[string]map[string]struct{}{},
+		notePaths:   map[string]map[string]struct{}{},
 	}
 	if err := s.createIndexes(); err != nil {
 		db.Close()
@@ -113,6 +117,7 @@ func (s *Store) Reset(root string) error {
 	s.tagCounts = map[string]int{}
 	s.tagSpelling = map[string]string{}
 	s.backlinks = map[string]map[string]struct{}{}
+	s.notePaths = map[string]map[string]struct{}{}
 	s.root = root
 	return nil
 }
@@ -269,11 +274,17 @@ func (s *Store) indexDerived(e *model.Entry) {
 		}
 	}
 	for _, link := range e.Links {
-		key := strings.ToLower(link)
+		key := linkTarget(link, e.Path, s.root)
 		if s.backlinks[key] == nil {
 			s.backlinks[key] = map[string]struct{}{}
 		}
 		s.backlinks[key][e.Path] = struct{}{}
+	}
+	for _, key := range noteKeysOf(e) {
+		if s.notePaths[key] == nil {
+			s.notePaths[key] = map[string]struct{}{}
+		}
+		s.notePaths[key][e.Path] = struct{}{}
 	}
 }
 
@@ -290,10 +301,16 @@ func (s *Store) unindexDerived(e *model.Entry) {
 		s.tagCounts[key]--
 	}
 	for _, link := range e.Links {
-		key := strings.ToLower(link)
+		key := linkTarget(link, e.Path, s.root)
 		delete(s.backlinks[key], e.Path)
 		if len(s.backlinks[key]) == 0 {
 			delete(s.backlinks, key)
+		}
+	}
+	for _, key := range noteKeysOf(e) {
+		delete(s.notePaths[key], e.Path)
+		if len(s.notePaths[key]) == 0 {
+			delete(s.notePaths, key)
 		}
 	}
 }

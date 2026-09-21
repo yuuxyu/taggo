@@ -13,7 +13,8 @@ export type Entry = model.Entry;
 export type Status = app.Status;
 export type TagSuggestion = store.TagSuggestion;
 export type TagEditResult = app.TagEditResult;
-export type Backlink = store.Backlink;
+export type RelatedPage = store.RelatedPage;
+export type Related = store.Related;
 export type SearchResult = store.Result;
 
 /** 一覧の並び順。Go 側の store.SortOrder と対応する。 */
@@ -86,8 +87,8 @@ export const suggestTags = (prefix: string, limit = 30): Promise<TagSuggestion[]
 /** 1 件のエントリを取得する。 */
 export const getEntry = (path: string): Promise<Entry> => Backend.Entry(path);
 
-/** WikiLink のバックリンクを取得する。 */
-export const getBacklinks = (path: string): Promise<Backlink[]> => Backend.Backlinks(path);
+/** そのノートの関連ページ（リンク先とリンク元）を取得する。 */
+export const getRelatedPages = (path: string): Promise<Related> => Backend.RelatedPages(path);
 
 /** Markdown の本文（Front Matter を除く）を取得する。 */
 export const getMarkdownSource = (path: string): Promise<string> => Backend.MarkdownSource(path);

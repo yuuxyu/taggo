@@ -3,6 +3,7 @@ package meta
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -27,8 +28,18 @@ const (
 )
 
 var (
-	headingRe  = regexp.MustCompile(`(?m)^#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$`)
-	wikiLinkRe = regexp.MustCompile(`\[\[([^\]\[|]+)(?:\|[^\]\[]*)?\]\]`)
+	headingRe = regexp.MustCompile(`(?m)^#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$`)
+	// mdLinkRe は Markdown のリンク。先頭の "!" が付くものは画像なので、
+	// 見分けられるよう一緒に捕まえる。
+	mdLinkRe = regexp.MustCompile(`(!?)\[[^\]\[]*\]\(\s*<?([^)<>\s]+)>?[^)]*\)`)
+	// mdImageTextRe / mdLinkTextRe は抜粋を作るときに使う。画像は丸ごと落とし、
+	// リンクは表示されている文字だけを残す。
+	mdImageTextRe = regexp.MustCompile(`!\[[^\]\[]*\]\([^)]*\)`)
+	mdLinkTextRe  = regexp.MustCompile(`\[([^\]\[]*)\]\([^)]*\)`)
+	// schemeRe は http: や mailto: などのスキーム。driveRe は Windows の
+	// ドライブ文字で、スキームに見えるがローカルパスなので除外に使う。
+	schemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
+	driveRe  = regexp.MustCompile(`^[a-zA-Z]:[\\/]`)
 )
 
 func (markdownHandler) Read(path string) (Info, error) {
@@ -51,7 +62,7 @@ func (markdownHandler) Read(path string) (Info, error) {
 		Tags:    frontMatterTags(front),
 		Title:   firstHeading(body),
 		Preview: excerpt(body),
-		Links:   wikiLinks(body),
+		Links:   noteLinks(body),
 	}
 	if info.Title == "" {
 		if t, ok := front["title"].(string); ok {
@@ -231,29 +242,54 @@ func firstHeading(body []byte) string {
 	return ""
 }
 
-func wikiLinks(body []byte) []string {
-	matches := wikiLinkRe.FindAllSubmatch(body, -1)
-	if matches == nil {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(matches))
-	out := make([]string, 0, len(matches))
-	for _, m := range matches {
-		target := strings.TrimSpace(string(m[1]))
-		// "#アンカー" が続く場合、指しているのは同じ文書の内部位置なので切り落とす。
-		if i := strings.IndexByte(target, '#'); i > 0 {
-			target = strings.TrimSpace(target[:i])
+// noteLinks は本文からノート間のリンクを集める。
+//
+// 対象は Markdown のリンクのうち .md / .markdown を指しているものだけで、
+// 行き先は `./sub/impl.md` のように書かれたまま返す。どのノートを指すのかは、
+// ファイルの位置を知っている store 側で解決する。
+// 画像と外部 URL は対象にしない。
+func noteLinks(body []byte) []string {
+	seen := map[string]struct{}{}
+	var out []string
+
+	for _, m := range mdLinkRe.FindAllSubmatch(body, -1) {
+		if len(m[1]) > 0 {
+			continue // 画像
 		}
-		if target == "" {
+		href, ok := noteFileLink(string(m[2]))
+		if !ok {
 			continue
 		}
-		if _, dup := seen[strings.ToLower(target)]; dup {
+		key := strings.ToLower(href)
+		if _, dup := seen[key]; dup {
 			continue
 		}
-		seen[strings.ToLower(target)] = struct{}{}
-		out = append(out, target)
+		seen[key] = struct{}{}
+		out = append(out, href)
 	}
 	return out
+}
+
+// noteFileLink はリンク先が Markdown ファイルを指していれば、そのパスを
+// 書かれたまま返す。スキーム付きの URL は外部を指しているものとして扱わない。
+func noteFileLink(href string) (string, bool) {
+	if href == "" || (!driveRe.MatchString(href) && schemeRe.MatchString(href)) {
+		return "", false
+	}
+
+	path := href
+	if i := strings.IndexByte(path, '#'); i >= 0 {
+		path = path[:i]
+	}
+	if unescaped, err := url.PathUnescape(path); err == nil {
+		path = unescaped
+	}
+
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown") {
+		return path, true
+	}
+	return "", false
 }
 
 // excerpt は Markdown カードに表示するプレーンテキストの抜粋を作る。
@@ -276,10 +312,11 @@ func excerpt(body []byte) string {
 		l = strings.TrimLeft(l, "#>-*+ \t")
 		l = strings.ReplaceAll(l, "**", "")
 		l = strings.ReplaceAll(l, "__", "")
-		// 表のセル区切りは空白に、WikiLink は表示名だけに落とす。
+		// 表のセル区切りは空白に、リンクは表示されている文字だけに落とす。
 		l = strings.Trim(l, "|")
 		l = strings.ReplaceAll(l, "|", " ")
-		l = wikiLinkRe.ReplaceAllString(l, "$1")
+		l = mdImageTextRe.ReplaceAllString(l, "")
+		l = mdLinkTextRe.ReplaceAllString(l, "$1")
 		l = strings.Join(strings.Fields(l), " ")
 		if l == "" {
 			continue

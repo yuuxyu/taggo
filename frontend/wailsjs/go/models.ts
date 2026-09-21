@@ -179,20 +179,61 @@ export namespace model {
 
 export namespace store {
 	
-	export class Backlink {
-	    path: string;
+	export class RelatedPage {
+	    target?: string;
+	    path?: string;
 	    title: string;
+	    relPath?: string;
+	    preview?: string;
+	    tags?: string[];
 	
 	    static createFrom(source: any = {}) {
-	        return new Backlink(source);
+	        return new RelatedPage(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.target = source["target"];
 	        this.path = source["path"];
 	        this.title = source["title"];
+	        this.relPath = source["relPath"];
+	        this.preview = source["preview"];
+	        this.tags = source["tags"];
 	    }
 	}
+	export class Related {
+	    outgoing: RelatedPage[];
+	    incoming: RelatedPage[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Related(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.outgoing = this.convertValues(source["outgoing"], RelatedPage);
+	        this.incoming = this.convertValues(source["incoming"], RelatedPage);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class Result {
 	    entries: model.Entry[];
 	    total: number;

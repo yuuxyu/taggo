@@ -14,7 +14,7 @@
  * ＋白文字に固定する（isImage で配色を切り替える）。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { setTags, type Entry } from "../api/taggo";
 import { AudioPreview } from "./AudioPreview";
@@ -23,6 +23,7 @@ import { CloudOnlyNotice } from "./CloudOnlyNotice";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Pager } from "./Pager";
+import { hasRelatedPages, RelatedPages, useRelatedPages } from "./RelatedPages";
 import { TagBadge } from "./TagBadge";
 import { TagEditor } from "./TagEditor";
 
@@ -30,7 +31,8 @@ interface Props {
   entry: Entry;
   onClose: () => void;
   onTagClick: (tag: string) => void;
-  onFollowLink: (target: string) => void;
+  /** リンクをたどる。実体のパスが分かっている場合は一緒に渡す。 */
+  onFollowLink: (target: string, path?: string) => void;
   /** 保存後の最新状態を一覧へ返す。 */
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
@@ -61,6 +63,10 @@ export function DetailPanel({
   // 中身をまだ持っていないファイルは、画像であっても黒地のビューアにはしない。
   // 取り込むかどうかを尋ねる案内を、通常のレイアウトで出す。
   const isImage = entry.kind === "image" && !entry.cloudOnly;
+
+  // 関連ページ。1 件でもあれば Markdown の本文を左、カードを右の 2 カラムにする。
+  const related = useRelatedPages(entry);
+  const showRelated = hasRelatedPages(related);
 
   // 別のエントリに切り替わったら編集中の内容を捨て、編集フォームも閉じる。
   useEffect(() => {
@@ -201,8 +207,30 @@ export function DetailPanel({
             />
           )}
           {!entry.cloudOnly && entry.kind === "markdown" && (
-            <div className="mx-auto min-h-full max-w-205 px-7 pb-18" style={{ paddingTop: contentTop }}>
-              <MarkdownPreview entry={entry} onFollowLink={onFollowLink} />
+            <div
+              className={`mx-auto min-h-full px-7 pb-18 ${showRelated ? "max-w-340" : "max-w-205"}`}
+              style={{ paddingTop: contentTop }}
+            >
+              <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-center lg:gap-10">
+                {/* 本文の 1 行が長くなりすぎないよう、横幅は 1 カラムのときと同じで止める。 */}
+                <div className="min-w-0 flex-1 lg:max-w-205">
+                  <MarkdownPreview entry={entry} onFollowLink={onFollowLink} />
+                </div>
+                {related && showRelated && (
+                  <div
+                    // 本文が長くても関連ページが見えているよう、横に並ぶ幅では貼り付ける。
+                    // ヘッダーに隠れない位置で止め、収まらないぶんはこの中だけでスクロールする。
+                    className="w-full shrink-0 lg:sticky lg:top-(--related-top) lg:max-h-[calc(100dvh-var(--related-top)-5rem)] lg:w-72 lg:overflow-auto"
+                    style={{ "--related-top": `${contentTop}px` } as CSSProperties}
+                  >
+                    <RelatedPages
+                      related={related}
+                      onOpen={(page) => onFollowLink(page.title, page.path)}
+                      onTagClick={onTagClick}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
           {!entry.cloudOnly && entry.kind === "audio" && (

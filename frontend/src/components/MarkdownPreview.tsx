@@ -8,18 +8,18 @@
  * typography プラグイン（prose）に任せ、配色だけをアプリのトークンへ差し替える。
  */
 
-import { isValidElement, useEffect, useMemo, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { fileURL, getBacklinks, getMarkdownSource, type Backlink, type Entry } from "../api/taggo";
+import { fileURL, getMarkdownSource, type Entry } from "../api/taggo";
 import { Mermaid } from "./Mermaid";
 import "highlight.js/styles/github.css";
 
 interface Props {
   entry: Entry;
-  /** WikiLink をたどるときに呼ぶ。解決できない場合は検索に落とす。 */
-  onFollowLink: (target: string) => void;
+  /** ノートへのリンクをたどるときに呼ぶ。行き先が一覧に無ければ検索に落とす。 */
+  onFollowLink: (target: string, path?: string) => void;
 }
 
 /**
@@ -96,24 +96,22 @@ function rootOf(entry: Entry): string {
 }
 
 /**
- * 本文から参照された画像の src を、taggo の配信 URL へ書き換える。
+ * 本文に書かれた相対パスを、ファイルシステム上の絶対パスへ直す。
  *
  * ブラウザは相対 URL をアプリのページ基準で解決してしまうので、そのままでは
- * ノートの隣に置いた画像を指せない。Markdown ファイルのあるフォルダを基準に
- * 絶対パスへ直したうえで、Go 側の配信エンドポイントへ渡す。
- * "/" 始まりは、ノートからの相対ではなく開いているフォルダ基準として扱う。
+ * ノートの隣に置いたファイルを指せない。Markdown ファイルのあるフォルダを
+ * 基準に絶対パスへ組み立て直す。"/" 始まりは、ノートからの相対ではなく
+ * 開いているフォルダ基準として扱う。
  *
- * http(s): や data: などスキーム付きの URL はそのまま通す。Windows の
- * ドライブ文字（C:\… や C:/…）はスキームに見えるがパスなので、そちらへ回す。
+ * http(s): や data: などスキーム付きの URL は外部を指しているので null を返す。
+ * Windows のドライブ文字（C:\… や C:/…）はスキームに見えるがパスなので通す。
  */
-function resolveImageSrc(src: string | undefined, entry: Entry): string | undefined {
-  if (!src) return src;
-
-  const driveLetter = /^[a-z]:[\\/]/i.test(src);
-  if (!driveLetter && /^[a-z][a-z0-9+.-]*:/i.test(src)) return src;
+function resolveLocalPath(target: string, entry: Entry): string | null {
+  const driveLetter = /^[a-z]:[\\/]/i.test(target);
+  if (!driveLetter && /^[a-z][a-z0-9+.-]*:/i.test(target)) return null;
 
   // 末尾のフラグメント（#…）はパスの一部ではないので落とす。
-  const cleaned = src.replace(/#.*$/, "");
+  const cleaned = target.replace(/#.*$/, "");
   let decoded = cleaned;
   try {
     decoded = decodeURIComponent(cleaned);
@@ -135,7 +133,24 @@ function resolveImageSrc(src: string | undefined, entry: Entry): string | undefi
     }
     segments.push(part);
   }
-  return fileURL(segments.join(sep));
+  return segments.join(sep);
+}
+
+/** 本文から参照された画像の src を、taggo の配信 URL へ書き換える。 */
+function resolveImageSrc(src: string | undefined, entry: Entry): string | undefined {
+  if (!src) return src;
+  const path = resolveLocalPath(src, entry);
+  return path === null ? src : fileURL(path);
+}
+
+/**
+ * ノートへのリンクなら、その行き先の絶対パスを返す。
+ * 対象は .md / .markdown を指す相対・絶対パスのリンクだけで、
+ * 外部 URL や画像・その他のファイルへのリンクは対象にしない。
+ */
+function resolveNotePath(href: string | undefined, entry: Entry): string | null {
+  if (!href || !/\.(md|markdown)(#.*)?$/i.test(href)) return null;
+  return resolveLocalPath(href, entry);
 }
 
 /**
@@ -163,15 +178,11 @@ function MarkdownImage({ src, alt, title, entry }: { src?: string; alt?: string;
   );
 }
 
-/**
- * [[WikiLink]] は Markdown の標準記法ではないので、レンダリング前に通常のリンクへ置き換える。
- * taggo 内部だけで完結させるため、スキームに taggo: を使う。
- */
-function rewriteWikiLinks(source: string): string {
-  return source.replace(/\[\[([^\][|]+)(?:\|([^\][]*))?\]\]/g, (_all, target: string, label?: string) => {
-    const text = (label ?? target).trim();
-    return `[${text}](taggo:${encodeURIComponent(target.trim())})`;
-  });
+/** リンクの行き先が一覧に無いときに、検索へ落とすための言葉。拡張子なしのファイル名。 */
+function noteLabel(href: string): string {
+  const path = href.replace(/#.*$/, "");
+  const name = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+  return name.replace(/\.(md|markdown)$/i, "");
 }
 
 /**
@@ -190,7 +201,6 @@ function toPlainText(node: ReactNode): string {
 export function MarkdownPreview({ entry, onFollowLink }: Props) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,16 +215,10 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
         if (!cancelled) setError(String(err));
       });
 
-    void getBacklinks(entry.path).then((got) => {
-      if (!cancelled) setBacklinks(got ?? []);
-    });
-
     return () => {
       cancelled = true;
     };
   }, [entry.path]);
-
-  const prepared = useMemo(() => (source === null ? "" : rewriteWikiLinks(source)), [source]);
 
   if (error) {
     return <div className="py-6 text-danger">本文を読み込めませんでした: {error}</div>;
@@ -224,86 +228,64 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
   }
 
   return (
-    <>
-      <div
-        className={`prose prose-sm max-w-none break-words ${PROSE_COLORS} ${PROSE_TWEAKS} ${HLJS_DARK}`}
-      >
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeHighlight]}
-          components={{
-            a({ href, children, ...rest }) {
-              if (href?.startsWith("taggo:")) {
-                const target = decodeURIComponent(href.slice("taggo:".length));
-                return (
-                  <a
-                    href={href}
-                    className="rounded-sm bg-accent-soft px-0.5 no-underline"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onFollowLink(target);
-                    }}
-                  >
-                    {children}
-                  </a>
-                );
-              }
-              // 外部リンクは既定のブラウザへ委ねる。
+    <div
+      className={`prose prose-sm max-w-none break-words ${PROSE_COLORS} ${PROSE_TWEAKS} ${HLJS_DARK}`}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={{
+          a({ href, children, ...rest }) {
+            // 他のノートへのリンクは、ブラウザに渡さずその場でプレビューを切り替える。
+            const notePath = resolveNotePath(href, entry);
+            if (notePath !== null && href !== undefined) {
               return (
-                <a href={href} target="_blank" rel="noreferrer" {...rest}>
+                <a
+                  href={href}
+                  title={notePath}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onFollowLink(noteLabel(href), notePath);
+                  }}
+                >
                   {children}
                 </a>
               );
-            },
-            img({ src, alt, title }) {
-              // 相対パスはページ基準ではなく、Markdown ファイルの位置を基準に解決する。
-              return (
-                <MarkdownImage
-                  src={typeof src === "string" ? src : undefined}
-                  alt={alt}
-                  title={title}
-                  entry={entry}
-                />
-              );
-            },
-            code({ className, children, ...rest }) {
-              // mermaid のコードブロックは図として描く。
-              // rehype-highlight が "hljs" などのクラスを足すため、完全一致では判定できない。
-              if (className?.split(/\s+/).includes("language-mermaid")) {
-                return <Mermaid source={toPlainText(children).trimEnd()} />;
-              }
-              return (
-                <code className={className} {...rest}>
-                  {children}
-                </code>
-              );
-            },
-          }}
-        >
-          {prepared}
-        </ReactMarkdown>
-      </div>
-
-      {backlinks.length > 0 && (
-        <section className="mt-10 border-t border-line pt-4">
-          <h4 className="m-0 mb-2 text-xs font-semibold tracking-wide text-ink-muted">
-            このノートを参照しているノート
-          </h4>
-          <ul className="flex list-none flex-wrap gap-2 p-0">
-            {backlinks.map((link) => (
-              <li key={link.path}>
-                <button
-                  type="button"
-                  className="rounded-full border border-line bg-sunken px-2.5 py-0.5 text-xs hover:border-accent"
-                  onClick={() => onFollowLink(link.title)}
-                >
-                  {link.title}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </>
+            }
+            // 外部リンクは既定のブラウザへ委ねる。
+            return (
+              <a href={href} target="_blank" rel="noreferrer" {...rest}>
+                {children}
+              </a>
+            );
+          },
+          img({ src, alt, title }) {
+            // 相対パスはページ基準ではなく、Markdown ファイルの位置を基準に解決する。
+            return (
+              <MarkdownImage
+                src={typeof src === "string" ? src : undefined}
+                alt={alt}
+                title={title}
+                entry={entry}
+              />
+            );
+          },
+          code({ className, children, ...rest }) {
+            // mermaid のコードブロックは図として描く。
+            // rehype-highlight が "hljs" などのクラスを足すため、完全一致では判定できない。
+            if (className?.split(/\s+/).includes("language-mermaid")) {
+              return <Mermaid source={toPlainText(children).trimEnd()} />;
+            }
+            return (
+              <code className={className} {...rest}>
+                {children}
+              </code>
+            );
+          },
+        }}
+      >
+        {source}
+      </ReactMarkdown>
+    </div>
   );
 }

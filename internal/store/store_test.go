@@ -1,6 +1,7 @@
 package store
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -217,28 +218,43 @@ func TestPutReplacesDerivedData(t *testing.T) {
 	}
 }
 
-func TestBacklinks(t *testing.T) {
+func TestRelated(t *testing.T) {
 	s := newTestStore(t)
 
 	target := newEntry("目次.md", "目次", 1, nil)
 	source := newEntry("memo.md", "メモ", 1, nil)
-	source.Links = []string{"目次"}
+	source.Links = []string{"./目次.md", "./まだ無いノート.md"}
 	if err := s.PutAll([]*model.Entry{target, source}); err != nil {
 		t.Fatalf("投入に失敗: %v", err)
 	}
 
-	got := s.Backlinks(target)
-	if len(got) != 1 || got[0].Path != "memo.md" {
-		t.Fatalf("バックリンクが取れていない: %+v", got)
+	got := s.Related(target)
+	if len(got.Incoming) != 1 || got.Incoming[0].Path != "memo.md" {
+		t.Fatalf("バックリンクが取れていない: %+v", got.Incoming)
+	}
+	if len(got.Outgoing) != 0 {
+		t.Fatalf("リンクしていないのに関連が出ている: %+v", got.Outgoing)
 	}
 
-	// リンクを外したら、バックリンクも消えること。
+	// リンク元から見ると、行き先のあるリンクと無いリンクが順番どおりに並ぶ。
+	from := s.Related(source)
+	if len(from.Outgoing) != 2 {
+		t.Fatalf("リンク先の数が合わない: %+v", from.Outgoing)
+	}
+	if from.Outgoing[0].Path != "目次.md" {
+		t.Fatalf("リンク先が引けていない: %+v", from.Outgoing[0])
+	}
+	if from.Outgoing[1].Path != "" || from.Outgoing[1].Title != "まだ無いノート" {
+		t.Fatalf("行き先の無いリンクの扱いが違う: %+v", from.Outgoing[1])
+	}
+
+	// リンクを外したら、関連も消えること。
 	source.Links = nil
 	if err := s.Put(source); err != nil {
 		t.Fatalf("更新に失敗: %v", err)
 	}
-	if got := s.Backlinks(target); len(got) != 0 {
-		t.Fatalf("外したリンクが残っている: %+v", got)
+	if got := s.Related(target); len(got.Incoming) != 0 {
+		t.Fatalf("外したリンクが残っている: %+v", got.Incoming)
 	}
 }
 
@@ -264,5 +280,68 @@ func TestResetClearsEverything(t *testing.T) {
 	}
 	if r.Total != 3 {
 		t.Fatalf("リセット後の再投入が反映されていない: %d", r.Total)
+	}
+}
+
+// mdEntry はフォルダ階層のあるテスト用の Markdown エントリを組み立てる。
+func mdEntry(path, title string, links ...string) *model.Entry {
+	return &model.Entry{
+		Path:    path,
+		RelPath: path,
+		Name:    filepath.Base(path),
+		Ext:     ".md",
+		Kind:    model.KindMarkdown,
+		ModTime: time.Now(),
+		Tags:    []string{},
+		Title:   title,
+		Links:   links,
+	}
+}
+
+// 同じ名前のノートが別のフォルダにあっても、関連ページが混ざらないこと。
+// リンクはファイル名ではなく、リンク元から見たパスで解決する。
+func TestRelatedResolvesLinkPaths(t *testing.T) {
+	s := newTestStore(t)
+
+	here := filepath.Join("root", "a", "README.md")
+	elsewhere := filepath.Join("root", "b", "README.md")
+	source := mdEntry(filepath.Join("root", "a", "note.md"), "フォルダ A のメモ", "./README.md")
+	if err := s.PutAll([]*model.Entry{
+		mdEntry(here, "A の説明"),
+		mdEntry(elsewhere, "B の説明"),
+		source,
+	}); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+
+	if got := s.Related(source).Outgoing; len(got) != 1 || got[0].Path != here {
+		t.Fatalf("リンク先が同じフォルダの README になっていない: %+v", got)
+	}
+
+	if got := s.Related(mdEntry(here, "A の説明")).Incoming; len(got) != 1 {
+		t.Fatalf("同じフォルダの README にリンク元が集まっていない: %+v", got)
+	}
+	if got := s.Related(mdEntry(elsewhere, "B の説明")).Incoming; len(got) != 0 {
+		t.Fatalf("無関係なフォルダの README に関連が出ている: %+v", got)
+	}
+}
+
+// 上の階層や別フォルダを指すパスも、書かれたとおりにたどれること。
+func TestRelatedFollowsRelativePaths(t *testing.T) {
+	s := newTestStore(t)
+
+	target := filepath.Join("root", "b", "手順.md")
+	source := mdEntry(filepath.Join("root", "a", "note.md"), "メモ", "../b/手順.md", "/b/手順.md")
+	if err := s.Reset("root"); err != nil {
+		t.Fatalf("リセットに失敗: %v", err)
+	}
+	if err := s.PutAll([]*model.Entry{mdEntry(target, "手順"), source}); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+
+	// 2 通りの書き方で同じノートを指しているので、カードは 1 枚にまとまる。
+	got := s.Related(source).Outgoing
+	if len(got) != 1 || got[0].Path != target {
+		t.Fatalf("相対パスのリンクをたどれていない: %+v", got)
 	}
 }

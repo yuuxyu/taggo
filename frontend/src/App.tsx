@@ -91,11 +91,16 @@ export default function App() {
     [query, setQuery],
   );
 
-  // WikiLink をたどる。同じ名前のノートが一覧にあればそれを開き、無ければ検索に落とす。
+  // ノート間のリンクをたどる。行き先のパスが分かっていればそれを開く。
+  // 分からないのは行き先のファイルがまだ無いときなので、名前で一覧から探す。
+  // どちらも今の絞り込みの外にあると開けないので、検索条件のほうを切り替える。
   const handleFollowLink = useCallback(
-    (target: string) => {
+    (target: string, path?: string) => {
       const needle = target.toLowerCase();
+      const wanted = path?.toLowerCase();
       const found = entries.find((e) => {
+        // パスの大文字小文字は、Windows に合わせて区別しない。
+        if (wanted !== undefined) return e.path.toLowerCase() === wanted;
         const base = e.name.replace(/\.[^.]+$/, "").toLowerCase();
         return base === needle || e.title.toLowerCase() === needle;
       });
@@ -103,9 +108,11 @@ export default function App() {
         setDetailPath(found.path);
         return;
       }
+      // ファイル自体が無いのか、今の絞り込みから外れているだけなのかは
+      // 一覧からは分からないので、どちらにも当てはまる言い方にする。
       setQuery(target);
       setDetailPath(null);
-      notify("info", `「${target}」に一致するノートが無かったため、検索条件に切り替えました。`);
+      notify("info", `「${target}」が今の一覧に見つからないため、検索条件に切り替えました。`);
     },
     [entries, notify, setQuery],
   );
