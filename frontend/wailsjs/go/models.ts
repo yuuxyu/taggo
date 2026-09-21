@@ -204,6 +204,7 @@ export namespace store {
 	export class Related {
 	    outgoing: RelatedPage[];
 	    incoming: RelatedPage[];
+	    sameTag: RelatedPage[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Related(source);
@@ -213,6 +214,7 @@ export namespace store {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.outgoing = this.convertValues(source["outgoing"], RelatedPage);
 	        this.incoming = this.convertValues(source["incoming"], RelatedPage);
+	        this.sameTag = this.convertValues(source["sameTag"], RelatedPage);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

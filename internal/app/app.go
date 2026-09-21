@@ -263,11 +263,11 @@ func (a *App) Entry(path string) (*model.Entry, error) {
 }
 
 // RelatedPages は、そのノートがリンクしているページと、そのノートへ
-// リンクしているページを返す。Markdown プレビューの右側に並べる。
+// リンクしているページ、タグが重なるノートを返す。Markdown プレビューの右側に並べる。
 func (a *App) RelatedPages(path string) store.Related {
 	e, ok := a.store.Get(path)
 	if !ok {
-		return store.Related{Outgoing: []store.RelatedPage{}, Incoming: []store.RelatedPage{}}
+		return store.EmptyRelated()
 	}
 	return a.store.Related(e)
 }

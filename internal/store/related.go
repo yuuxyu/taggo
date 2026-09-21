@@ -5,8 +5,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tidwall/buntdb"
 	"github.com/yuuxyu/taggo/internal/model"
 )
+
+// sameTagLimit は「同じタグのノート」として出す件数の上限。
+// 右の列に収まり、眺めて選べる程度の数に抑える。
+const sameTagLimit = 5
 
 // RelatedPage は関連ページとして並べるカード 1 枚ぶんの情報。
 type RelatedPage struct {
@@ -27,16 +32,25 @@ type Related struct {
 	Outgoing []RelatedPage `json:"outgoing"`
 	// Incoming はそのノートへリンクしているページ。タイトル順に並ぶ。
 	Incoming []RelatedPage `json:"incoming"`
+	// SameTag はタグが重なっているノート。リンクで既に出ているものは除き、
+	// 重なるタグの多い順、同じなら更新日時の新しい順に、上限件数まで並ぶ。
+	SameTag []RelatedPage `json:"sameTag"`
 }
 
-// Related は、そのノートが参照しているページと、そのノートを参照している
-// ページをまとめて返す。
+// EmptyRelated は関連ページが 1 件も無い状態。
+// フロントエンドでは配列として扱うので、nil ではなく空スライスで返す。
+func EmptyRelated() Related {
+	return Related{Outgoing: []RelatedPage{}, Incoming: []RelatedPage{}, SameTag: []RelatedPage{}}
+}
+
+// Related は、そのノートが参照しているページ、そのノートを参照している
+// ページ、タグが重なるノートをまとめて返す。
 //
 // リンクは Markdown の記法で書かれたパスなので、行き先はリンク元のノートの
 // 位置を基準に 1 つへ定まる。名前が同じというだけで、無関係なフォルダの
 // ノートを関連に出すことはない。
 func (s *Store) Related(entry *model.Entry) Related {
-	related := Related{Outgoing: []RelatedPage{}, Incoming: []RelatedPage{}}
+	related := EmptyRelated()
 	if entry == nil {
 		return related
 	}
@@ -72,6 +86,7 @@ func (s *Store) Related(entry *model.Entry) Related {
 	}
 
 	for _, path := range sources {
+		seen[path] = struct{}{}
 		if e, ok := s.Get(path); ok {
 			related.Incoming = append(related.Incoming, relatedPage("", e))
 		}
@@ -82,7 +97,63 @@ func (s *Store) Related(entry *model.Entry) Related {
 		}
 		return related.Incoming[i].Path < related.Incoming[j].Path
 	})
+
+	seen[entry.Path] = struct{}{}
+	related.SameTag = s.sameTagNotes(entry.Tags, seen)
 	return related
+}
+
+// sameTagNotes は tags と 1 つ以上タグが重なるノートを返す。
+// exclude に含まれるパス（自分自身やリンクで既に出ているノート）は除く。
+//
+// タグの逆引き索引は持っていないので、全件をなめる。検索と同じく
+// 上限 2 万件の範囲なら、プレビューを開くたびに走らせても十分に速い。
+func (s *Store) sameTagNotes(tags []string, exclude map[string]struct{}) []RelatedPage {
+	pages := []RelatedPage{}
+	if len(tags) == 0 {
+		return pages
+	}
+	want := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		want[strings.ToLower(tag)] = struct{}{}
+	}
+
+	type candidate struct {
+		entry  *model.Entry
+		shared int
+	}
+	var found []candidate
+	// 更新日時の新しい順になめるので、重なる数が同じなら新しいノートが先に来る。
+	_ = s.db.View(func(tx *buntdb.Tx) error {
+		return tx.Descend(idxModTime, func(_, raw string) bool {
+			e := decodeEntry(raw)
+			if e == nil || e.Kind != model.KindMarkdown {
+				return true
+			}
+			if _, skip := exclude[e.Path]; skip {
+				return true
+			}
+			shared := 0
+			for _, tag := range e.Tags {
+				if _, ok := want[strings.ToLower(tag)]; ok {
+					shared++
+				}
+			}
+			if shared > 0 {
+				found = append(found, candidate{entry: e, shared: shared})
+			}
+			return true
+		})
+	})
+
+	sort.SliceStable(found, func(i, j int) bool { return found[i].shared > found[j].shared })
+	if len(found) > sameTagLimit {
+		found = found[:sameTagLimit]
+	}
+	for _, c := range found {
+		pages = append(pages, relatedPage("", c.entry))
+	}
+	return pages
 }
 
 // noteKeysOf は、そのエントリがリンク先として名指されうるキーを返す。

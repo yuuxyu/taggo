@@ -23,7 +23,7 @@ import { CloudOnlyNotice } from "./CloudOnlyNotice";
 import { ImagePreview, WHEEL_COOLDOWN_MS } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Pager } from "./Pager";
-import { hasRelatedPages, RelatedPages, useRelatedPages } from "./RelatedPages";
+import { RelatedPages, useRelatedPages } from "./RelatedPages";
 import { TagBadge } from "./TagBadge";
 import { TagEditor } from "./TagEditor";
 
@@ -89,9 +89,9 @@ export function DetailPanel({
   const isImage = entry.kind === "image" && !entry.cloudOnly;
   const isMarkdown = entry.kind === "markdown";
 
-  // 関連ページ。1 件でもあれば Markdown の本文を左、カードを右の 2 カラムにする。
+  // 関連ページ。Markdown は常に本文を左、関連ページを右の 2 カラムにする。
+  // ノートを行き来してもレイアウトが跳ねないよう、リンクが 1 件も無くても右の列は残す。
   const related = useRelatedPages(entry);
-  const showRelated = hasRelatedPages(related);
 
   // 別のエントリに切り替わったら編集中の内容を捨て、編集フォームも閉じる。
   useEffect(() => {
@@ -290,13 +290,11 @@ export function DetailPanel({
           {!entry.cloudOnly && entry.kind === "markdown" && (
             <div
               // 幅は本文（全角 38 文字 = 18px × 38 = 42.75rem = 171）に左右の余白を足したもの。
-              // 関連ページがあるときは、さらに間隔（6）とカードの列（56）を足す。
+              // さらに間隔（6）と関連ページの列（56）を足す。
               // 画面の半分ほどのウィンドウ（約 1000px）でも 2 カラムに収まるよう、
               // 横に並べるときは余白と間隔を詰め、60rem（960px）から横に並べる。
               // それより少し狭いだけなら、本文の列が縮んで 2 カラムのまま収まる。
-              className={`mx-auto min-h-full px-7 pb-18 ${
-                showRelated ? "max-w-243 min-[60rem]:px-5" : "max-w-185"
-              }`}
+              className="mx-auto min-h-full max-w-243 px-7 pb-18 min-[60rem]:px-5"
               style={{ paddingTop: contentTop }}
             >
               <div className="flex flex-col gap-8 min-[60rem]:flex-row min-[60rem]:items-start min-[60rem]:justify-center min-[60rem]:gap-6">
@@ -304,20 +302,21 @@ export function DetailPanel({
                 <div className="min-w-0 flex-1 min-[60rem]:max-w-171">
                   <MarkdownPreview entry={entry} onFollowLink={onFollowLink} />
                 </div>
-                {related && showRelated && (
-                  <div
-                    // 本文が長くても関連ページが見えているよう、横に並ぶ幅では貼り付ける。
-                    // ヘッダーに隠れない位置で止め、収まらないぶんはこの中だけでスクロールする。
-                    className="w-full shrink-0 min-[60rem]:sticky min-[60rem]:top-(--related-top) min-[60rem]:max-h-[calc(100dvh-var(--related-top)-5rem)] min-[60rem]:w-56 min-[60rem]:overflow-auto"
-                    style={{ "--related-top": `${contentTop}px` } as CSSProperties}
-                  >
+                <div
+                  // 本文が長くても関連ページが見えているよう、横に並ぶ幅では貼り付ける。
+                  // ヘッダーに隠れない位置で止め、収まらないぶんはこの中だけでスクロールする。
+                  className="w-full shrink-0 min-[60rem]:sticky min-[60rem]:top-(--related-top) min-[60rem]:max-h-[calc(100dvh-var(--related-top)-5rem)] min-[60rem]:w-56 min-[60rem]:overflow-auto"
+                  style={{ "--related-top": `${contentTop}px` } as CSSProperties}
+                >
+                  {/* 読み込み中は空けておき、「無い」表示が一瞬出るのを避ける。 */}
+                  {related && (
                     <RelatedPages
                       related={related}
                       onOpen={(page) => onFollowLink(page.title, page.path)}
                       onTagClick={onTagClick}
                     />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -335,9 +334,9 @@ export function DetailPanel({
             isImage
               ? "bg-linear-to-b from-black/70 to-transparent pb-7 text-white"
               : "border-b border-line bg-surface pb-3"
+          } ${overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
           // スクロールバーを隠さないよう、右端はスクロールバーの手前で止める。
           style={{ right: scrollbarWidth }}
-          } ${overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
           <header className="flex items-start gap-4 px-5 pt-4 pb-2.5">
             <div className="min-w-0 flex-1">

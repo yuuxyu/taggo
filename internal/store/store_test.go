@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -343,5 +344,38 @@ func TestRelatedFollowsRelativePaths(t *testing.T) {
 	got := s.Related(source).Outgoing
 	if len(got) != 1 || got[0].Path != target {
 		t.Fatalf("相対パスのリンクをたどれていない: %+v", got)
+	}
+}
+
+// 同じタグのノートは、重なるタグの多い順に並び、自分自身とリンクで出ているものは除くこと。
+func TestRelatedSameTag(t *testing.T) {
+	s := newTestStore(t)
+
+	self := newEntry("self.md", "自分", 0, []string{"go", "設計"})
+	self.Links = []string{"./linked.md"}
+	both := newEntry("both.md", "両方", 3, []string{"Go", "設計"})
+	older := newEntry("older.md", "古い", 2, []string{"go"})
+	newer := newEntry("newer.md", "新しい", 1, []string{"go"})
+	linked := newEntry("linked.md", "リンク先", 1, []string{"go"})
+	other := newEntry("other.md", "無関係", 1, []string{"料理"})
+	audio := newEntry("song.mp3", "曲", 1, []string{"go"})
+	audio.Kind = model.KindAudio
+	if err := s.PutAll([]*model.Entry{self, both, older, newer, linked, other, audio}); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+
+	got := s.Related(self).SameTag
+	var paths []string
+	for _, p := range got {
+		paths = append(paths, p.Path)
+	}
+	want := []string{"both.md", "newer.md", "older.md"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("同じタグのノートが違う: got %v, want %v", paths, want)
+	}
+
+	// タグの無いノートでは何も出さない。空でも nil ではなく空スライスで返す。
+	if got := s.Related(newEntry("none.md", "タグなし", 0, nil)).SameTag; got == nil || len(got) != 0 {
+		t.Fatalf("タグが無いのに同じタグのノートが出ている: %+v", got)
 	}
 }

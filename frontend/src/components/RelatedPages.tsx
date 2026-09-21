@@ -7,10 +7,12 @@
  *
  * 行き先がまだ存在しないリンクも、書きかけのメモでは珍しくないため、
  * 「まだ無いノート」として控えめに出す。
+ *
+ * リンクの無いノートでも右の列が空にならないよう、タグが重なるノートも数件並べる。
  */
 
 import { useEffect, useState } from "react";
-import { ArrowUpRightIcon, ArrowUturnLeftIcon } from "@heroicons/react/16/solid";
+import { ArrowUpRightIcon, ArrowUturnLeftIcon, TagIcon } from "@heroicons/react/16/solid";
 import { getRelatedPages, type Entry, type Related, type RelatedPage } from "../api/taggo";
 import { TagBadge } from "./TagBadge";
 
@@ -45,11 +47,6 @@ export function useRelatedPages(entry: Entry): Related | null {
   }, [entry.kind, entry.cloudOnly, entry.path, entry.modTime]);
 
   return related;
-}
-
-/** 関連ページが 1 件でもあるか。無いときはサイドを出さず 1 カラムに戻す。 */
-export function hasRelatedPages(related: Related | null): boolean {
-  return related !== null && related.outgoing.length + related.incoming.length > 0;
 }
 
 function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & Omit<Props, "related">) {
@@ -99,15 +96,16 @@ function Section({
   title,
   icon,
   pages,
+  emptyText = "まだありません",
   onOpen,
   onTagClick,
 }: {
   title: string;
   icon: React.ReactNode;
   pages: RelatedPage[];
+  /** 1 件も無いときに出す文言。 */
+  emptyText?: string;
 } & Omit<Props, "related">) {
-  if (pages.length === 0) return null;
-
   return (
     <section>
       <h3 className="m-0 mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted">
@@ -115,16 +113,21 @@ function Section({
         {title}
         <span className="tabular-nums text-ink-faint">{pages.length}</span>
       </h3>
-      <ul className="m-0 flex list-none flex-col gap-2 p-0">
-        {pages.map((page) => (
-          <RelatedCard
-            key={`${page.path}\u0000${page.target}`}
-            page={page}
-            onOpen={onOpen}
-            onTagClick={onTagClick}
-          />
-        ))}
-      </ul>
+      {/* 右の列は常に出すので、リンクが無くても見出しは残し、無いことを控えめに示す。 */}
+      {pages.length === 0 ? (
+        <p className="m-0 text-xs text-ink-faint">{emptyText}</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {pages.map((page) => (
+            <RelatedCard
+              key={`${page.path}\u0000${page.target}`}
+              page={page}
+              onOpen={onOpen}
+              onTagClick={onTagClick}
+            />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -143,6 +146,14 @@ export function RelatedPages({ related, onOpen, onTagClick }: Props) {
         title="このページへのリンク"
         icon={<ArrowUturnLeftIcon className="size-3.5" aria-hidden="true" />}
         pages={related.incoming}
+        onOpen={onOpen}
+        onTagClick={onTagClick}
+      />
+      <Section
+        title="同じタグのノート"
+        icon={<TagIcon className="size-3.5" aria-hidden="true" />}
+        pages={related.sameTag}
+        emptyText="タグが重なるノートはありません"
         onOpen={onOpen}
         onTagClick={onTagClick}
       />
