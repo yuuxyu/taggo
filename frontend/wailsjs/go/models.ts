@@ -125,6 +125,7 @@ export namespace model {
 	    title: string;
 	    preview?: string;
 	    links?: string[];
+	    tagPage?: string;
 	    writable: boolean;
 	    image?: ImageMeta;
 	    audio?: AudioMeta;
@@ -149,6 +150,7 @@ export namespace model {
 	        this.title = source["title"];
 	        this.preview = source["preview"];
 	        this.links = source["links"];
+	        this.tagPage = source["tagPage"];
 	        this.writable = source["writable"];
 	        this.image = this.convertValues(source["image"], ImageMeta);
 	        this.audio = this.convertValues(source["audio"], AudioMeta);
@@ -186,6 +188,9 @@ export namespace store {
 	    relPath?: string;
 	    preview?: string;
 	    tags?: string[];
+	    kind?: string;
+	    cloudOnly?: boolean;
+	    tagPage?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RelatedPage(source);
@@ -199,12 +204,18 @@ export namespace store {
 	        this.relPath = source["relPath"];
 	        this.preview = source["preview"];
 	        this.tags = source["tags"];
+	        this.kind = source["kind"];
+	        this.cloudOnly = source["cloudOnly"];
+	        this.tagPage = source["tagPage"];
 	    }
 	}
 	export class Related {
 	    outgoing: RelatedPage[];
 	    incoming: RelatedPage[];
 	    sameTag: RelatedPage[];
+	    tagged: RelatedPage[];
+	    taggedTotal: number;
+	    duplicates: RelatedPage[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Related(source);
@@ -215,6 +226,9 @@ export namespace store {
 	        this.outgoing = this.convertValues(source["outgoing"], RelatedPage);
 	        this.incoming = this.convertValues(source["incoming"], RelatedPage);
 	        this.sameTag = this.convertValues(source["sameTag"], RelatedPage);
+	        this.tagged = this.convertValues(source["tagged"], RelatedPage);
+	        this.taggedTotal = source["taggedTotal"];
+	        this.duplicates = this.convertValues(source["duplicates"], RelatedPage);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -236,9 +250,42 @@ export namespace store {
 		}
 	}
 	
+	export class TagPageGroup {
+	    tag: string;
+	    pages: model.Entry[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TagPageGroup(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tag = source["tag"];
+	        this.pages = this.convertValues(source["pages"], model.Entry);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Result {
 	    entries: model.Entry[];
 	    total: number;
+	    tagPages: TagPageGroup[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Result(source);
@@ -248,6 +295,7 @@ export namespace store {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.entries = this.convertValues(source["entries"], model.Entry);
 	        this.total = source["total"];
+	        this.tagPages = this.convertValues(source["tagPages"], TagPageGroup);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -286,6 +334,7 @@ export namespace store {
 	        this.limit = source["limit"];
 	    }
 	}
+	
 	export class TagSuggestion {
 	    tag: string;
 	    count: number;

@@ -13,7 +13,11 @@ type Result struct {
 	// Entries は絞り込み後、指定された並び順に整列したエントリ。
 	Entries []*model.Entry `json:"entries"`
 	// Total は絞り込み後の総件数。ページングしても全体件数が分かるようにする。
+	// 見出しとして別枠に出したタグページ（TagPages）は含まない。
 	Total int `json:"total"`
+	// TagPages は、検索しているタグのタグページ。グリッドの上に見出しとして出す。
+	// 検索語のタグの順に並び、タグページの無いタグは含まない。
+	TagPages []TagPageGroup `json:"tagPages"`
 }
 
 // SearchOptions は検索の付帯条件。
@@ -42,10 +46,23 @@ func (s *Store) Search(opts SearchOptions) (Result, error) {
 		index, descending = idxModTime, true
 	}
 
+	// タグで検索しているときは、そのタグのタグページを見出しとして別枠で返し、
+	// グリッドからは外す。同じページが見出しと一覧の両方に出ないようにするため。
+	headings := s.tagPageGroups(q.Tags())
+	headed := make(map[string]struct{})
+	for _, g := range headings {
+		for _, e := range g.Pages {
+			headed[e.Path] = struct{}{}
+		}
+	}
+
 	matched := make([]*model.Entry, 0, 64)
 	visit := func(_, raw string) bool {
 		e := decodeEntry(raw)
 		if e == nil {
+			return true
+		}
+		if _, skip := headed[e.Path]; skip {
 			return true
 		}
 		if matches(e, q) {
@@ -70,7 +87,7 @@ func (s *Store) Search(opts SearchOptions) (Result, error) {
 
 	total := len(matched)
 	matched = applyWindow(matched, opts.Offset, opts.Limit)
-	return Result{Entries: matched, Total: total}, nil
+	return Result{Entries: matched, Total: total, TagPages: headings}, nil
 }
 
 // applyWindow は offset / limit を適用する。範囲外の指定は空結果として扱う。

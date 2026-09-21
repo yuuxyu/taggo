@@ -9,18 +9,43 @@
  * 「まだ無いノート」として控えめに出す。
  *
  * リンクの無いノートでも右の列が空にならないよう、タグが重なるノートも数件並べる。
+ *
+ * タグページ（Front Matter の `tag:` でタグを説明していると宣言したノート）では、
+ * そのタグが付いたファイルを種類を問わず先頭に並べる。本文がタグの説明、
+ * 右の列がそのタグの目次という形になる。同じタグを宣言しているほかのノートがあれば、
+ * さらにその上へ警告として出す。
  */
 
 import { useEffect, useState } from "react";
-import { ArrowUpRightIcon, ArrowUturnLeftIcon, TagIcon } from "@heroicons/react/16/solid";
-import { getRelatedPages, type Entry, type Related, type RelatedPage } from "../api/taggo";
+import {
+  ArrowUpRightIcon,
+  ArrowUturnLeftIcon,
+  BookOpenIcon,
+  ExclamationTriangleIcon,
+  MusicalNoteIcon,
+  TagIcon,
+} from "@heroicons/react/16/solid";
+import {
+  getRelatedPages,
+  thumbURL,
+  type Entry,
+  type Related,
+  type RelatedPage,
+} from "../api/taggo";
 import { TagBadge } from "./TagBadge";
 
-interface Props {
-  related: Related;
+interface CardProps {
   /** カードを開く。行き先が無いリンクでは path が空になる。 */
   onOpen: (page: RelatedPage) => void;
   onTagClick: (tag: string) => void;
+}
+
+interface Props extends CardProps {
+  related: Related;
+  /** 開いているノートがタグページなら、説明しているタグ。 */
+  tagPage?: string;
+  /** そのタグだけで一覧を絞り込み直す。タグの付いたファイルを全部見るときに使う。 */
+  onSearchTag: (tag: string) => void;
 }
 
 /**
@@ -49,9 +74,12 @@ export function useRelatedPages(entry: Entry): Related | null {
   return related;
 }
 
-function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & Omit<Props, "related">) {
+function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & CardProps) {
   // 行き先が無いリンクは、Go 側で path を省いて返す。
   const missing = !page.path;
+  // タグページには画像も並ぶので、小さなサムネイルを添える。
+  // 中身がクラウド上にしか無い画像は、取りに行くとダウンロードが始まるので出さない。
+  const thumbnail = page.kind === "image" && !page.cloudOnly ? page.path : undefined;
 
   return (
     <li
@@ -61,25 +89,42 @@ function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & Omit<
     >
       <button
         type="button"
-        className="flex w-full flex-col items-start gap-1 px-3 py-2.5 text-left focus-visible:outline-hidden"
+        className="flex w-full flex-col overflow-hidden rounded-lg text-left focus-visible:outline-hidden"
         title={missing ? `「${page.target}」はまだ見つかりません` : page.relPath}
         onClick={() => onOpen(page)}
       >
-        <span className="line-clamp-2 text-sm leading-snug font-semibold break-words">
-          {page.title}
-        </span>
-        {missing ? (
-          <span className="text-xs">まだ無いノート</span>
-        ) : (
-          <>
-            <span className="w-full truncate text-xs text-ink-faint">{page.relPath}</span>
-            {page.preview && (
-              <span className="line-clamp-2 text-xs leading-relaxed text-ink-muted">
-                {page.preview}
-              </span>
-            )}
-          </>
+        {thumbnail && (
+          <img
+            className="block h-24 w-full border-b border-line bg-sunken object-cover"
+            src={thumbURL(thumbnail, 240)}
+            alt=""
+            loading="lazy"
+            draggable={false}
+          />
         )}
+        <span className="flex w-full flex-col items-start gap-1 px-3 py-2.5">
+          <span className="flex max-w-full items-start gap-1 text-sm leading-snug font-semibold break-words">
+            {page.kind === "audio" && (
+              <MusicalNoteIcon className="mt-0.5 size-3.5 shrink-0 text-ink-faint" aria-hidden="true" />
+            )}
+            {page.tagPage && (
+              <BookOpenIcon className="mt-0.5 size-3.5 shrink-0 text-accent-ink" aria-label="タグページ" />
+            )}
+            <span className="line-clamp-2">{page.title}</span>
+          </span>
+          {missing ? (
+            <span className="text-xs">まだ無いノート</span>
+          ) : (
+            <>
+              <span className="w-full truncate text-xs text-ink-faint">{page.relPath}</span>
+              {page.preview && (
+                <span className="line-clamp-2 text-xs leading-relaxed text-ink-muted">
+                  {page.preview}
+                </span>
+              )}
+            </>
+          )}
+        </span>
       </button>
       {page.tags && page.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 px-3 pb-2.5">
@@ -96,22 +141,28 @@ function Section({
   title,
   icon,
   pages,
+  count = pages.length,
   emptyText = "まだありません",
+  footer,
   onOpen,
   onTagClick,
 }: {
   title: string;
   icon: React.ReactNode;
   pages: RelatedPage[];
+  /** 見出しに添える件数。並べきれなかった分も数えたいときに渡す。 */
+  count?: number;
   /** 1 件も無いときに出す文言。 */
   emptyText?: string;
-} & Omit<Props, "related">) {
+  /** 一覧の下に添えるもの。 */
+  footer?: React.ReactNode;
+} & CardProps) {
   return (
     <section>
       <h3 className="m-0 mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted">
         {icon}
-        {title}
-        <span className="tabular-nums text-ink-faint">{pages.length}</span>
+        <span className="min-w-0 truncate">{title}</span>
+        <span className="tabular-nums text-ink-faint">{count}</span>
       </h3>
       {/* 右の列は常に出すので、リンクが無くても見出しは残し、無いことを控えめに示す。 */}
       {pages.length === 0 ? (
@@ -128,13 +179,57 @@ function Section({
           ))}
         </ul>
       )}
+      {footer}
     </section>
   );
 }
 
-export function RelatedPages({ related, onOpen, onTagClick }: Props) {
+export function RelatedPages({ related, tagPage, onOpen, onTagClick, onSearchTag }: Props) {
+  // 古いバックエンドの応答でも落ちないよう、欠けていれば空として扱う。
+  const tagged = related.tagged ?? [];
+  const duplicates = related.duplicates ?? [];
+  const rest = related.taggedTotal - tagged.length;
+
   return (
     <aside className="flex flex-col gap-5" aria-label="関連ページ">
+      {tagPage && duplicates.length > 0 && (
+        <section className="rounded-lg bg-danger-soft px-3 py-2.5 text-xs text-danger">
+          <p className="m-0 mb-2 flex items-start gap-1.5">
+            <ExclamationTriangleIcon className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              ほかにも #{tagPage} をタグページとして宣言しているファイルがあります。
+              どれか 1 つに絞ってください。
+            </span>
+          </p>
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {duplicates.map((page) => (
+              <RelatedCard key={page.path} page={page} onOpen={onOpen} onTagClick={onTagClick} />
+            ))}
+          </ul>
+        </section>
+      )}
+      {tagPage && (
+        <Section
+          title={`#${tagPage} が付いたファイル`}
+          icon={<BookOpenIcon className="size-3.5 shrink-0" aria-hidden="true" />}
+          pages={tagged}
+          count={related.taggedTotal}
+          emptyText="このタグが付いたファイルはまだありません"
+          footer={
+            rest > 0 && (
+              <button
+                type="button"
+                className="mt-2 text-xs text-accent-ink hover:underline"
+                onClick={() => onSearchTag(tagPage)}
+              >
+                残り {rest.toLocaleString()} 件も一覧で見る
+              </button>
+            )
+          }
+          onOpen={onOpen}
+          onTagClick={onTagClick}
+        />
+      )}
       <Section
         title="このページからリンク"
         icon={<ArrowUpRightIcon className="size-3.5" aria-hidden="true" />}

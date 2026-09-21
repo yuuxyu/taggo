@@ -173,3 +173,54 @@ WikiLink 記法は使わない: [[別のノート]]。
 		t.Fatalf("リンクの抽出が一致しない: got %v, want %v", got, want)
 	}
 }
+
+// Front Matter の tag: で、そのノートが説明しているタグを宣言できること。
+// 付いているタグ（tags:）とは別に読み、1 つに決められない書き方は無視する。
+func TestMarkdownTagPage(t *testing.T) {
+	h := markdownHandler{}
+	cases := []struct {
+		name  string
+		front string
+		want  string
+	}{
+		{"文字列", "tag: golang\ntags: [プログラミング]\n", "golang"},
+		{"数値", "tag: 2026\n", "2026"},
+		{"リストは対象外", "tag: [golang, rust]\n", ""},
+		{"宣言なし", "tags: [golang]\n", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := writeTemp(t, "page.md", "---\n"+c.front+"---\n\n# 見出し\n")
+			got, err := h.Read(path)
+			if err != nil {
+				t.Fatalf("読み取りに失敗: %v", err)
+			}
+			if got.TagPage != c.want {
+				t.Fatalf("タグページのタグが違う: got %q, want %q", got.TagPage, c.want)
+			}
+		})
+	}
+
+	// tag: はタグとしては数えない。
+	path := writeTemp(t, "page.md", "---\ntag: golang\ntags: [プログラミング]\n---\n")
+	got, _ := h.Read(path)
+	if want := []string{"プログラミング"}; !reflect.DeepEqual(got.Tags, want) {
+		t.Fatalf("tag: がタグに混ざっている: got %v, want %v", got.Tags, want)
+	}
+}
+
+// タグを書き換えても、tag: の宣言は残ること。
+func TestMarkdownWriteTagsKeepsTagPage(t *testing.T) {
+	h := markdownHandler{}
+	path := writeTemp(t, "page.md", "---\ntag: golang\ntags: [a]\n---\n\n本文\n")
+	if err := h.WriteTags(path, []string{"b"}); err != nil {
+		t.Fatalf("書き込みに失敗: %v", err)
+	}
+	got, err := h.Read(path)
+	if err != nil {
+		t.Fatalf("読み取りに失敗: %v", err)
+	}
+	if got.TagPage != "golang" {
+		t.Fatalf("タグの書き換えで tag: が消えた: %q", got.TagPage)
+	}
+}

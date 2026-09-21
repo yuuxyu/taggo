@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
+import { BookOpenIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { setTags, type Entry } from "../api/taggo";
 import type { DetailHistory } from "../hooks/useDetailHistory";
 import { AudioPreview } from "./AudioPreview";
@@ -36,6 +36,8 @@ interface Props {
   entry: Entry;
   onClose: () => void;
   onTagClick: (tag: string) => void;
+  /** そのタグだけで一覧を絞り込み直す。タグページから、そのタグの一覧へ移るときに使う。 */
+  onSearchTag: (tag: string) => void;
   /** リンクをたどる。実体のパスが分かっている場合は一緒に渡す。 */
   onFollowLink: (target: string, path?: string) => void;
   /** Markdown の本文中の画像を開く。 */
@@ -83,6 +85,7 @@ export function DetailPanel({
   entry,
   onClose,
   onTagClick,
+  onSearchTag,
   onFollowLink,
   onOpenImage,
   onEntryUpdated,
@@ -389,8 +392,10 @@ export function DetailPanel({
                   {related && (
                     <RelatedPages
                       related={related}
+                      tagPage={entry.tagPage}
                       onOpen={(page) => onFollowLink(page.title, page.path)}
                       onTagClick={onTagClick}
+                      onSearchTag={onSearchTag}
                     />
                   )}
                 </div>
@@ -427,6 +432,17 @@ export function DetailPanel({
             )}
             <div className="min-w-0 flex-1">
               <h2 className="m-0 text-lg leading-snug break-words">{entry.title}</h2>
+              {entry.tagPage && (
+                <button
+                  type="button"
+                  className="mt-0.5 inline-flex max-w-full items-center gap-1 text-xs font-semibold text-accent-ink hover:underline"
+                  title={`#${entry.tagPage} で絞り込む`}
+                  onClick={() => onSearchTag(entry.tagPage!)}
+                >
+                  <BookOpenIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">#{entry.tagPage} のタグページ</span>
+                </button>
+              )}
               <p
                 className={`mt-0.5 mb-0 truncate text-xs ${isImage ? "text-white/70" : "text-ink-faint"}`}
                 title={entry.path}

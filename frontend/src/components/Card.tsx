@@ -4,7 +4,7 @@
  */
 
 import { memo, useState } from "react";
-import { CheckIcon, CloudIcon, LockClosedIcon } from "@heroicons/react/16/solid";
+import { BookOpenIcon, CheckIcon, CloudIcon, LockClosedIcon } from "@heroicons/react/16/solid";
 import { thumbURL, type Entry } from "../api/taggo";
 import { TagBadge } from "./TagBadge";
 
@@ -215,6 +215,15 @@ export const Card = memo(function Card({
             </span>
           )}
           <span className="tabular-nums">{formatSize(entry.size)}</span>
+          {entry.tagPage && (
+            <span
+              className="inline-flex min-w-0 items-center gap-0.5 text-accent-ink"
+              title={`#${entry.tagPage} のタグページ`}
+            >
+              <BookOpenIcon className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">タグページ</span>
+            </span>
+          )}
           {entry.cloudOnly ? (
             <span
               className="inline-flex items-center gap-0.5 text-ink-muted"

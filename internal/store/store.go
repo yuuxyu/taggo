@@ -42,7 +42,7 @@ const (
 type Store struct {
 	db *buntdb.DB
 
-	// mu は tagCounts と linkGraph を守る。BuntDB 自体は内部で同期しているが、
+	// mu は tagCounts・リンクの索引・tagPages を守る。BuntDB 自体は内部で同期しているが、
 	// これらの派生データとの整合を取るために別途必要になる。
 	mu sync.RWMutex
 	// tagCounts はタグごとの使用件数。オートコンプリートの候補順に使う。
@@ -54,6 +54,9 @@ type Store struct {
 	// notePaths はリンクの順引き。Markdown の拡張子を除いた小文字のパスから、
 	// その実体のパスを引く。
 	notePaths map[string]map[string]struct{}
+	// tagPages はタグページの索引。小文字のタグから、そのタグを `tag:` で
+	// 宣言しているノートのパスを引く。同じタグを複数のノートが宣言しうるので集合で持つ。
+	tagPages map[string]map[string]struct{}
 	// root は現在展開しているフォルダ。
 	root string
 }
@@ -71,6 +74,7 @@ func Open() (*Store, error) {
 		tagSpelling: map[string]string{},
 		backlinks:   map[string]map[string]struct{}{},
 		notePaths:   map[string]map[string]struct{}{},
+		tagPages:    map[string]map[string]struct{}{},
 	}
 	if err := s.createIndexes(); err != nil {
 		db.Close()
@@ -118,6 +122,7 @@ func (s *Store) Reset(root string) error {
 	s.tagSpelling = map[string]string{}
 	s.backlinks = map[string]map[string]struct{}{}
 	s.notePaths = map[string]map[string]struct{}{}
+	s.tagPages = map[string]map[string]struct{}{}
 	s.root = root
 	return nil
 }
@@ -286,6 +291,12 @@ func (s *Store) indexDerived(e *model.Entry) {
 		}
 		s.notePaths[key][e.Path] = struct{}{}
 	}
+	if key := tagPageKey(e); key != "" {
+		if s.tagPages[key] == nil {
+			s.tagPages[key] = map[string]struct{}{}
+		}
+		s.tagPages[key][e.Path] = struct{}{}
+	}
 }
 
 // unindexDerived は indexDerived の逆操作。
@@ -311,6 +322,12 @@ func (s *Store) unindexDerived(e *model.Entry) {
 		delete(s.notePaths[key], e.Path)
 		if len(s.notePaths[key]) == 0 {
 			delete(s.notePaths, key)
+		}
+	}
+	if key := tagPageKey(e); key != "" {
+		delete(s.tagPages[key], e.Path)
+		if len(s.tagPages[key]) == 0 {
+			delete(s.tagPages, key)
 		}
 	}
 }
