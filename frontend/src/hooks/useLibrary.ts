@@ -22,6 +22,7 @@ import {
   type ScanProgress,
   type SortOrder,
   type Status,
+  type TagPageGroup,
 } from "../api/taggo";
 
 /** 入力が落ち着くまでの待ち時間（ミリ秒）。体感では即時に見える範囲に収める。 */
@@ -45,6 +46,8 @@ export interface Library {
   progress: ScanProgress | null;
   entries: Entry[];
   total: number;
+  /** 検索しているタグのタグページ。一覧（entries）とは別枠で、グリッドの上に見出しとして出す。 */
+  tagPages: TagPageGroup[];
   query: string;
   sort: SortOrder;
   loading: boolean;
@@ -77,6 +80,7 @@ export function useLibrary(): Library {
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [total, setTotal] = useState(0);
+  const [tagPages, setTagPages] = useState<TagPageGroup[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOrder>("name_asc");
   const [loading, setLoading] = useState(false);
@@ -110,6 +114,7 @@ export function useLibrary(): Library {
         const result = await search(q, s);
         setEntries(result.entries ?? []);
         setTotal(result.total ?? 0);
+        setTagPages(result.tagPages ?? []);
       } catch (err) {
         notify("error", `検索に失敗しました: ${String(err)}`);
       }
@@ -172,6 +177,7 @@ export function useLibrary(): Library {
       if (change.removed) {
         setEntries((prev) => prev.filter((e) => e.path !== change.path));
         setTotal((prev) => Math.max(0, prev - 1));
+        setTagPages((prev) => replaceTagPage(prev, change.path, null));
         void getStatus().then(setStatus);
         return;
       }
@@ -184,6 +190,7 @@ export function useLibrary(): Library {
         next[idx] = updated;
         return next;
       });
+      setTagPages((prev) => replaceTagPage(prev, updated.path, updated));
       void getStatus().then(setStatus);
     });
 
@@ -211,6 +218,7 @@ export function useLibrary(): Library {
         setLoading(true);
         setEntries([]);
         setTotal(0);
+        setTagPages([]);
         setLoadMoreBannerOpen(false);
         await openFolder(dir);
       } catch (err) {
@@ -285,6 +293,7 @@ export function useLibrary(): Library {
       progress,
       entries,
       total,
+      tagPages,
       query,
       sort,
       loading,
@@ -309,6 +318,7 @@ export function useLibrary(): Library {
       progress,
       entries,
       total,
+      tagPages,
       query,
       sort,
       loading,
@@ -326,6 +336,25 @@ export function useLibrary(): Library {
       cancelLoadMore,
     ],
   );
+}
+
+/**
+ * 見出しに出しているタグページのうち、path のものを最新のエントリへ差し替える。
+ * 消えたとき（entry が null）や、`tag:` の宣言が外れたり別のタグへ変わったりしたときは
+ * 見出しから外す。ほかのタグを宣言し直したノートを見出しへ足すのは、次の検索に任せる。
+ */
+function replaceTagPage(groups: TagPageGroup[], path: string, entry: Entry | null): TagPageGroup[] {
+  if (!groups.some((g) => g.pages.some((p) => p.path === path))) return groups;
+  return groups
+    .map((g) => ({
+      ...g,
+      pages: g.pages.flatMap((p) => {
+        if (p.path !== path) return [p];
+        const still = entry !== null && (entry.tagPage ?? "").toLowerCase() === g.tag.toLowerCase();
+        return still ? [entry] : [];
+      }),
+    }))
+    .filter((g) => g.pages.length > 0);
 }
 
 /** openFolder を直接呼びたい場面（起動引数など）向けの再エクスポート。 */

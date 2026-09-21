@@ -27,6 +27,7 @@ type Info struct {
 	Title   string
 	Preview string
 	Links   []string
+	TagPage string
 	Image   *model.ImageMeta
 	Audio   *model.AudioMeta
 }
@@ -163,6 +164,7 @@ func Read(path string, info os.FileInfo) (*model.Entry, error) {
 	}
 	e.Preview = got.Preview
 	e.Links = got.Links
+	e.TagPage = model.NormalizeTag(got.TagPage)
 	e.Image = got.Image
 	e.Audio = got.Audio
 	return e, nil

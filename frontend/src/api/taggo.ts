@@ -16,6 +16,11 @@ export type TagEditResult = app.TagEditResult;
 export type RelatedPage = store.RelatedPage;
 export type Related = store.Related;
 export type SearchResult = store.Result;
+/**
+ * 検索しているタグのタグページ。生成されたクラスをそのまま使うと、
+ * 差し替えのために作り直した値が型に合わなくなるので、データの形だけを取り出す。
+ */
+export type TagPageGroup = Pick<store.TagPageGroup, "tag" | "pages">;
 
 /** 一覧の並び順。Go 側の store.SortOrder と対応する。 */
 export type SortOrder = "modified_desc" | "name_asc" | "relevance";

@@ -379,3 +379,146 @@ func TestRelatedSameTag(t *testing.T) {
 		t.Fatalf("タグが無いのに同じタグのノートが出ている: %+v", got)
 	}
 }
+
+// newTagPage はタグページのエントリを組み立てる。
+func newTagPage(path, tag string, tags []string) *model.Entry {
+	e := newEntry(path, tag+" のページ", 5, tags)
+	e.TagPage = tag
+	return e
+}
+
+// タグで検索すると、そのタグのタグページが見出しとして別枠で返り、一覧からは外れること。
+func TestSearchTagPageHeading(t *testing.T) {
+	s := newTestStore(t)
+	seed(t, s)
+	// タグページ自身にも同じタグが付いている場合と、付いていない場合の両方を用意する。
+	golang := newTagPage("tags/golang.md", "Golang", []string{"golang"})
+	rust := newTagPage("tags/rust.md", "rust", nil)
+	if err := s.PutAll([]*model.Entry{golang, rust}); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+
+	r, err := s.Search(SearchOptions{Query: "#golang", Sort: SortNameAsc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(paths(r), ","); got != "a.md,c.md" {
+		t.Fatalf("タグページが一覧から外れていない: %s", got)
+	}
+	if r.Total != 2 {
+		t.Fatalf("件数にタグページが含まれている: %d", r.Total)
+	}
+	if len(r.TagPages) != 1 || r.TagPages[0].Tag != "golang" || len(r.TagPages[0].Pages) != 1 ||
+		r.TagPages[0].Pages[0].Path != "tags/golang.md" {
+		t.Fatalf("見出しのタグページが違う: %+v", r.TagPages)
+	}
+
+	// OR でも検索語の順に並ぶ。タグページ自身にタグが無くても見出しには出る。
+	r, _ = s.Search(SearchOptions{Query: "#rust OR #golang", Sort: SortNameAsc})
+	if len(r.TagPages) != 2 || r.TagPages[0].Tag != "rust" || r.TagPages[1].Tag != "golang" {
+		t.Fatalf("OR の見出しが違う: %+v", r.TagPages)
+	}
+
+	// 否定やタグ以外の検索では見出しを出さず、タグページも普通に一覧へ出る。
+	for _, q := range []string{"-#golang", "のページ", ""} {
+		r, _ = s.Search(SearchOptions{Query: q, Sort: SortNameAsc})
+		if len(r.TagPages) != 0 {
+			t.Fatalf("%q で見出しが出ている: %+v", q, r.TagPages)
+		}
+	}
+	r, _ = s.Search(SearchOptions{Query: "のページ", Sort: SortNameAsc})
+	if got := strings.Join(paths(r), ","); got != "tags/golang.md,tags/rust.md" {
+		t.Fatalf("タグページが一覧に出ていない: %s", got)
+	}
+}
+
+// 同じタグを複数のノートが宣言していたら、見出しには両方を出すこと。
+// 片方を消したり宣言を外したりすれば、索引からも外れること。
+func TestSearchTagPageDuplicates(t *testing.T) {
+	s := newTestStore(t)
+	seed(t, s)
+	one := newTagPage("one.md", "golang", nil)
+	two := newTagPage("two.md", "GoLang", nil)
+	if err := s.PutAll([]*model.Entry{one, two}); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+
+	r, _ := s.Search(SearchOptions{Query: "#golang"})
+	if len(r.TagPages) != 1 || len(r.TagPages[0].Pages) != 2 {
+		t.Fatalf("重複したタグページが両方出ていない: %+v", r.TagPages)
+	}
+
+	if err := s.Delete("one.md"); err != nil {
+		t.Fatal(err)
+	}
+	two.TagPage = ""
+	if err := s.Put(two); err != nil {
+		t.Fatal(err)
+	}
+	r, _ = s.Search(SearchOptions{Query: "#golang"})
+	if len(r.TagPages) != 0 {
+		t.Fatalf("消したタグページが残っている: %+v", r.TagPages)
+	}
+}
+
+// タグページの関連ページには、そのタグが付いたファイルを種類を問わず並べ、
+// 同じタグを宣言しているほかのノートは重複として別に返すこと。
+func TestRelatedTagPage(t *testing.T) {
+	s := newTestStore(t)
+	seed(t, s)
+	page := newTagPage("tags/golang.md", "golang", []string{"golang"})
+	dup := newTagPage("dup.md", "golang", []string{"golang"})
+	song := newEntry("song.mp3", "曲", 0, []string{"GoLang"})
+	song.Kind = model.KindAudio
+	if err := s.PutAll([]*model.Entry{page, dup, song}); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+
+	got := s.Related(page)
+	var tagged []string
+	for _, p := range got.Tagged {
+		tagged = append(tagged, p.Path)
+	}
+	// 更新日時の新しい順。自分自身と重複しているタグページは含めない。
+	if want := "song.mp3,a.md,c.md"; strings.Join(tagged, ",") != want {
+		t.Fatalf("タグの付いたファイルが違う: got %v, want %s", tagged, want)
+	}
+	if got.TaggedTotal != 3 {
+		t.Fatalf("件数が違う: %d", got.TaggedTotal)
+	}
+	if got.Tagged[0].Kind != model.KindAudio {
+		t.Fatalf("種類が返っていない: %+v", got.Tagged[0])
+	}
+	if len(got.Duplicates) != 1 || got.Duplicates[0].Path != "dup.md" {
+		t.Fatalf("重複しているタグページが違う: %+v", got.Duplicates)
+	}
+	// タグの付いたファイルの欄に出したノートは、同じタグのノートの欄に繰り返さない。
+	for _, p := range got.SameTag {
+		if p.Path == "a.md" || p.Path == "c.md" {
+			t.Fatalf("同じタグのノートに重ねて出ている: %+v", got.SameTag)
+		}
+	}
+
+	// タグページでないノートでは空で返す。
+	plain := s.Related(newEntry("a.md", "Go の設計メモ", 1, []string{"golang"}))
+	if plain.Tagged == nil || len(plain.Tagged) != 0 || len(plain.Duplicates) != 0 {
+		t.Fatalf("タグページでないのにタグの付いたファイルが出ている: %+v", plain)
+	}
+}
+
+// タグの付いたファイルは上限件数までに絞り、件数は全体を返すこと。
+func TestRelatedTagPageLimit(t *testing.T) {
+	s := newTestStore(t)
+	page := newTagPage("page.md", "many", nil)
+	entries := []*model.Entry{page}
+	for i := range taggedLimit + 5 {
+		entries = append(entries, newEntry(filepath.Join("n", strings.Repeat("x", i+1)+".md"), "n", i, []string{"many"}))
+	}
+	if err := s.PutAll(entries); err != nil {
+		t.Fatalf("投入に失敗: %v", err)
+	}
+	got := s.Related(page)
+	if len(got.Tagged) != taggedLimit || got.TaggedTotal != taggedLimit+5 {
+		t.Fatalf("上限の扱いが違う: %d 件 / 全 %d 件", len(got.Tagged), got.TaggedTotal)
+	}
+}

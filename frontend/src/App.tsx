@@ -28,6 +28,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DetailPanel } from "./components/DetailPanel";
 import { LoadMoreBanner, NotLoadedHint } from "./components/LoadMore";
 import { SearchBar } from "./components/SearchBar";
+import { TagPageHeader } from "./components/TagPageHeader";
 import { Toolbar } from "./components/Toolbar";
 import { useDetailHistory } from "./hooks/useDetailHistory";
 import { useLibrary } from "./hooks/useLibrary";
@@ -175,6 +176,27 @@ export default function App() {
     [query, setQuery, clearHistory],
   );
 
+  // タグページのバッジや「すべて表示」から、そのタグだけで絞り込み直す。
+  // バッジのクリックと違って今の検索条件には足さず、そのタグの全体を見せる。
+  const handleSearchTag = useCallback(
+    (tag: string) => {
+      void appendTagToQuery("", tag).then((next) => {
+        setQuery(next);
+        clearHistory();
+      });
+    },
+    [setQuery, clearHistory],
+  );
+
+  // 見出しのタグページを開く。タグページは一覧から外してあるので、一覧の外として持つ。
+  const openTagPage = useCallback(
+    (entry: Entry) => {
+      setOutside((prev) => new Map(prev).set(entry.path, entry));
+      startHistory(entry.path, entry.title);
+    },
+    [startHistory],
+  );
+
   // ノート間のリンクをたどる。行き先のパスが分かっていればそれを開く。
   // 一覧の外にあっても、登録済みのファイルならそのまま開ける。
   // パスが分からないのは行き先のファイルがまだ無いときなので、名前で一覧から探す。
@@ -309,6 +331,7 @@ export default function App() {
       )}
 
       <main className="flex min-h-0 flex-1 flex-col bg-canvas">
+        {hasFolder && <TagPageHeader groups={library.tagPages} onOpen={openTagPage} />}
         {!hasFolder ? (
           <div className="flex h-full flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
             <FolderOpenIcon className="size-10 text-ink-faint" aria-hidden="true" />
@@ -326,7 +349,7 @@ export default function App() {
             </Button>
           </div>
         ) : entries.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
             <p className="m-0 text-base font-semibold text-ink">
               {library.progress ? "読み込み中です…" : "条件に合うファイルがありません"}
             </p>
@@ -382,6 +405,7 @@ export default function App() {
           entry={detailEntry}
           onClose={closeDetail}
           onTagClick={handleTagClick}
+          onSearchTag={handleSearchTag}
           onFollowLink={(target, path) => void handleFollowLink(target, path)}
           onOpenImage={(path) => void handleOpenImage(path)}
           onEntryUpdated={updateEntry}

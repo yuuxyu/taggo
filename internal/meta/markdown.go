@@ -63,6 +63,7 @@ func (markdownHandler) Read(path string) (Info, error) {
 		Title:   firstHeading(body),
 		Preview: excerpt(body),
 		Links:   noteLinks(body),
+		TagPage: tagPageOf(front),
 	}
 	if info.Title == "" {
 		if t, ok := front["title"].(string); ok {
@@ -164,6 +165,22 @@ func frontMatterTags(front map[string]any) []string {
 		out = append(out, coerceTagList(front[key])...)
 	}
 	return out
+}
+
+// tagPageOf は Front Matter の `tag:` を読み、そのノートが説明しているタグを返す。
+//
+// 1 つのページが説明するタグは 1 つに限るので、文字列や数値のような単一の値だけを
+// 受け付ける。リストのように複数書かれていたら、どれを指すのか決められないので
+// タグページとはみなさない。
+func tagPageOf(front map[string]any) string {
+	switch v := front["tag"].(type) {
+	case nil, []any, map[string]any:
+		return ""
+	case string:
+		return v
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 // coerceTagList は、実際の Front Matter で使われるタグの書き方をすべて受け付ける。

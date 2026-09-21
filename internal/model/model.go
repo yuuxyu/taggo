@@ -50,6 +50,11 @@ type Entry struct {
 	// 相対パス（"./sub/impl.md" など）で、関連ページのグラフ構築に使う。
 	Links []string `json:"links,omitempty"`
 
+	// TagPage は、このノートがページとして説明しているタグ。Front Matter の
+	// `tag:` で宣言する。正規化済みで、タグページでなければ空になる。
+	// 付いているタグ（Tags）とは別物で、タグページ自身が何のタグを持つかとは関係しない。
+	TagPage string `json:"tagPage,omitempty"`
+
 	// Writable は taggo がこのファイルのタグを編集してよいかを表す。
 	// 読み取り専用・プロテクト指定のファイルはエラーとして扱い、
 	// メモリ上だけ更新するような不整合は起こさない。

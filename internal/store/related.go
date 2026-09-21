@@ -24,6 +24,13 @@ type RelatedPage struct {
 	RelPath string   `json:"relPath,omitempty"`
 	Preview string   `json:"preview,omitempty"`
 	Tags    []string `json:"tags,omitempty"`
+	// Kind は行き先の種類。タグページには画像や音声も並ぶので、見せ方を切り替えるのに使う。
+	Kind model.Kind `json:"kind,omitempty"`
+	// CloudOnly は行き先の中身がクラウド上にしか無いこと。サムネイルを
+	// 取りに行くとダウンロードが始まるので、画面側で控えるために使う。
+	CloudOnly bool `json:"cloudOnly,omitempty"`
+	// TagPage は行き先がタグページなら、そのタグ。
+	TagPage string `json:"tagPage,omitempty"`
 }
 
 // Related は 1 つのノートから見た関連ページ。
@@ -35,12 +42,26 @@ type Related struct {
 	// SameTag はタグが重なっているノート。リンクで既に出ているものは除き、
 	// 重なるタグの多い順、同じなら更新日時の新しい順に、上限件数まで並ぶ。
 	SameTag []RelatedPage `json:"sameTag"`
+	// Tagged は、そのノートがタグページのときに、説明しているタグが付いたファイル。
+	// 種類を問わず更新日時の新しい順に、上限件数まで並ぶ。
+	Tagged []RelatedPage `json:"tagged"`
+	// TaggedTotal は Tagged の上限を超えた分も含めた件数。
+	TaggedTotal int `json:"taggedTotal"`
+	// Duplicates は、同じタグをタグページとして宣言しているほかのノート。
+	// 1 つのタグにタグページは 1 つのはずなので、あれば画面で警告する。
+	Duplicates []RelatedPage `json:"duplicates"`
 }
 
 // EmptyRelated は関連ページが 1 件も無い状態。
 // フロントエンドでは配列として扱うので、nil ではなく空スライスで返す。
 func EmptyRelated() Related {
-	return Related{Outgoing: []RelatedPage{}, Incoming: []RelatedPage{}, SameTag: []RelatedPage{}}
+	return Related{
+		Outgoing:   []RelatedPage{},
+		Incoming:   []RelatedPage{},
+		SameTag:    []RelatedPage{},
+		Tagged:     []RelatedPage{},
+		Duplicates: []RelatedPage{},
+	}
 }
 
 // Related は、そのノートが参照しているページ、そのノートを参照している
@@ -99,6 +120,7 @@ func (s *Store) Related(entry *model.Entry) Related {
 	})
 
 	seen[entry.Path] = struct{}{}
+	s.fillTagPage(entry, &related, seen)
 	related.SameTag = s.sameTagNotes(entry.Tags, seen)
 	return related
 }
@@ -229,11 +251,14 @@ func pickOne(candidates map[string]struct{}) string {
 
 func relatedPage(target string, e *model.Entry) RelatedPage {
 	return RelatedPage{
-		Target:  target,
-		Path:    e.Path,
-		Title:   e.Title,
-		RelPath: e.RelPath,
-		Preview: e.Preview,
-		Tags:    e.Tags,
+		Target:    target,
+		Path:      e.Path,
+		Title:     e.Title,
+		RelPath:   e.RelPath,
+		Preview:   e.Preview,
+		Tags:      e.Tags,
+		Kind:      e.Kind,
+		CloudOnly: e.CloudOnly,
+		TagPage:   e.TagPage,
 	}
 }
