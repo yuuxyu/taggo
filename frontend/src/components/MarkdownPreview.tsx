@@ -12,6 +12,7 @@ import { isValidElement, useEffect, useRef, useState, type ReactNode } from "rea
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import { fileURL, getMarkdownSource, type Entry } from "../api/taggo";
 import { Mermaid } from "./Mermaid";
 import "highlight.js/styles/github.css";
@@ -144,6 +145,9 @@ function resolveLocalPath(target: string, entry: Entry): string | null {
   }
   return segments.join(sep);
 }
+
+/** 既定のブラウザへ渡してよいリンク。ローカルファイルや任意のスキームは OS に開かせない。 */
+const EXTERNAL_LINK_RE = /^(https?|mailto):/i;
 
 /**
  * ノートへのリンクなら、その行き先の絶対パスを返す。
@@ -311,9 +315,18 @@ export function MarkdownPreview({ entry, onFollowLink, onOpenImage, onLoaded }: 
                 </a>
               );
             }
-            // 外部リンクは既定のブラウザへ委ねる。
+            // 外部リンクは OS の既定のブラウザ（起動中ならその新しいタブ）で開く。
+            // target="_blank" に任せると WebView2 が自前のウィンドウを開いてしまう。
             return (
-              <a href={href} target="_blank" rel="noreferrer" {...rest}>
+              <a
+                href={href}
+                rel="noreferrer"
+                {...rest}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (href !== undefined && EXTERNAL_LINK_RE.test(href)) BrowserOpenURL(href);
+                }}
+              >
                 {children}
               </a>
             );
