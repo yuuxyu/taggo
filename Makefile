@@ -5,8 +5,9 @@ dev:
 	wails dev
 
 ## build: デスクトップアプリを build/bin/taggo.exe へ書き出す
+## -trimpath でローカルのファイルパスを、-s -w でシンボル表とデバッグ情報を取り除く
 build:
-	wails build
+	wails build -trimpath -ldflags "-s -w"
 
 ## test: Go 側のテストを実行する
 test:
