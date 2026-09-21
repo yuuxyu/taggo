@@ -42,8 +42,6 @@ export interface ScanDone {
   added?: number;
   /** 利用者の操作で続きの読み込みを取りやめたかどうか。 */
   cancelled?: boolean;
-  /** 中身がクラウド上にしか無いため、読み込まなかったファイルの数。 */
-  cloudOnly?: number;
   error?: string;
   warning?: string;
 }

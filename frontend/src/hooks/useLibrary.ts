@@ -160,13 +160,7 @@ export function useLibrary(): Library {
           notify("info", `${(done.added ?? 0).toLocaleString()} 件を追加で読み込みました。`);
         }
       } else {
-        if (done.cloudOnly && done.cloudOnly > 0) {
-          notify(
-            "info",
-            `クラウド上にだけあるファイルが ${done.cloudOnly.toLocaleString()} 件ありました。` +
-              "ダウンロードを避けるため中身は読んでいません（一覧には出ています）。",
-          );
-        }
+        // クラウド上にだけあるファイルの件数はツールバーに常に出ているので、通知はしない。
         // 上限で打ち切ったことは、すぐ消える通知ではなく、閉じるまで残るバナーで伝える。
         setLoadMoreBannerOpen((done.remaining ?? 0) > 0);
       }
