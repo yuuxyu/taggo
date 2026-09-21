@@ -158,7 +158,7 @@ func KindForExt(ext string) (Kind, bool) {
 		return KindMarkdown, true
 	case ".jpg", ".jpeg", ".png", ".webp":
 		return KindImage, true
-	case ".mp3", ".wav", ".flac":
+	case ".mp3", ".wav", ".flac", ".ogg":
 		return KindAudio, true
 	}
 	return "", false

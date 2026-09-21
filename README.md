@@ -8,7 +8,7 @@
 
 - Markdown
 - 画像ファイル (jpg, png, webp)
-- 音声ファイル (mp3, wav, flac)
+- 音声ファイル (mp3, wav, flac, ogg)
 
 ## Markdown
 
@@ -44,11 +44,14 @@ Exif.Image.XPKeywords や XMP:Subject などの標準タグ領域に書き込み
 
 ### 音声ファイル
 
-音声ファイルは .mp3, .wav 形式です。
+音声ファイルは .mp3, .wav, .flac, .ogg 形式です。
 
 .mp3 は ID3v2 タグ（GenreやComment、Keywords欄）にタグ文字列を書き込みます。
 
 .wav は INFO chunk や ID3 chunk に埋め込みます。
+
+.flac と .ogg は Vorbis Comment の KEYWORDS 欄に書き込みます。.ogg は入れ物の名前で、
+中身は Vorbis のことも Opus のこともありますが、どちらも同じ欄に入ります。
 
 ## 対応状況
 
@@ -61,6 +64,7 @@ Exif.Image.XPKeywords や XMP:Subject などの標準タグ領域に書き込み
 | 音声     | `.mp3`            | ✓        | ✓        | ID3v2 の `TXXX:KEYWORDS`                                           |
 | 音声     | `.flac`           | ✓        | ✓        | Vorbis Comment の `KEYWORDS`                                       |
 | 音声     | `.wav`            | ✓        | ✓        | RIFF `LIST/INFO` の `IKEY`（読み取りは `id3 ` チャンクも併用）     |
+| 音声     | `.ogg`            | ✓        | ✓        | Vorbis Comment の `KEYWORDS`（中身は Vorbis / Opus）               |
 
 書き込みは一時ファイルへ出力してから rename する方式で、途中で失敗しても元のファイルを壊しません。
 読み取り専用のファイルはエラーとして表示し、メモリ上だけ更新するような不整合は起こしません。

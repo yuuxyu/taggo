@@ -49,6 +49,8 @@ func sniffBytes(head []byte) (string, bool) {
 		return ".gif", true
 	case bytes.HasPrefix(head, []byte("fLaC")):
 		return ".flac", true
+	case bytes.HasPrefix(head, []byte("OggS")):
+		return ".ogg", true
 	case bytes.HasPrefix(head, []byte("ID3")):
 		return ".mp3", true
 	case bytes.HasPrefix(head, []byte("BM")):
@@ -170,6 +172,8 @@ func ContentType(format string) string {
 		return "audio/wav"
 	case ".flac":
 		return "audio/flac"
+	case ".ogg":
+		return "audio/ogg"
 	case ".aac":
 		return "audio/aac"
 	case ".m4a":
