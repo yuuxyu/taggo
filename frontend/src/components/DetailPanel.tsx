@@ -328,6 +328,9 @@ export function DetailPanel({
   // 画像の上かどうかで、文字色と地味なボタンの見た目を切り替える。
   const plainVariant = isImage ? "hud" : "default";
   const ghostVariant = isImage ? "hudGhost" : "ghost";
+  // Markdown と音声のヘッダー・フッターは半透明にして、下を流れる本文をうっすら見せる。
+  // 文字が重なっても読めるよう背景はぼかし、罫線も地に合わせて薄める。
+  const glassBar = "border-line/70 bg-surface/75 backdrop-blur-md backdrop-saturate-150";
   // ヘッダーの高さ＋ひと呼吸ぶん下から本文を始める。
   const contentTop = overlayHeight + 24;
 
@@ -407,7 +410,7 @@ export function DetailPanel({
           className={`absolute inset-x-0 top-0 z-10 transition-opacity duration-300 ${
             isImage
               ? "bg-linear-to-b from-black/70 to-transparent pb-7 text-white"
-              : "border-b border-line bg-surface pb-3"
+              : `border-b ${glassBar} pb-3`
           } ${overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
           // スクロールバーを隠さないよう、右端はスクロールバーの手前で止める。
           style={{ right: scrollbarWidth }}
@@ -504,9 +507,11 @@ export function DetailPanel({
             ボタンが同じ位置に出る。 */}
         {!isImage && (
           <div
-            className={`absolute inset-x-0 bottom-0 z-10 flex justify-end border-t border-line bg-surface px-5 pt-3 pb-4 transition-opacity duration-300 ${
+            className={`absolute inset-x-0 bottom-0 z-10 flex justify-end border-t ${glassBar} px-5 pt-3 pb-4 transition-opacity duration-300 ${
               overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"
             }`}
+            // ヘッダーと同じく、スクロールバーの手前で止める。
+            style={{ right: scrollbarWidth }}
           >
             <Pager index={index} total={total} onNavigate={onNavigate} />
           </div>
