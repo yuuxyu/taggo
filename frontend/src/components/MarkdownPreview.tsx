@@ -20,6 +20,13 @@ interface Props {
   entry: Entry;
   /** ノートへのリンクをたどるときに呼ぶ。行き先が一覧に無ければ検索に落とす。 */
   onFollowLink: (target: string, path?: string) => void;
+  /** 本文中の画像をクリックしたときに、その画像のパスを渡して呼ぶ。 */
+  onOpenImage: (path: string) => void;
+  /**
+   * 本文を読み込んで描画し終えたときに呼ぶ。
+   * 戻ってきたときのスクロール位置の復元は、本文の高さが決まってからでないとできない。
+   */
+  onLoaded?: () => void;
 }
 
 /**
@@ -138,13 +145,6 @@ function resolveLocalPath(target: string, entry: Entry): string | null {
   return segments.join(sep);
 }
 
-/** 本文から参照された画像の src を、taggo の配信 URL へ書き換える。 */
-function resolveImageSrc(src: string | undefined, entry: Entry): string | undefined {
-  if (!src) return src;
-  const path = resolveLocalPath(src, entry);
-  return path === null ? src : fileURL(path);
-}
-
 /**
  * ノートへのリンクなら、その行き先の絶対パスを返す。
  * 対象は .md / .markdown を指す相対・絶対パスのリンクだけで、
@@ -158,9 +158,26 @@ function resolveNotePath(href: string | undefined, entry: Entry): string | null 
 /**
  * 本文中の画像。開いているフォルダの外や、taggo が取り込んでいない形式は
  * 配信されないため、読み込めなかったときは元の記述を添えて理由を示す。
+ *
+ * 本文から参照された画像は、taggo の配信 URL へ書き換えて読み込む。
+ * フォルダ内の画像はクリックでその画像のプレビューへ移れる。外部 URL の画像は
+ * taggo の一覧に無いので、クリックしても何もしない。
  */
-function MarkdownImage({ src, alt, title, entry }: { src?: string; alt?: string; title?: string; entry: Entry }) {
+function MarkdownImage({
+  src,
+  alt,
+  title,
+  entry,
+  onOpen,
+}: {
+  src?: string;
+  alt?: string;
+  title?: string;
+  entry: Entry;
+  onOpen: (path: string) => void;
+}) {
   const [failed, setFailed] = useState(false);
+  const localPath = src ? resolveLocalPath(src, entry) : null;
 
   if (failed) {
     return (
@@ -169,13 +186,30 @@ function MarkdownImage({ src, alt, title, entry }: { src?: string; alt?: string;
       </span>
     );
   }
+  if (localPath === null) {
+    return <img src={src} alt={alt ?? ""} title={title} loading="lazy" onError={() => setFailed(true)} />;
+  }
   return (
     <img
-      src={resolveImageSrc(src, entry)}
+      src={fileURL(localPath)}
       alt={alt ?? ""}
-      title={title}
+      title={title ?? "クリックで画像を開く"}
       loading="lazy"
+      role="button"
+      tabIndex={0}
+      className="cursor-zoom-in"
       onError={() => setFailed(true)}
+      onClick={(e) => {
+        // リンクで囲まれた画像は、リンクの行き先のほうを優先する。
+        if (e.currentTarget.closest("a")) return;
+        onOpen(localPath);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(localPath);
+        }
+      }}
     />
   );
 }
@@ -200,7 +234,7 @@ function toPlainText(node: ReactNode): string {
   return "";
 }
 
-export function MarkdownPreview({ entry, onFollowLink }: Props) {
+export function MarkdownPreview({ entry, onFollowLink, onOpenImage, onLoaded }: Props) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 最後に本文を読み込んだファイル。同じファイルの読み直しかどうかを見分ける。
@@ -235,6 +269,13 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
       cancelled = true;
     };
   }, [entry.path, version]);
+
+  // 描画し終えてから知らせる。effect はコミット後に走るので、本文の高さは決まっている。
+  useEffect(() => {
+    if (source !== null) onLoaded?.();
+    // 本文が変わったときだけ知らせればよい。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source]);
 
   if (error) {
     return <div className="py-6 text-danger">本文を読み込めませんでした: {error}</div>;
@@ -285,6 +326,7 @@ export function MarkdownPreview({ entry, onFollowLink }: Props) {
                 alt={alt}
                 title={title}
                 entry={entry}
+                onOpen={onOpenImage}
               />
             );
           },

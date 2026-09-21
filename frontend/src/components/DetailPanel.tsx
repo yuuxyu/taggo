@@ -10,6 +10,9 @@
  * バッジで表示するだけにして、「タグを編集」ボタンを押したときだけ編集フォーム
  * （入力欄・候補・保存操作）を表示する。
  *
+ * ヘッダー左端の「戻る／進む」で、リンクや本文中の画像をたどる前の
+ * ファイルへ戻れる。履歴そのものは App が持ち、ここは操作と表示だけを受け持つ。
+ *
  * 画像の上では背景の色が予測できないため、ヘッダーとタグ UI は暗いグラデーション
  * ＋白文字に固定する（isImage で配色を切り替える）。
  */
@@ -17,9 +20,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { setTags, type Entry } from "../api/taggo";
+import type { DetailHistory } from "../hooks/useDetailHistory";
 import { AudioPreview } from "./AudioPreview";
 import { Button } from "./Button";
 import { CloudOnlyNotice } from "./CloudOnlyNotice";
+import { HistoryNav } from "./HistoryNav";
 import { ImagePreview, WHEEL_COOLDOWN_MS } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Pager } from "./Pager";
@@ -33,6 +38,8 @@ interface Props {
   onTagClick: (tag: string) => void;
   /** リンクをたどる。実体のパスが分かっている場合は一緒に渡す。 */
   onFollowLink: (target: string, path?: string) => void;
+  /** Markdown の本文中の画像を開く。 */
+  onOpenImage: (path: string) => void;
   /** 保存後の最新状態を一覧へ返す。 */
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
@@ -41,6 +48,8 @@ interface Props {
   /** 一覧における現在位置（0 始まり）。 */
   index: number;
   total: number;
+  /** 移動の履歴。戻る／進むと、戻ったときのスクロール位置の復元に使う。 */
+  history: DetailHistory;
 }
 
 /** UI オーバーレイを自動で隠すまでの無操作時間。 */
@@ -75,12 +84,17 @@ export function DetailPanel({
   onClose,
   onTagClick,
   onFollowLink,
+  onOpenImage,
   onEntryUpdated,
   onError,
   onNavigate,
   index,
   total,
+  history,
 }: Props) {
+  const { go: goHistory, reportScroll, navId } = history;
+  const historyIndex = history.index;
+  const historyLength = history.items.length;
   const [draft, setDraft] = useState<string[]>(entry.tags);
   const [saving, setSaving] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -168,6 +182,12 @@ export function DetailPanel({
         }
         return;
       }
+      // Alt + 左右は、ブラウザと同じく履歴の戻る／進む。入力欄の中でも効かせる。
+      if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        goHistory(historyIndex + (e.key === "ArrowLeft" ? -1 : 1));
+        return;
+      }
       // タグ入力中の左右キーはキャレット移動に使うので奪わない。
       const active = document.activeElement;
       const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
@@ -183,7 +203,26 @@ export function DetailPanel({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, onNavigate, tagsOpen]);
+  }, [onClose, onNavigate, tagsOpen, goHistory, historyIndex]);
+
+  // マウスの戻る／進むボタン（ボタン 3 / 4）でも履歴を移動する。
+  // WebView 自体のページ遷移に使われないよう、押した時点で既定の動作を止める。
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 3 || e.button === 4) e.preventDefault();
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      goHistory(historyIndex + (e.button === 3 ? -1 : 1));
+    };
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [goHistory, historyIndex]);
 
   // 音声でも、ホイールで前後のファイルへ移動する（画像は ImagePreview が扱う）。
   // Markdown は本文を読むスクロールと紛らわしいので、ホイールでは送らない。
@@ -236,6 +275,36 @@ export function DetailPanel({
     measure();
     return () => observer.disconnect();
   }, [entry.path, entry.kind, entry.cloudOnly]);
+
+  // 読んでいる位置を履歴へ知らせておき、戻ってきたときにその位置から再開する。
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const onScroll = () => reportScroll(el.scrollTop);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [reportScroll]);
+
+  // 移動するたびに、その項目のスクロール位置へ合わせる（新しく開いたファイルなら先頭）。
+  // Markdown は本文を読み込むまで高さが決まらないので、読み込み終わるのを待つ。
+  // 同じノートへ戻った場合は読み直しが起きないので、その場で合わせる。
+  const pendingScroll = useRef<number | null>(null);
+  const shownPath = useRef<string | null>(null);
+  const applyPendingScroll = () => {
+    const el = contentRef.current;
+    if (!el || pendingScroll.current === null) return;
+    el.scrollTop = pendingScroll.current;
+    pendingScroll.current = null;
+    reportScroll(el.scrollTop);
+  };
+  useLayoutEffect(() => {
+    pendingScroll.current = history.current?.scrollTop ?? 0;
+    const samePath = shownPath.current === entry.path;
+    shownPath.current = entry.path;
+    if (!isMarkdown || entry.cloudOnly || samePath) applyPendingScroll();
+    // 移動（navId）ごとに一度だけ合わせる。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navId]);
 
   const dirty = draft.length !== entry.tags.length || draft.some((t, i) => t !== entry.tags[i]);
 
@@ -300,7 +369,12 @@ export function DetailPanel({
               <div className="flex flex-col gap-8 min-[60rem]:flex-row min-[60rem]:items-start min-[60rem]:justify-center min-[60rem]:gap-6">
                 {/* 本文の 1 行が長くなりすぎないよう、横幅は本文の最大幅（全角 38 文字）で止める。 */}
                 <div className="min-w-0 flex-1 min-[60rem]:max-w-171">
-                  <MarkdownPreview entry={entry} onFollowLink={onFollowLink} />
+                  <MarkdownPreview
+                    entry={entry}
+                    onFollowLink={onFollowLink}
+                    onOpenImage={onOpenImage}
+                    onLoaded={applyPendingScroll}
+                  />
                 </div>
                 <div
                   // 本文が長くても関連ページが見えているよう、横に並ぶ幅では貼り付ける。
@@ -339,6 +413,15 @@ export function DetailPanel({
           style={{ right: scrollbarWidth }}
         >
           <header className="flex items-start gap-4 px-5 pt-4 pb-2.5">
+            {historyLength > 1 && (
+              <HistoryNav
+                items={history.items}
+                index={historyIndex}
+                onGo={goHistory}
+                variant={ghostVariant}
+                onImage={isImage}
+              />
+            )}
             <div className="min-w-0 flex-1">
               <h2 className="m-0 text-lg leading-snug break-words">{entry.title}</h2>
               <p

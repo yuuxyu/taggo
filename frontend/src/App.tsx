@@ -5,14 +5,22 @@
  * フォルダーツリーは持たない。詳細プレビューは画面遷移せずオーバーレイで開く。
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ExclamationTriangleIcon,
   FolderOpenIcon,
   InformationCircleIcon,
   XMarkIcon,
 } from "@heroicons/react/20/solid";
-import { appendTagToQuery, type Entry, type TagEditResult } from "./api/taggo";
+import {
+  appendTagToQuery,
+  Events,
+  getEntry,
+  on,
+  type Entry,
+  type EntryChanged,
+  type TagEditResult,
+} from "./api/taggo";
 import { BulkTagDialog } from "./components/BulkTagDialog";
 import { Button } from "./components/Button";
 import { CardGrid } from "./components/CardGrid";
@@ -20,12 +28,20 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DetailPanel } from "./components/DetailPanel";
 import { SearchBar } from "./components/SearchBar";
 import { Toolbar } from "./components/Toolbar";
+import { useDetailHistory } from "./hooks/useDetailHistory";
 import { useLibrary } from "./hooks/useLibrary";
 
 export default function App() {
   const library = useLibrary();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [detailPath, setDetailPath] = useState<string | null>(null);
+  // 詳細プレビューで見ているファイルは、戻る／進むのための履歴として持つ。
+  const history = useDetailHistory();
+  const { start: startHistory, push: pushHistory, replace: replaceHistory, clear: clearHistory } =
+    history;
+  const detailPath = history.current?.path ?? null;
+  // 一覧（今の検索結果）に無いのにプレビューで開いたファイル。本文中の画像や
+  // リンク先は絞り込みの外にあることが多いので、一覧とは別に持っておく。
+  const [outside, setOutside] = useState<ReadonlyMap<string, Entry>>(new Map());
   const [bulkOpen, setBulkOpen] = useState(false);
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
   const [focusSignal, setFocusSignal] = useState(0);
@@ -38,18 +54,76 @@ export default function App() {
     () => (detailPath === null ? -1 : entries.findIndex((e) => e.path === detailPath)),
     [detailPath, entries],
   );
-  const detailEntry = detailIndex < 0 ? null : entries[detailIndex];
+  const detailEntry =
+    detailIndex >= 0 ? entries[detailIndex] : detailPath === null ? null : (outside.get(detailPath) ?? null);
+
+  // 一覧の外で開いたファイルも、外部での変更や削除に追従させる。
+  useEffect(
+    () =>
+      on<EntryChanged>(Events.entryChanged, (change) => {
+        setOutside((prev) => {
+          if (!prev.has(change.path)) return prev;
+          const next = new Map(prev);
+          if (change.removed || !change.entry) {
+            next.delete(change.path);
+          } else {
+            next.set(change.path, change.entry);
+          }
+          return next;
+        });
+      }),
+    [],
+  );
+
+  // 見ていたファイルが消えたら、プレビューを閉じる。
+  useEffect(() => {
+    if (detailPath !== null && detailEntry === null) clearHistory();
+  }, [detailPath, detailEntry, clearHistory]);
+
+  // タグの保存などで新しくなったエントリを、一覧と一覧の外の両方へ反映する。
+  const updateEntry = useCallback(
+    (entry: Entry) => {
+      replaceEntry(entry);
+      setOutside((prev) => (prev.has(entry.path) ? new Map(prev).set(entry.path, entry) : prev));
+    },
+    [replaceEntry],
+  );
+
+  /**
+   * パスの分かっているファイルをプレビューで開き、履歴に積む。
+   * 一覧に無ければ Go 側から取り寄せる。開けなければ false を返す。
+   */
+  const openPath = useCallback(
+    async (path: string): Promise<boolean> => {
+      // パスの大文字小文字は、Windows に合わせて区別しない。
+      const wanted = path.toLowerCase();
+      const inList = entries.find((e) => e.path.toLowerCase() === wanted);
+      if (inList) {
+        pushHistory(inList.path, inList.title);
+        return true;
+      }
+      try {
+        const entry = await getEntry(path);
+        setOutside((prev) => new Map(prev).set(entry.path, entry));
+        pushHistory(entry.path, entry.title);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [entries, pushHistory],
+  );
 
   // 詳細プレビューの前後移動。いまの検索結果・並び順のまま、種類を問わず隣へ動く。
-  // 端では止める（ループしない）。
+  // 端では止める（ループしない）。めくるたびに履歴が伸びないよう、今の項目を置き換える。
   const navigate = useCallback(
     (direction: 1 | -1) => {
       if (detailIndex < 0) return;
       const next = detailIndex + direction;
       if (next < 0 || next >= entries.length) return;
-      setDetailPath(entries[next].path);
+      replaceHistory(entries[next].path, entries[next].title);
     },
-    [detailIndex, entries],
+    [detailIndex, entries, replaceHistory],
   );
 
   const selectedEntries = useMemo(
@@ -59,9 +133,10 @@ export default function App() {
 
   // オーバーレイを閉じる共通処理。閉じたあとは必ず検索バーへ戻す。
   const closeDetail = useCallback(() => {
-    setDetailPath(null);
+    clearHistory();
+    setOutside(new Map());
     setFocusSignal((n) => n + 1);
-  }, []);
+  }, [clearHistory]);
 
   const closeBulk = useCallback(() => {
     setBulkOpen(false);
@@ -85,36 +160,46 @@ export default function App() {
     (tag: string) => {
       void appendTagToQuery(query, tag).then((next) => {
         setQuery(next);
-        setDetailPath(null);
+        clearHistory();
       });
     },
-    [query, setQuery],
+    [query, setQuery, clearHistory],
   );
 
   // ノート間のリンクをたどる。行き先のパスが分かっていればそれを開く。
-  // 分からないのは行き先のファイルがまだ無いときなので、名前で一覧から探す。
-  // どちらも今の絞り込みの外にあると開けないので、検索条件のほうを切り替える。
+  // 一覧の外にあっても、登録済みのファイルならそのまま開ける。
+  // パスが分からないのは行き先のファイルがまだ無いときなので、名前で一覧から探す。
+  // それでも見つからなければ、検索条件のほうを切り替える。
   const handleFollowLink = useCallback(
-    (target: string, path?: string) => {
-      const needle = target.toLowerCase();
-      const wanted = path?.toLowerCase();
-      const found = entries.find((e) => {
-        // パスの大文字小文字は、Windows に合わせて区別しない。
-        if (wanted !== undefined) return e.path.toLowerCase() === wanted;
-        const base = e.name.replace(/\.[^.]+$/, "").toLowerCase();
-        return base === needle || e.title.toLowerCase() === needle;
-      });
-      if (found) {
-        setDetailPath(found.path);
-        return;
+    async (target: string, path?: string) => {
+      if (path !== undefined) {
+        if (await openPath(path)) return;
+      } else {
+        const needle = target.toLowerCase();
+        const found = entries.find((e) => {
+          const base = e.name.replace(/\.[^.]+$/, "").toLowerCase();
+          return base === needle || e.title.toLowerCase() === needle;
+        });
+        if (found) {
+          pushHistory(found.path, found.title);
+          return;
+        }
       }
       // ファイル自体が無いのか、今の絞り込みから外れているだけなのかは
       // 一覧からは分からないので、どちらにも当てはまる言い方にする。
       setQuery(target);
-      setDetailPath(null);
+      clearHistory();
       notify("info", `「${target}」が今の一覧に見つからないため、検索条件に切り替えました。`);
     },
-    [entries, notify, setQuery],
+    [entries, notify, setQuery, openPath, pushHistory, clearHistory],
+  );
+
+  // Markdown の本文中の画像をクリックしたら、その画像のプレビューへ移る。
+  const handleOpenImage = useCallback(
+    async (path: string) => {
+      if (!(await openPath(path))) notify("error", `画像を開けませんでした: ${path}`);
+    },
+    [notify, openPath],
   );
 
   const handleBulkApplied = useCallback(
@@ -230,7 +315,7 @@ export default function App() {
             entries={entries}
             selected={selected}
             selectionMode={selected.size > 0}
-            onOpen={(entry) => setDetailPath(entry.path)}
+            onOpen={(entry) => startHistory(entry.path, entry.title)}
             onToggleSelect={toggleSelect}
             onTagClick={handleTagClick}
           />
@@ -242,12 +327,14 @@ export default function App() {
           entry={detailEntry}
           onClose={closeDetail}
           onTagClick={handleTagClick}
-          onFollowLink={handleFollowLink}
-          onEntryUpdated={replaceEntry}
+          onFollowLink={(target, path) => void handleFollowLink(target, path)}
+          onOpenImage={(path) => void handleOpenImage(path)}
+          onEntryUpdated={updateEntry}
           onError={(message) => notify("error", message)}
           onNavigate={navigate}
           index={detailIndex}
           total={entries.length}
+          history={history}
         />
       )}
 
