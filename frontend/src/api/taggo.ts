@@ -7,7 +7,7 @@
 
 import * as Backend from "../../wailsjs/go/app/App";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
-import type { app, model, store } from "../../wailsjs/go/models";
+import type { app, linkcard, model, store } from "../../wailsjs/go/models";
 
 export type Entry = model.Entry;
 export type Status = app.Status;
@@ -16,6 +16,8 @@ export type TagEditResult = app.TagEditResult;
 export type RelatedPage = store.RelatedPage;
 export type Related = store.Related;
 export type SearchResult = store.Result;
+/** リンクカードに出す内容。kind は "page" / "youtube" / "x" のいずれか。 */
+export type LinkPreview = linkcard.Preview;
 /**
  * 検索しているタグのタグページ。生成されたクラスをそのまま使うと、
  * 差し替えのために作り直した値が型に合わなくなるので、データの形だけを取り出す。
@@ -113,6 +115,12 @@ export const getRelatedPages = (path: string): Promise<Related> => Backend.Relat
 
 /** Markdown の本文（Front Matter を除く）を取得する。 */
 export const getMarkdownSource = (path: string): Promise<string> => Backend.MarkdownSource(path);
+
+/**
+ * 本文に書かれた URL のリンク先から、リンクカードに出すタイトルや画像を取得する。
+ * 外部への通信が発生する。取得できなければ reject される。
+ */
+export const getLinkPreview = (url: string): Promise<LinkPreview> => Backend.LinkPreview(url);
 
 /** 1 ファイルのタグを置き換える。 */
 export const setTags = (path: string, tags: string[]): Promise<TagEditResult> =>

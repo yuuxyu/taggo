@@ -12,6 +12,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/yuuxyu/taggo/internal/cloudfile"
+	"github.com/yuuxyu/taggo/internal/linkcard"
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 	"github.com/yuuxyu/taggo/internal/scan"
@@ -36,6 +37,7 @@ type App struct {
 	ctx    context.Context
 	store  *store.Store
 	thumbs *thumb.Cache
+	links  *linkcard.Client
 
 	// maxEntries は 1 回の読み込みで展開する件数の上限。
 	// 本番では store.MaxEntries で、テストでは小さくして上限まわりを確かめる。
@@ -65,7 +67,7 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{store: s, thumbs: thumb.NewCache(), maxEntries: store.MaxEntries}, nil
+	return &App{store: s, thumbs: thumb.NewCache(), links: linkcard.New(), maxEntries: store.MaxEntries}, nil
 }
 
 // Startup は Wails の起動フックから呼ばれ、以降 runtime API を使えるようにする。
@@ -465,6 +467,19 @@ func (a *App) MarkdownSource(path string) (string, error) {
 		return "", err
 	}
 	return readMarkdownBody(path)
+}
+
+// LinkPreview は、Markdown 本文に URL だけを書いた段落をリンクカードにするための
+// タイトルや画像を、リンク先から取得して返す。
+//
+// 「勝手に通信しない方針」の例外で、ノートを開いただけで外部へ通信する。
+// 本文の外部画像を開いた時点で読み込むのと同じく、利用者が本文に書いた URL だけが対象になる。
+func (a *App) LinkPreview(url string) (*linkcard.Preview, error) {
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return a.links.Fetch(ctx, url)
 }
 
 // AppendTagToQuery は検索バーの文字列にタグを AND 条件として足したものを返す。

@@ -26,6 +26,10 @@ export function FetchCloudEntry(arg1) {
   return window['go']['app']['App']['FetchCloudEntry'](arg1);
 }
 
+export function LinkPreview(arg1) {
+  return window['go']['app']['App']['LinkPreview'](arg1);
+}
+
 export function LoadMore(arg1) {
   return window['go']['app']['App']['LoadMore'](arg1);
 }
