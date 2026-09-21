@@ -20,7 +20,7 @@ import { setTags, type Entry } from "../api/taggo";
 import { AudioPreview } from "./AudioPreview";
 import { Button } from "./Button";
 import { CloudOnlyNotice } from "./CloudOnlyNotice";
-import { ImagePreview } from "./ImagePreview";
+import { ImagePreview, WHEEL_COOLDOWN_MS } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Pager } from "./Pager";
 import { hasRelatedPages, RelatedPages, useRelatedPages } from "./RelatedPages";
@@ -45,6 +45,30 @@ interface Props {
 
 /** UI オーバーレイを自動で隠すまでの無操作時間。 */
 const OVERLAY_HIDE_MS = 2200;
+/**
+ * 端に着いた直後のホイールではページ送りしないための待ち時間。
+ * 本文を読み進めた勢い（慣性スクロール）のまま次のファイルへ飛ばないようにする。
+ */
+const EDGE_SETTLE_MS = 300;
+
+/**
+ * target から container までのどこかに、direction の向きへまだスクロールできる
+ * 要素があるかを返す。関連ページの欄など、内側のスクロールを優先するために使う。
+ */
+function canScrollFurther(target: EventTarget | null, container: HTMLElement, direction: 1 | -1) {
+  for (let el = target instanceof Element ? target : null; el; el = el.parentElement) {
+    if (el instanceof HTMLElement && el.scrollHeight > el.clientHeight + 1) {
+      const overflowY = getComputedStyle(el).overflowY;
+      if (el === container || overflowY === "auto" || overflowY === "scroll") {
+        const more =
+          direction === 1 ? el.scrollTop + el.clientHeight < el.scrollHeight - 1 : el.scrollTop > 0;
+        if (more) return true;
+      }
+    }
+    if (el === container) break;
+  }
+  return false;
+}
 
 export function DetailPanel({
   entry,
@@ -63,6 +87,7 @@ export function DetailPanel({
   // 中身をまだ持っていないファイルは、画像であっても黒地のビューアにはしない。
   // 取り込むかどうかを尋ねる案内を、通常のレイアウトで出す。
   const isImage = entry.kind === "image" && !entry.cloudOnly;
+  const isMarkdown = entry.kind === "markdown";
 
   // 関連ページ。1 件でもあれば Markdown の本文を左、カードを右の 2 カラムにする。
   const related = useRelatedPages(entry);
@@ -160,6 +185,42 @@ export function DetailPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose, onNavigate, tagsOpen]);
 
+  // 音声でも、ホイールで前後のファイルへ移動する（画像は ImagePreview が扱う）。
+  // Markdown は本文を読むスクロールと紛らわしいので、ホイールでは送らない。
+  // 内側にスクロールできる欄があればそちらを優先し、端まで来ているときだけ送る。
+  // タグ編集欄が出ている間は、編集中のファイルから離れないよう送らない。
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || isImage || isMarkdown || tagsOpen) return;
+
+    let cooling = false;
+    let lastScroll = 0;
+    const onScroll = () => {
+      lastScroll = performance.now();
+    };
+    const onWheel = (e: WheelEvent) => {
+      // Ctrl + ホイールはブラウザの拡大・縮小に任せる。
+      if (e.ctrlKey || e.deltaY === 0) return;
+      const direction = e.deltaY > 0 ? 1 : -1;
+      if (canScrollFurther(e.target, el, direction)) return;
+      e.preventDefault();
+      if (cooling || performance.now() - lastScroll < EDGE_SETTLE_MS) return;
+      cooling = true;
+      window.setTimeout(() => {
+        cooling = false;
+      }, WHEEL_COOLDOWN_MS);
+      onNavigate(direction);
+    };
+    // 内側の要素のスクロールも拾えるよう、scroll はキャプチャで受ける。
+    el.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("scroll", onScroll, { capture: true });
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, [isImage, isMarkdown, tagsOpen, onNavigate]);
+
   const dirty = draft.length !== entry.tags.length || draft.some((t, i) => t !== entry.tags[i]);
 
   const save = async () => {
@@ -191,7 +252,10 @@ export function DetailPanel({
         {/* ---- コンテンツ本体（種別ごとに切り替え） ----
             画像は ImagePreview 側が独自にスクロールを持つため、
             ここで二重にスクロールコンテナを作らない。 */}
-        <div className={isImage ? "size-full overflow-hidden bg-black" : "size-full overflow-auto"}>
+        <div
+          ref={contentRef}
+          className={isImage ? "size-full overflow-hidden bg-black" : "size-full overflow-auto"}
+        >
           {entry.cloudOnly && (
             <div className="min-h-full" style={{ paddingTop: contentTop }}>
               <CloudOnlyNotice entry={entry} onFetched={onEntryUpdated} onError={onError} />
@@ -202,6 +266,7 @@ export function DetailPanel({
               entry={entry}
               uiVisible={overlayVisible}
               onNavigate={onNavigate}
+              wheelNavigation={!tagsOpen}
               index={index}
               total={total}
             />

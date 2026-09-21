@@ -10,7 +10,7 @@
  * 倍率指定（＋ / 原寸 / Ctrl+ホイール）で足りる。
  *
  * 操作の割り当ては次のとおり。
- *  - ホイール          … 前後のファイルへページ送り
+ *  - ホイール          … 前後のファイルへページ送り（タグ編集中は送らない）
  *  - Ctrl + ホイール   … カーソル位置を軸にした拡大・縮小
  *  - ドラッグ          … はみ出しているときの画像の移動
  */
@@ -32,6 +32,11 @@ interface Props {
   uiVisible: boolean;
   /** 前後のファイルへの移動。種類を問わず一覧の並び順で動く。 */
   onNavigate: (direction: 1 | -1) => void;
+  /**
+   * false の間はホイールでのページ送りをしない。タグ編集欄が出ている間に
+   * ホイールを回して、編集中のファイルから意図せず離れてしまうのを防ぐ。
+   */
+  wheelNavigation: boolean;
   /** 一覧での現在位置（0 始まり）。-1 ならページ送り UI を出さない。 */
   index: number;
   total: number;
@@ -40,7 +45,7 @@ interface Props {
 /** 倍率の刻み。1 が原寸。 */
 const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
 /** ホイール 1 ジェスチャーにつき 1 ページだけ送るためのクールダウン。 */
-const WHEEL_COOLDOWN_MS = 350;
+export const WHEEL_COOLDOWN_MS = 350;
 /** 実際の倍率が刻みとほぼ同じとき、同じ値へ「動かない」のを避けるための許容差。 */
 const ZOOM_EPSILON = 0.005;
 
@@ -97,7 +102,14 @@ function steppedZoom(base: number, direction: 1 | -1): number | null {
   return smaller.length > 0 ? smaller[smaller.length - 1] : null;
 }
 
-export function ImagePreview({ entry, uiVisible, onNavigate, index, total }: Props) {
+export function ImagePreview({
+  entry,
+  uiVisible,
+  onNavigate,
+  wheelNavigation,
+  index,
+  total,
+}: Props) {
   // 既定は「全体を表示」。縦長画像は高さが、横長画像は幅が自動でウィンドウに
   // 合うため、画像の向きによらず全体が常に見える（object-fit: contain の性質）。
   const [zoom, setZoom] = useState<ZoomMode>("fit-contain");
@@ -191,7 +203,7 @@ export function ImagePreview({ entry, uiVisible, onNavigate, index, total }: Pro
         return;
       }
 
-      if (cooling) return;
+      if (!wheelNavigation || cooling) return;
       cooling = true;
       window.setTimeout(() => {
         cooling = false;
@@ -200,7 +212,7 @@ export function ImagePreview({ entry, uiVisible, onNavigate, index, total }: Pro
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [onNavigate, step]);
+  }, [onNavigate, step, wheelNavigation]);
 
   // はみ出しているときは、ドラッグで画像を動かせるようにする。
   const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
