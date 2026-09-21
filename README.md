@@ -69,12 +69,6 @@ Exif.Image.XPKeywords や XMP:Subject などの標準タグ領域に書き込み
 書き込みは一時ファイルへ出力してから rename する方式で、途中で失敗しても元のファイルを壊しません。
 読み取り専用のファイルはエラーとして表示し、メモリ上だけ更新するような不整合は起こしません。
 
-### 拡張子と中身の食い違い
-
-ブラウザから保存した画像などでは、中身が PNG なのに名前が `.jpg`、といった食い違いが珍しくありません。
-taggo は先頭バイトから実際の形式を判定し、メタデータの読み書きも配信時の MIME タイプもそちらに合わせます。
-カードには実体の形式がバッジで表示されます。
-
 判定はできても taggo が扱えない形式（AVIF・HEIC・BMP・TIFF・GIF・SVG・M4A）は、
 読み取り専用として理由を添えて表示します。正しい MIME タイプで配信するため、
 ブラウザが対応している形式（GIF・SVG・AVIF など）はプレビューできます。
@@ -87,8 +81,6 @@ GIF・SVG・AAC・M4A はタグの標準的な埋め込み場所を持たない�
 
 - Go 1.26 以上
 - Node.js 20 以上
-- Linux では `webkit2gtk-4.1` と `gtk3`（開発パッケージ）
-- Windows では [WebView2 ランタイム](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 10/11 には標準搭載）
 - [Wails CLI](https://wails.io/) v2
 
 ```sh
@@ -110,34 +102,19 @@ make build            # build/bin/taggo を作る
 make dev
 ```
 
-`webkit2gtk-4.1` しか入っていない環境が一般的になったため、Makefile では
-`-tags webkit2_41` を常に付けています。`wails` コマンドを直接叩く場合も同じタグが要ります
-（このタグは Linux 版 Wails のみが参照するので、Windows で付けても無害です）。
+なお `wails dev` は GET をすべて Vite の開発サーバーへ転送し、開発サーバーが 404 か 405 を返したときにだけ Go 側のハンドラーへ委譲します。
 
-なお `wails dev` は GET をすべて Vite の開発サーバーへ転送し、
-開発サーバーが 404 か 405 を返したときにだけ Go 側のハンドラーへ委譲します。
-Vite は未知のパスへ SPA フォールバックで `index.html` を 200 で返してしまうため、
-`frontend/vite.config.ts` のプラグインで `/taggo/` 以下だけを 404 にして、
-画像やプレビューの配信要求が Go 側へ届くようにしています。
+Vite は未知のパスへ SPA フォールバックで `index.html` を 200 で返してしまうため、`frontend/vite.config.ts` のプラグインで `/taggo/` 以下だけを 404 にして、画像やプレビューの配信要求が Go 側へ届くようにしています。
 
-#### Windows
+#### Windows の make インストール
 
-コード自体は Windows 対応済みで（ファイル権限チェックのみ `internal/meta/fsutil_unix.go` /
-`fsutil_other.go` に分岐し、cgo や gtk への依存はありません）、追加の実装は不要です。
-ただし標準の Windows には `make` が入っていないため、どちらかで補います。
+標準の Windows には `make` が入っていないため、以下の手順でインストールします。
 
 ```powershell
-# 1. GNU Make を入れて make build / make dev / make test / make lint をそのまま使う
+# GNU Make を入れる
 winget install GnuWin32.Make
 # インストール後、C:\Program Files (x86)\GnuWin32\bin を PATH に追加する
-
-# 2. または Wails CLI を直接呼ぶ
-wails build   # build\bin\taggo.exe を作る
-.\build\bin\taggo.exe
-wails dev     # ホットリロード付きで起動する
 ```
-
-`go build ./...` / `go test ./...` / `go vet ./...` はそのまま動きます。
 
 ### テスト
 
