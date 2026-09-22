@@ -3,6 +3,8 @@
 Markdown を使った、タグ管理のローカル Wiki デスクトップアプリです（Windows 専用）。
 好きなエディタで書いた Markdown のフォルダを開くと、タグとリンクでたどれる Wiki として読めます。
 
+![taggo の操作の流れ](docs/images/demo.gif)
+
 ## 概要
 
 - **Markdown のノートだけを扱うローカル Wiki**
