@@ -22,6 +22,10 @@ export function FetchCloudEntry(arg1) {
   return window['go']['app']['App']['FetchCloudEntry'](arg1);
 }
 
+export function GetSettings() {
+  return window['go']['app']['App']['GetSettings']();
+}
+
 export function LinkPreview(arg1) {
   return window['go']['app']['App']['LinkPreview'](arg1);
 }
@@ -42,6 +46,10 @@ export function OpenInEditor(arg1) {
   return window['go']['app']['App']['OpenInEditor'](arg1);
 }
 
+export function OpenStartupFolder(arg1) {
+  return window['go']['app']['App']['OpenStartupFolder'](arg1);
+}
+
 export function RelatedPages(arg1) {
   return window['go']['app']['App']['RelatedPages'](arg1);
 }
@@ -52,6 +60,10 @@ export function RemoveTags(arg1, arg2) {
 
 export function ReplaceTags(arg1, arg2) {
   return window['go']['app']['App']['ReplaceTags'](arg1, arg2);
+}
+
+export function SaveSettings(arg1) {
+  return window['go']['app']['App']['SaveSettings'](arg1);
 }
 
 export function Search(arg1) {
@@ -66,6 +78,10 @@ export function SetTags(arg1, arg2) {
   return window['go']['app']['App']['SetTags'](arg1, arg2);
 }
 
+export function SettingsPath() {
+  return window['go']['app']['App']['SettingsPath']();
+}
+
 export function Startup(arg1) {
   return window['go']['app']['App']['Startup'](arg1);
 }
@@ -76,4 +92,8 @@ export function Status() {
 
 export function Tags(arg1, arg2) {
   return window['go']['app']['App']['Tags'](arg1, arg2);
+}
+
+export function TakeStartupWarnings() {
+  return window['go']['app']['App']['TakeStartupWarnings']();
 }

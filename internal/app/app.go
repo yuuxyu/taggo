@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/yuuxyu/taggo/internal/model"
 	"github.com/yuuxyu/taggo/internal/scan"
 	"github.com/yuuxyu/taggo/internal/search"
+	"github.com/yuuxyu/taggo/internal/settings"
 	"github.com/yuuxyu/taggo/internal/store"
 	"github.com/yuuxyu/taggo/internal/watcher"
 )
@@ -33,17 +35,17 @@ const (
 
 // App はアプリ全体の状態を持つ。
 type App struct {
-	ctx   context.Context
-	store *store.Store
-	links *linkcard.Client
+	ctx      context.Context
+	store    *store.Store
+	links    *linkcard.Client
+	settings *settings.Store
 
+	// mu は maxEntries と watcher、scanCancel、cloudOnly、続きの読み込み位置、
+	// startupWarnings を守る。フォルダの開き直しと進行中の走査キャンセルが競合しうるため。
+	mu sync.Mutex
 	// maxEntries は 1 回の読み込みで展開する件数の上限。
-	// 本番では store.MaxEntries で、テストでは小さくして上限まわりを確かめる。
-	maxEntries int
-
-	// mu は watcher と scanCancel、cloudOnly、続きの読み込み位置を守る。
-	// フォルダの開き直しと進行中の走査キャンセルが競合しうるため。
-	mu          sync.Mutex
+	// 設定の ScanLimit に従い、テストでは小さくして上限まわりを確かめる。
+	maxEntries  int
 	watcher     *watcher.Watcher
 	watcherStop context.CancelFunc
 	scanCancel  context.CancelFunc
@@ -57,15 +59,22 @@ type App struct {
 	cursor string
 	// remaining は、まだ読み込んでいない Markdown ファイルの数。
 	remaining int
+	// startupWarnings は、起動時に画面へ出せなかった警告。画面が用意できてから取りに来る。
+	startupWarnings []string
 }
 
 // New はアプリを組み立てる。インメモリ DB の初期化に失敗した場合のみエラーを返す。
-func New() (*App, error) {
+func New(cfg *settings.Store) (*App, error) {
 	s, err := store.Open()
 	if err != nil {
 		return nil, err
 	}
-	return &App{store: s, links: linkcard.New(), maxEntries: store.MaxEntries}, nil
+	return &App{
+		store:      s,
+		links:      linkcard.New(),
+		settings:   cfg,
+		maxEntries: cfg.Get().ScanLimit,
+	}, nil
 }
 
 // Startup は Wails の起動フックから呼ばれ、以降 runtime API を使えるようにする。
@@ -240,6 +249,7 @@ func (a *App) OpenFolder(root string) error {
 	a.scanCancel = cancel
 	a.loadingMore = false
 	a.cursor, a.remaining = "", 0
+	limit := a.maxEntries
 	a.mu.Unlock()
 
 	a.stopWatcher()
@@ -247,15 +257,20 @@ func (a *App) OpenFolder(root string) error {
 		return err
 	}
 
-	go a.runScan(ctx, abs)
+	// 覚えられなくてもフォルダは開けるので、読み込みは止めない。
+	if err := a.settings.RememberFolder(abs); err != nil {
+		log.Printf("前回開いたフォルダを記録できませんでした: %v", err)
+	}
+
+	go a.runScan(ctx, abs, limit)
 	return nil
 }
 
 // runScan は走査を実行し、完了後にウォッチャーを開始する。
-func (a *App) runScan(ctx context.Context, root string) {
+func (a *App) runScan(ctx context.Context, root string, limit int) {
 	result, err := scan.Scan(ctx, scan.Options{
 		Root:  root,
-		Limit: a.maxEntries,
+		Limit: limit,
 		OnProgress: func(done, found int) {
 			a.emit(EventScanProgress, ScanProgress{Done: done, Found: found})
 		},
@@ -395,6 +410,7 @@ func (a *App) Status() Status {
 	scanning := a.scanCancel != nil
 	cloudOnly := a.cloudOnly
 	remaining := a.remaining
+	maxEntries := a.maxEntries
 	a.mu.Unlock()
 
 	return Status{
@@ -402,7 +418,7 @@ func (a *App) Status() Status {
 		EntryCount: a.store.Count(),
 		TagCount:   a.store.TagCount(),
 		Scanning:   scanning,
-		MaxEntries: a.maxEntries,
+		MaxEntries: maxEntries,
 		Remaining:  remaining,
 		CloudOnly:  cloudOnly,
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/yuuxyu/taggo/internal/model"
+	"github.com/yuuxyu/taggo/internal/settings"
 	"github.com/yuuxyu/taggo/internal/store"
 )
 
@@ -30,7 +31,7 @@ func newTestApp(t *testing.T, files map[string]string) (*App, string) {
 		}
 	}
 
-	a, err := New()
+	a, err := New(settings.Load(filepath.Join(t.TempDir(), "settings.json")))
 	if err != nil {
 		t.Fatalf("アプリの初期化に失敗: %v", err)
 	}
@@ -389,7 +390,7 @@ func newLimitedApp(t *testing.T, maxEntries int, files []string) (*App, string) 
 		}
 	}
 
-	a, err := New()
+	a, err := New(settings.Load(filepath.Join(t.TempDir(), "settings.json")))
 	if err != nil {
 		t.Fatalf("アプリの初期化に失敗: %v", err)
 	}

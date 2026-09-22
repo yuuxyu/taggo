@@ -11,7 +11,9 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/yuuxyu/taggo/internal/app"
+	"github.com/yuuxyu/taggo/internal/settings"
 )
 
 //go:embed all:frontend/dist
@@ -26,7 +28,14 @@ func main() {
 		*folder = flag.Arg(0)
 	}
 
-	a, err := app.New()
+	// 保存先が決められなくても、既定の設定で起動はできる（保存だけができない）。
+	path, err := settings.DefaultPath()
+	if err != nil {
+		log.Printf("%v", err)
+	}
+	cfg := settings.Load(path)
+
+	a, err := app.New(cfg)
 	if err != nil {
 		log.Fatalf("アプリの初期化に失敗しました: %v", err)
 	}
@@ -42,14 +51,13 @@ func main() {
 			// ローカルファイルのプレビュー配信を、通常のアセット配信に重ねる。
 			Handler: app.NewAssetHandler(a),
 		},
-		BackgroundColour: &options.RGBA{R: 250, G: 250, B: 248, A: 255},
+		BackgroundColour: backgroundColour(cfg.Get().Theme),
+		Windows: &windows.Options{
+			Theme: windowTheme(cfg.Get().Theme),
+		},
 		OnStartup: func(ctx context.Context) {
 			a.Startup(ctx)
-			if *folder != "" {
-				if err := a.OpenFolder(*folder); err != nil {
-					log.Printf("起動時に指定されたフォルダを開けませんでした: %v", err)
-				}
-			}
+			a.OpenStartupFolder(*folder)
 		},
 		OnShutdown: a.Shutdown,
 		Bind: []any{
@@ -59,4 +67,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("アプリの起動に失敗しました: %v", err)
 	}
+}
+
+// windowTheme は、設定のテーマに合わせたタイトルバーの配色を返す。
+func windowTheme(theme settings.Theme) windows.Theme {
+	switch theme {
+	case settings.ThemeLight:
+		return windows.Light
+	case settings.ThemeDark:
+		return windows.Dark
+	}
+	return windows.SystemDefault
+}
+
+// backgroundColour は、画面を描くまでの間に見えるウィンドウの地の色を返す。
+// 暗いテーマを選んでいるときに、起動の一瞬だけ白く光らないようにする。
+// OS に合わせる場合は起動時に分からないので、明るいテーマの色にしておく。
+func backgroundColour(theme settings.Theme) *options.RGBA {
+	if theme == settings.ThemeDark {
+		return &options.RGBA{R: 26, G: 25, B: 24, A: 255}
+	}
+	return &options.RGBA{R: 250, G: 250, B: 248, A: 255}
 }

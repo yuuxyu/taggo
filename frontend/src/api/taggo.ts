@@ -27,6 +27,43 @@ export type TagPageGroup = Pick<store.TagPageGroup, "tag" | "pages">;
 /** 一覧の並び順。Go 側の store.SortOrder と対応する。 */
 export type SortOrder = "modified_desc" | "name_asc" | "relevance";
 
+/** 起動時にどのフォルダを開くか。Go 側の settings.StartupMode と対応する。 */
+export type StartupMode = "none" | "last" | "fixed";
+
+/** 画面の配色。Go 側の settings.Theme と対応する。 */
+export type Theme = "system" | "light" | "dark";
+
+/**
+ * アプリの設定（%APPDATA%\taggo\settings.json）。
+ * 生成された型は値を string のまま持つので、取りうる値に絞った形で扱う。
+ */
+export interface Settings {
+  version: number;
+  startupMode: StartupMode;
+  /** startupMode が "fixed" のときに開くフォルダ。 */
+  startupFolder?: string;
+  /** startupMode が "last" のときに開く、前回開いたフォルダ。Go 側が記録する。 */
+  lastFolder?: string;
+  /** 起動時の一覧の並び順。 */
+  sort: SortOrder;
+  /** 1 回の走査で展開する件数の上限。 */
+  scanLimit: number;
+  theme: Theme;
+}
+
+/** 走査の上限件数として選べる範囲。Go 側の settings.MinScanLimit / MaxScanLimit と合わせる。 */
+export const SCAN_LIMIT_MIN = 1_000;
+export const SCAN_LIMIT_MAX = 100_000;
+
+/** 設定を読めなかったときの設定。Go 側の settings.Default と合わせる。 */
+export const DEFAULT_SETTINGS: Settings = {
+  version: 1,
+  startupMode: "none",
+  sort: "modified_desc",
+  scanLimit: 20_000,
+  theme: "system",
+};
+
 /** 走査の進捗イベントのペイロード。 */
 export interface ScanProgress {
   done: number;
@@ -130,6 +167,19 @@ export const addTags = (paths: string[], tags: string[]): Promise<TagEditResult[
 /** 複数ファイルから指定タグを取り除く。 */
 export const removeTags = (paths: string[], tags: string[]): Promise<TagEditResult[]> =>
   Backend.RemoveTags(paths, tags);
+
+/** 今の設定を取得する。 */
+export const getSettings = (): Promise<Settings> => Backend.GetSettings() as Promise<Settings>;
+
+/** 設定を保存して今のアプリへ反映する。保存した設定が返る。値が正しくなければ reject される。 */
+export const saveSettings = (next: Settings): Promise<Settings> =>
+  Backend.SaveSettings(next) as Promise<Settings>;
+
+/** 設定ファイルの置き場所を取得する。 */
+export const getSettingsPath = (): Promise<string> => Backend.SettingsPath();
+
+/** 起動時に出た警告（開けなかったフォルダなど）を受け取る。受け取った警告は二度と返らない。 */
+export const takeStartupWarnings = (): Promise<string[]> => Backend.TakeStartupWarnings();
 
 /** 検索バーの文字列へタグを AND 条件として足す。 */
 export const appendTagToQuery = (query: string, tag: string): Promise<string> =>

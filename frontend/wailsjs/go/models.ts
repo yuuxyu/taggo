@@ -154,6 +154,35 @@ export namespace model {
 
 }
 
+export namespace settings {
+	
+	export class Settings {
+	    version: number;
+	    startupMode: string;
+	    startupFolder?: string;
+	    lastFolder?: string;
+	    sort: string;
+	    scanLimit: number;
+	    theme: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Settings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.startupMode = source["startupMode"];
+	        this.startupFolder = source["startupFolder"];
+	        this.lastFolder = source["lastFolder"];
+	        this.sort = source["sort"];
+	        this.scanLimit = source["scanLimit"];
+	        this.theme = source["theme"];
+	    }
+	}
+
+}
+
 export namespace store {
 	
 	export class RelatedPage {

@@ -61,14 +61,15 @@ export interface Library {
   cancelLoadMore: () => Promise<void>;
 }
 
-export function useLibrary(): Library {
+/** initialSort は起動時の並び順（設定の「一覧の既定の並び順」）。 */
+export function useLibrary(initialSort: SortOrder): Library {
   const [status, setStatus] = useState<Status | null>(null);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [total, setTotal] = useState(0);
   const [tagPages, setTagPages] = useState<TagPageGroup[]>([]);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortOrder>("modified_desc");
+  const [sort, setSort] = useState<SortOrder>(initialSort);
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loadMoreBannerOpen, setLoadMoreBannerOpen] = useState(false);

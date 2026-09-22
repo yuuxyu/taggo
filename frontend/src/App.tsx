@@ -17,8 +17,10 @@ import {
   Events,
   getEntry,
   on,
+  takeStartupWarnings,
   type Entry,
   type EntryChanged,
+  type Settings,
   type TagEditResult,
 } from "./api/taggo";
 import { BulkTagDialog } from "./components/BulkTagDialog";
@@ -28,10 +30,12 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DetailPanel } from "./components/DetailPanel";
 import { LoadMoreBanner, NotLoadedHint } from "./components/LoadMore";
 import { SearchBar } from "./components/SearchBar";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { TagPageHeader } from "./components/TagPageHeader";
 import { Toolbar } from "./components/Toolbar";
 import { useDetailHistory } from "./hooks/useDetailHistory";
 import { useLibrary } from "./hooks/useLibrary";
+import { applyTheme } from "./theme";
 
 /**
  * 読み込み後の合計がこれを超える「すべて読み込む」は、確認を挟む。
@@ -39,8 +43,15 @@ import { useLibrary } from "./hooks/useLibrary";
  */
 const LOAD_ALL_CONFIRM_THRESHOLD = 100_000;
 
-export default function App() {
-  const library = useLibrary();
+interface Props {
+  /** 起動時に読み込んだ設定。 */
+  initialSettings: Settings;
+}
+
+export default function App({ initialSettings }: Props) {
+  const [settings, setSettings] = useState(initialSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const library = useLibrary(initialSettings.sort);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 詳細プレビューで見ているノートは、戻る／進むのための履歴として持つ。
   const history = useDetailHistory();
@@ -57,6 +68,13 @@ export default function App() {
   const [focusSignal, setFocusSignal] = useState(0);
 
   const { entries, query, setQuery, notify, replaceEntry } = library;
+
+  // 起動時に開けなかったフォルダなど、画面の準備ができる前に起きたことを知らせる。
+  useEffect(() => {
+    void takeStartupWarnings().then((warnings) => {
+      for (const warning of warnings ?? []) notify("error", warning);
+    });
+  }, [notify]);
 
   // 一覧が入れ替わっても、開いているプレビューは最新のエントリを指し続ける。
   // 「前へ／次へ」で隣のノートへ移れるよう、位置も一緒に持つ。
@@ -152,6 +170,26 @@ export default function App() {
     setBulkOpen(false);
     setFocusSignal((n) => n + 1);
   }, []);
+
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setFocusSignal((n) => n + 1);
+  }, []);
+
+  const { setSort, reload } = library;
+  const handleSettingsSaved = useCallback(
+    (saved: Settings) => {
+      applyTheme(saved.theme);
+      // 既定の並び順を変えたときは、今の一覧もその並び順にする。
+      if (saved.sort !== settings.sort) setSort(saved.sort);
+      // 「続きを読み込む」で増える件数などの表示を、新しい上限にする。
+      if (saved.scanLimit !== settings.scanLimit) void reload();
+      setSettings(saved);
+      closeSettings();
+      notify("info", "設定を保存しました。");
+    },
+    [settings, setSort, reload, closeSettings, notify],
+  );
 
   const toggleSelect = useCallback((entry: Entry) => {
     setSelected((prev) => {
@@ -281,6 +319,7 @@ export default function App() {
           onClearSelection={() => setSelected(new Set())}
           onOpenBulkEditor={() => setBulkOpen(true)}
           onSelectAll={() => setSelected(new Set(entries.map((e) => e.path)))}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       </header>
 
@@ -431,6 +470,15 @@ export default function App() {
             void loadMore(true);
           }}
           onCancel={() => setConfirmLoadAll(false)}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsDialog
+          settings={settings}
+          currentRoot={library.status?.root ?? ""}
+          onClose={closeSettings}
+          onSaved={handleSettingsSaved}
         />
       )}
 

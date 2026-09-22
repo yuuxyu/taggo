@@ -1,9 +1,16 @@
 /**
  * 検索バーの下に置くツールバー。
- * フォルダの選択、並び順の切り替え、読み込み状況の表示、一括編集の操作をまとめる。
+ * フォルダの選択、並び順の切り替え、読み込み状況の表示、一括編集の操作、設定の入口をまとめる。
  */
 
-import { CheckIcon, CloudIcon, FolderOpenIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
+import {
+  CheckIcon,
+  CloudIcon,
+  Cog6ToothIcon,
+  FolderOpenIcon,
+  TagIcon,
+  XMarkIcon,
+} from "@heroicons/react/20/solid";
 import type { ScanProgress, SortOrder, Status } from "../api/taggo";
 import { Button } from "./Button";
 
@@ -22,9 +29,11 @@ interface Props {
   onClearSelection: () => void;
   onOpenBulkEditor: () => void;
   onSelectAll: () => void;
+  onOpenSettings: () => void;
 }
 
-const SORT_LABELS: Record<SortOrder, string> = {
+/** 並び順の表示名。設定画面の「既定の並び順」でも使う。 */
+export const SORT_LABELS: Record<SortOrder, string> = {
   modified_desc: "更新が新しい順",
   name_asc: "名前順",
   relevance: "関連度順",
@@ -50,6 +59,7 @@ export function Toolbar({
   onClearSelection,
   onOpenBulkEditor,
   onSelectAll,
+  onOpenSettings,
 }: Props) {
   const root = status?.root ?? "";
 
@@ -153,6 +163,10 @@ export function Toolbar({
           ))}
         </select>
       </label>
+
+      <Button variant="ghost" title="設定" aria-label="設定" onClick={onOpenSettings}>
+        <Cog6ToothIcon className="size-4" aria-hidden="true" />
+      </Button>
     </div>
   );
 }

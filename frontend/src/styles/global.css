@@ -6,13 +6,17 @@
  *  2. 要素そのものの既定値（@layer base）
  * だけを置く。個々の部品の装飾は各コンポーネントのクラス指定に書く。
  *
- * 配色は OS のテーマ設定に追従する。明るいテーマの値を @theme で定義し、
- * 暗いテーマでは同じ変数を上書きする。ユーティリティ（bg-surface など）は
+ * 配色は設定のテーマに従う（src/theme.ts が <html data-theme="light|dark"> を付ける。
+ * 「OS に合わせる」のときは OS の設定を解決した値が入る）。明るいテーマの値を @theme で
+ * 定義し、暗いテーマでは同じ変数を上書きする。ユーティリティ（bg-surface など）は
  * 変数を参照するだけなので、これだけで両テーマに追従する。
  */
 
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+
+/* dark: バリアントも OS の設定ではなく、設定のテーマに従わせる。 */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme {
   /* 面の色。canvas（地）→ surface（カードなど手前）→ sunken（一段沈めた面）。 */
@@ -46,36 +50,39 @@
   --shadow-pop: 0 8px 40px rgb(0 0 0 / 18%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: #1a1918;
-    --color-surface: #232220;
-    --color-sunken: #131211;
+:root[data-theme="dark"] {
+  --color-canvas: #1a1918;
+  --color-surface: #232220;
+  --color-sunken: #131211;
 
-    --color-line: #35332f;
-    --color-line-strong: #4a4740;
+  --color-line: #35332f;
+  --color-line-strong: #4a4740;
 
-    --color-ink: #e8e4de;
-    --color-ink-muted: #9c968c;
-    --color-ink-faint: #6e6860;
+  --color-ink: #e8e4de;
+  --color-ink-muted: #9c968c;
+  --color-ink-faint: #6e6860;
 
-    --color-accent: #5fb3a1;
-    --color-accent-soft: #1e332f;
-    --color-accent-ink: #8fd3c3;
+  --color-accent: #5fb3a1;
+  --color-accent-soft: #1e332f;
+  --color-accent-ink: #8fd3c3;
 
-    --color-danger: #e0755c;
-    --color-danger-soft: #3a2320;
+  --color-danger: #e0755c;
+  --color-danger-soft: #3a2320;
 
-    --color-selection: #234039;
+  --color-selection: #234039;
 
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 12px rgb(0 0 0 / 30%);
-    --shadow-pop: 0 8px 40px rgb(0 0 0 / 60%);
-  }
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 12px rgb(0 0 0 / 30%);
+  --shadow-pop: 0 8px 40px rgb(0 0 0 / 60%);
 }
 
 @layer base {
+  /* スクロールバーやフォーム部品など、ブラウザが描く部分の配色も合わせる。 */
   :root {
-    color-scheme: light dark;
+    color-scheme: light;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
   }
 
   html,

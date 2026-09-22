@@ -1,26 +1,27 @@
 /**
  * mermaid のコードブロックを図として描くコンポーネント。
  *
- * mermaid は描画が重く初期化も 1 度で済むため、モジュールを遅延読み込みし、
- * 初期化はアプリ全体で 1 回だけ行う。
+ * mermaid は描画が重いため、モジュールを遅延読み込みする。初期化は配色が
+ * 変わったときだけやり直し、テーマを切り替えると描いてある図も描き直す。
  */
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useResolvedTheme, type ResolvedTheme } from "../theme";
 
-let initialized = false;
+/** 最後に初期化したときの配色。まだ初期化していなければ null。 */
+let initializedTheme: ResolvedTheme | null = null;
 
-/** mermaid 本体を読み込み、テーマを OS 設定に合わせて初期化する。 */
-async function loadMermaid() {
+/** mermaid 本体を読み込み、画面の配色に合わせて初期化する。 */
+async function loadMermaid(theme: ResolvedTheme) {
   const mermaid = (await import("mermaid")).default;
-  if (!initialized) {
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  if (initializedTheme !== theme) {
     mermaid.initialize({
       startOnLoad: false,
-      theme: dark ? "dark" : "neutral",
+      theme: theme === "dark" ? "dark" : "neutral",
       securityLevel: "strict",
       fontFamily: "inherit",
     });
-    initialized = true;
+    initializedTheme = theme;
   }
   return mermaid;
 }
@@ -32,13 +33,14 @@ export function Mermaid({ source }: { source: string }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const theme = useResolvedTheme();
 
   useEffect(() => {
     let cancelled = false;
     setSvg(null);
     setError(null);
 
-    void loadMermaid()
+    void loadMermaid(theme)
       .then((mermaid) => mermaid.render(id, source))
       .then(({ svg: rendered }) => {
         if (!cancelled) setSvg(rendered);
@@ -50,7 +52,7 @@ export function Mermaid({ source }: { source: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id, source]);
+  }, [id, source, theme]);
 
   if (error) {
     return (
