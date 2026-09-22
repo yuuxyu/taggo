@@ -434,22 +434,6 @@ export default function App() {
         />
       )}
 
-      {/* このダイアログが出るのは、Windows のクラウドファイルの仕組みに登録された
-          同期フォルダだけ。そこではクラウド上にだけあるファイルを属性で見分けられるので、
-          ダウンロードは起きないことを伝えたうえで、読み込むかを一度確認する。 */}
-      {library.pendingFolder && (
-        <ConfirmDialog
-          title={`${library.pendingFolder.service} のフォルダを読み込みますか？`}
-          lines={[
-            library.pendingFolder.path,
-            "クラウド上にだけあるファイルは中身を開かずに一覧へ出すので、読み込んでもダウンロードは始まりません。",
-            "中身を読みたいノートは、カードを開いて個別に取り込めます。",
-          ]}
-          confirmLabel="読み込む"
-          onConfirm={() => void library.confirmPendingFolder()}
-          onCancel={library.cancelPendingFolder}
-        />
-      )}
     </div>
   );
 }

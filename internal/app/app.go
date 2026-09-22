@@ -142,15 +142,6 @@ func (a *App) SelectFolder() (string, error) {
 	return dir, nil
 }
 
-// CloudSyncHint は、そのフォルダがクラウド同期フォルダの中にある場合にサービス名を返す。
-// 該当しなければ空文字を返す。
-//
-// 中身がローカルに無いファイルは属性から見分けて開かずに済ませるが、
-// 同期フォルダを読み込むこと自体を利用者が意識できるよう、走査を始める前の確認に使う。
-func (a *App) CloudSyncHint(path string) string {
-	return cloudfile.SyncRootProvider(path)
-}
-
 // FetchCloudEntry はクラウド上にだけあるファイルを、利用者の明示操作で取り込む。
 //
 // ここで初めてファイルを開くため、クラウドからのダウンロードが発生する。

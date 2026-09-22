@@ -8,7 +8,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelLoadMore as cancelLoadMoreApi,
-  cloudSyncHint,
   Events,
   loadMore as loadMoreApi,
   on,
@@ -34,13 +33,6 @@ export interface Notice {
   message: string;
 }
 
-/** 読み込み前に確認したいフォルダ。クラウド同期フォルダの中にあるときに立つ。 */
-export interface PendingFolder {
-  path: string;
-  /** 同期サービスが Windows に登録した名前（「Dropbox」など）。 */
-  service: string;
-}
-
 export interface Library {
   status: Status | null;
   progress: ScanProgress | null;
@@ -55,12 +47,6 @@ export interface Library {
   setQuery: (q: string) => void;
   setSort: (s: SortOrder) => void;
   chooseFolder: () => Promise<void>;
-  /** 確認待ちのフォルダ。null なら確認は要らない。 */
-  pendingFolder: PendingFolder | null;
-  /** 確認のうえ読み込む。 */
-  confirmPendingFolder: () => Promise<void>;
-  /** 確認をやめて、フォルダを開かない。 */
-  cancelPendingFolder: () => void;
   reload: () => Promise<void>;
   notify: (kind: Notice["kind"], message: string) => void;
   dismissNotice: (id: number) => void;
@@ -85,7 +71,6 @@ export function useLibrary(): Library {
   const [sort, setSort] = useState<SortOrder>("modified_desc");
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
-  const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
   const [loadMoreBannerOpen, setLoadMoreBannerOpen] = useState(false);
   // 走査が終わった回数。件数が前と同じでも、走査のたびに一覧を引き直すきっかけにする。
   const [scanSeq, setScanSeq] = useState(0);
@@ -211,7 +196,7 @@ export function useLibrary(): Library {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryCount, scanSeq]);
 
-  /** 読み込みを実際に始める。ここから先はファイルを開くので、通信が起きうる。 */
+  /** 読み込みを始める。 */
   const startOpen = useCallback(
     async (dir: string) => {
       try {
@@ -231,31 +216,15 @@ export function useLibrary(): Library {
     [notify, reload],
   );
 
-  // フォルダを選ぶところと読み込むところを分けてある。クラウド同期フォルダでは、
-  // 走査そのものがダウンロードを誘発しうるため、読み込む前に確認を挟む。
   const chooseFolder = useCallback(async () => {
     try {
       const dir = await selectFolder();
       if (!dir) return;
-
-      const service = await cloudSyncHint(dir);
-      if (service !== "") {
-        setPendingFolder({ path: dir, service });
-        return;
-      }
       await startOpen(dir);
     } catch (err) {
       notify("error", `フォルダを開けませんでした: ${String(err)}`);
     }
   }, [notify, startOpen]);
-
-  const confirmPendingFolder = useCallback(async () => {
-    const target = pendingFolder;
-    setPendingFolder(null);
-    if (target) await startOpen(target.path);
-  }, [pendingFolder, startOpen]);
-
-  const cancelPendingFolder = useCallback(() => setPendingFolder(null), []);
 
   // 続きの読み込み中も一覧は消さない。読み終わったら走査完了イベントで引き直す。
   const loadMore = useCallback(
@@ -301,9 +270,6 @@ export function useLibrary(): Library {
       setQuery,
       setSort,
       chooseFolder,
-      pendingFolder,
-      confirmPendingFolder,
-      cancelPendingFolder,
       reload,
       notify,
       dismissNotice,
@@ -324,9 +290,6 @@ export function useLibrary(): Library {
       loading,
       notices,
       chooseFolder,
-      pendingFolder,
-      confirmPendingFolder,
-      cancelPendingFolder,
       reload,
       notify,
       dismissNotice,

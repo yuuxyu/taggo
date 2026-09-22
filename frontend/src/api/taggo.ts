@@ -73,12 +73,6 @@ export const Events = {
 export const selectFolder = (): Promise<string> => Backend.SelectFolder();
 
 /**
- * そのフォルダがクラウド同期フォルダの中にあるか。該当すればサービス名が返る。
- * 走査でダウンロードが起きうる場所かを、読み込む前に確かめるために使う。
- */
-export const cloudSyncHint = (path: string): Promise<string> => Backend.CloudSyncHint(path);
-
-/**
  * クラウド上にだけあるファイルを取り込む。
  * この呼び出しで実際にダウンロードが発生するので、利用者の操作からのみ呼ぶこと。
  */

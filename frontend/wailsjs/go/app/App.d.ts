@@ -12,8 +12,6 @@ export function AppendTagToQuery(arg1:string,arg2:string):Promise<string>;
 
 export function CancelLoadMore():Promise<void>;
 
-export function CloudSyncHint(arg1:string):Promise<string>;
-
 export function Entry(arg1:string):Promise<model.Entry>;
 
 export function FetchCloudEntry(arg1:string):Promise<model.Entry>;

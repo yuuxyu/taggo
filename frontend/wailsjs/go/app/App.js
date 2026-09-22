@@ -14,10 +14,6 @@ export function CancelLoadMore() {
   return window['go']['app']['App']['CancelLoadMore']();
 }
 
-export function CloudSyncHint(arg1) {
-  return window['go']['app']['App']['CloudSyncHint'](arg1);
-}
-
 export function Entry(arg1) {
   return window['go']['app']['App']['Entry'](arg1);
 }
