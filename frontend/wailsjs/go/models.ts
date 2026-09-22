@@ -105,6 +105,7 @@ export namespace model {
 	    tags: string[];
 	    title: string;
 	    preview?: string;
+	    thumbnail?: string;
 	    links?: string[];
 	    tagPage?: string;
 	    writable: boolean;
@@ -126,6 +127,7 @@ export namespace model {
 	        this.tags = source["tags"];
 	        this.title = source["title"];
 	        this.preview = source["preview"];
+	        this.thumbnail = source["thumbnail"];
 	        this.links = source["links"];
 	        this.tagPage = source["tagPage"];
 	        this.writable = source["writable"];

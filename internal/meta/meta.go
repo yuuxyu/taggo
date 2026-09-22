@@ -16,11 +16,12 @@ var ErrUnsupported = errors.New("Markdown ファイルではありません")
 
 // Info は 1 ファイルから抽出しうる情報をまとめたもの。
 type Info struct {
-	Tags    []string
-	Title   string
-	Preview string
-	Links   []string
-	TagPage string
+	Tags      []string
+	Title     string
+	Preview   string
+	Thumbnail string
+	Links     []string
+	TagPage   string
 }
 
 // Read は path の Entry を組み立てる。
@@ -54,6 +55,7 @@ func Read(path string, info os.FileInfo) (*model.Entry, error) {
 		e.Title = got.Title
 	}
 	e.Preview = got.Preview
+	e.Thumbnail = got.Thumbnail
 	e.Links = got.Links
 	e.TagPage = model.NormalizeTag(got.TagPage)
 	return e, nil

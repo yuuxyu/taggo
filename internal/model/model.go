@@ -32,6 +32,11 @@ type Entry struct {
 	// Preview はカードに表示する短い本文抜粋。
 	Preview string `json:"preview,omitempty"`
 
+	// Thumbnail はカードに表示する画像。本文で最初に使われている画像の参照
+	// （書かれたままのパスか http(s) の URL）か、最初に貼られた YouTube 動画の
+	// サムネイル画像の URL が入る。どちらも無ければ空になる。
+	Thumbnail string `json:"thumbnail,omitempty"`
+
 	// Links は Markdown 本文から見つかった、他のノートへのリンク。書かれたままの
 	// 相対パス（"./sub/impl.md" など）で、関連ページのグラフ構築に使う。
 	Links []string `json:"links,omitempty"`

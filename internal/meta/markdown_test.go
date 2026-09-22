@@ -224,3 +224,34 @@ func TestMarkdownWriteTagsKeepsTagPage(t *testing.T) {
 		t.Fatalf("タグの書き換えで tag: が消えた: %q", got.TagPage)
 	}
 }
+
+func TestMarkdownThumbnail(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"画像なし", "# 見出し\n\n本文だけ。\n", ""},
+		{"ローカル画像", "# 見出し\n\n説明。\n\n![図](./img/figure.png \"図の説明\")\n", "./img/figure.png"},
+		{"山括弧で囲んだ画像", "![図](<assets/a.png>)\n", "assets/a.png"},
+		{"外部 URL の画像", "![](https://example.com/a.jpg)\n", "https://example.com/a.jpg"},
+		{"Windows の絶対パス", "![](C:/notes/a.png)\n", "C:/notes/a.png"},
+		{"YouTube の watch URL", "紹介。\n\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\n", "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"},
+		{"YouTube の短縮 URL", "[動画](https://youtu.be/dQw4w9WgXcQ?t=10)\n", "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"},
+		{"YouTube の他のパラメータ付き", "<https://youtube.com/watch?list=PL1&v=dQw4w9WgXcQ>\n", "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"},
+		{"YouTube ショート", "https://m.youtube.com/shorts/dQw4w9WgXcQ\n", "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"},
+		{"先に書かれた動画を使う", "https://youtu.be/dQw4w9WgXcQ\n\n![](a.png)\n", "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"},
+		{"同じ行なら先に書かれた画像を使う", "![](a.png) https://youtu.be/dQw4w9WgXcQ\n", "a.png"},
+		{"ふつうのリンクは使わない", "[資料](doc.png)\n\n![](b.png)\n", "b.png"},
+		{"data URI は使わない", "![](data:image/png;base64,AAAA)\n\n![](c.png)\n", "c.png"},
+		{"コードブロックの中は使わない", "```md\n![](code.png)\n```\n\n![](real.png)\n", "real.png"},
+		{"YouTube 以外の動画サイトは使わない", "https://www.youtube.com/channel/abc\n", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := thumbnail([]byte(c.body)); got != c.want {
+				t.Fatalf("サムネイルが一致しない: got %q, want %q", got, c.want)
+			}
+		})
+	}
+}

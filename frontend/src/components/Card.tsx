@@ -3,9 +3,10 @@
  * 上部に本文の抜粋を、下部に埋め込みタグをバッジで並べる。
  */
 
-import { memo } from "react";
-import { BookOpenIcon, CheckIcon, CloudIcon, LockClosedIcon } from "@heroicons/react/16/solid";
-import type { Entry } from "../api/taggo";
+import { memo, useState } from "react";
+import { BookOpenIcon, CheckIcon, CloudIcon, LockClosedIcon, PlayIcon } from "@heroicons/react/16/solid";
+import { imageURL, type Entry } from "../api/taggo";
+import { resolveLocalPath } from "../notePath";
 import { TagBadge } from "./TagBadge";
 
 interface Props {
@@ -42,12 +43,55 @@ function CardPreview({ entry }: { entry: Entry }) {
     );
   }
 
+  if (entry.thumbnail) {
+    return <CardThumbnail key={entry.thumbnail} entry={entry} thumbnail={entry.thumbnail} />;
+  }
+  return <CardExcerpt entry={entry} />;
+}
+
+function CardExcerpt({ entry }: { entry: Entry }) {
   return (
     <div className="h-full overflow-hidden px-3.5 py-3">
       <p className="m-0 line-clamp-6 text-xs leading-relaxed text-ink-muted">
         {entry.preview || "（本文なし）"}
       </p>
     </div>
+  );
+}
+
+/** Go 側が YouTube 動画から組み立てたサムネイルの URL。 */
+const YOUTUBE_THUMBNAIL_RE = /^https:\/\/i\.ytimg\.com\//;
+
+/**
+ * 本文で最初に使われている画像か、YouTube 動画のサムネイル。
+ * フォルダ内の画像は taggo の配信 URL で読み込む。読み込めなければ
+ * （クラウド上にしか無い・フォルダの外・画像でない など）本文の抜粋に戻す。
+ */
+function CardThumbnail({ entry, thumbnail }: { entry: Entry; thumbnail: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <CardExcerpt entry={entry} />;
+
+  const localPath = resolveLocalPath(thumbnail, entry);
+  const src = localPath === null ? thumbnail : imageURL(localPath);
+  return (
+    <>
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        className="size-full object-cover"
+        onError={() => setFailed(true)}
+      />
+      {YOUTUBE_THUMBNAIL_RE.test(thumbnail) && (
+        <span className="absolute inset-0 grid place-items-center" aria-hidden="true">
+          <span className="grid size-9 place-items-center rounded-full bg-black/60 text-white">
+            <PlayIcon className="ml-0.5 size-4.5" />
+          </span>
+        </span>
+      )}
+    </>
   );
 }
 

@@ -34,6 +34,17 @@ var (
 	// ドライブ文字で、スキームに見えるがローカルパスなので除外に使う。
 	schemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
 	driveRe  = regexp.MustCompile(`^[a-zA-Z]:[\\/]`)
+	// youtubeRe は YouTube 動画の URL。捕まえるのは 11 文字の動画 ID。
+	youtubeRe = regexp.MustCompile(`https?://(?:(?:www|m|music)\.)?(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:[^\s)>]*&)?v=|shorts/|embed/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})`)
+)
+
+const (
+	// maxThumbnailLen を超える画像の参照は、カードのサムネイルに使わない。
+	// 巨大な値をエントリに抱え込まないため。
+	maxThumbnailLen = 2048
+	// youtubeThumbnail は動画 ID から作るサムネイル画像の URL。mqdefault は
+	// 16:9 で上下の黒帯が無いので、カードの枠に切り抜いても見栄えが崩れない。
+	youtubeThumbnail = "https://i.ytimg.com/vi/%s/mqdefault.jpg"
 )
 
 func (markdownHandler) Read(path string) (Info, error) {
@@ -53,11 +64,12 @@ func (markdownHandler) Read(path string) (Info, error) {
 	}
 
 	info := Info{
-		Tags:    frontMatterTags(front),
-		Title:   firstHeading(body),
-		Preview: excerpt(body),
-		Links:   noteLinks(body),
-		TagPage: tagPageOf(front),
+		Tags:      frontMatterTags(front),
+		Title:     firstHeading(body),
+		Preview:   excerpt(body),
+		Thumbnail: thumbnail(body),
+		Links:     noteLinks(body),
+		TagPage:   tagPageOf(front),
 	}
 	if info.Title == "" {
 		if t, ok := front["title"].(string); ok {
@@ -301,6 +313,69 @@ func noteFileLink(href string) (string, bool) {
 		return path, true
 	}
 	return "", false
+}
+
+// thumbnail は、カードのサムネイルにする画像を本文から探す。
+//
+// 本文の先頭から見て最初に現れる、Markdown の画像か YouTube 動画の URL を使う。
+// 画像は書かれたままのパス（または http(s) の URL）を返し、ノートからの相対パスの
+// 解決は、開いているフォルダを知っているフロントエンド側に任せる。
+// YouTube は動画 ID からサムネイル画像の URL を組み立てて返す。
+// コードブロックの中に書かれたものは使わない。見つからなければ "" を返す。
+func thumbnail(body []byte) string {
+	inFence := false
+	for line := range strings.SplitSeq(string(body), "\n") {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || l == "" {
+			continue
+		}
+
+		// 1 行に画像と動画の両方があれば、先に書かれているほうを使う。
+		img, imgAt := firstImage(l)
+		ytAt := -1
+		var ytID string
+		if m := youtubeRe.FindStringSubmatchIndex(l); m != nil {
+			ytAt, ytID = m[0], l[m[2]:m[3]]
+		}
+		switch {
+		case imgAt >= 0 && (ytAt < 0 || imgAt < ytAt):
+			return img
+		case ytAt >= 0:
+			return fmt.Sprintf(youtubeThumbnail, ytID)
+		}
+	}
+	return ""
+}
+
+// firstImage は行の中で最初に現れる、サムネイルに使える画像の参照とその位置を返す。
+// 使えない画像（data: URI など）は読み飛ばす。見つからなければ位置に -1 を返す。
+func firstImage(line string) (string, int) {
+	for _, m := range mdLinkRe.FindAllStringSubmatchIndex(line, -1) {
+		if m[3] == m[2] {
+			continue // "!" の無いふつうのリンク
+		}
+		if src := line[m[4]:m[5]]; usableImage(src) {
+			return src, m[0]
+		}
+	}
+	return "", -1
+}
+
+// usableImage は、画像の参照をカードのサムネイルに使ってよいかを判定する。
+// ローカルのパスと http(s) の URL だけを受け付ける。
+func usableImage(src string) bool {
+	if src == "" || len(src) > maxThumbnailLen {
+		return false
+	}
+	if driveRe.MatchString(src) || !schemeRe.MatchString(src) {
+		return true
+	}
+	lower := strings.ToLower(src)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }
 
 // excerpt は Markdown カードに表示するプレーンテキストの抜粋を作る。
