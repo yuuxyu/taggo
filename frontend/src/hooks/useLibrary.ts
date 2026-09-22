@@ -82,7 +82,7 @@ export function useLibrary(): Library {
   const [total, setTotal] = useState(0);
   const [tagPages, setTagPages] = useState<TagPageGroup[]>([]);
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortOrder>("name_asc");
+  const [sort, setSort] = useState<SortOrder>("modified_desc");
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
