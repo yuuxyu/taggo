@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -461,64 +462,35 @@ func TestSearchTagPageDuplicates(t *testing.T) {
 	}
 }
 
-// タグページの関連ページには、そのタグが付いたファイルを種類を問わず並べ、
+// タグページの関連ページは通常のノートと同じ欄だけを返し、
 // 同じタグを宣言しているほかのノートは重複として別に返すこと。
 func TestRelatedTagPage(t *testing.T) {
 	s := newTestStore(t)
 	seed(t, s)
 	page := newTagPage("tags/golang.md", "golang", []string{"golang"})
 	dup := newTagPage("dup.md", "golang", []string{"golang"})
-	song := newEntry("song.mp3", "曲", 0, []string{"GoLang"})
-	song.Kind = model.KindAudio
-	if err := s.PutAll([]*model.Entry{page, dup, song}); err != nil {
+	if err := s.PutAll([]*model.Entry{page, dup}); err != nil {
 		t.Fatalf("投入に失敗: %v", err)
 	}
 
 	got := s.Related(page)
-	var tagged []string
-	for _, p := range got.Tagged {
-		tagged = append(tagged, p.Path)
-	}
-	// 更新日時の新しい順。自分自身と重複しているタグページは含めない。
-	if want := "song.mp3,a.md,c.md"; strings.Join(tagged, ",") != want {
-		t.Fatalf("タグの付いたファイルが違う: got %v, want %s", tagged, want)
-	}
-	if got.TaggedTotal != 3 {
-		t.Fatalf("件数が違う: %d", got.TaggedTotal)
-	}
-	if got.Tagged[0].Kind != model.KindAudio {
-		t.Fatalf("種類が返っていない: %+v", got.Tagged[0])
-	}
 	if len(got.Duplicates) != 1 || got.Duplicates[0].Path != "dup.md" {
 		t.Fatalf("重複しているタグページが違う: %+v", got.Duplicates)
 	}
-	// タグの付いたファイルの欄に出したノートは、同じタグのノートの欄に繰り返さない。
+	// タグの付いたノートは、通常のノートと同じく同じタグのノートの欄に出る。
+	var sameTag []string
 	for _, p := range got.SameTag {
-		if p.Path == "a.md" || p.Path == "c.md" {
-			t.Fatalf("同じタグのノートに重ねて出ている: %+v", got.SameTag)
+		sameTag = append(sameTag, p.Path)
+	}
+	for _, want := range []string{"a.md", "c.md"} {
+		if !slices.Contains(sameTag, want) {
+			t.Fatalf("同じタグのノートに %s が無い: %v", want, sameTag)
 		}
 	}
 
-	// タグページでないノートでは空で返す。
+	// タグページでないノートでは重複を返さない。
 	plain := s.Related(newEntry("a.md", "Go の設計メモ", 1, []string{"golang"}))
-	if plain.Tagged == nil || len(plain.Tagged) != 0 || len(plain.Duplicates) != 0 {
-		t.Fatalf("タグページでないのにタグの付いたファイルが出ている: %+v", plain)
-	}
-}
-
-// タグの付いたファイルは上限件数までに絞り、件数は全体を返すこと。
-func TestRelatedTagPageLimit(t *testing.T) {
-	s := newTestStore(t)
-	page := newTagPage("page.md", "many", nil)
-	entries := []*model.Entry{page}
-	for i := range taggedLimit + 5 {
-		entries = append(entries, newEntry(filepath.Join("n", strings.Repeat("x", i+1)+".md"), "n", i, []string{"many"}))
-	}
-	if err := s.PutAll(entries); err != nil {
-		t.Fatalf("投入に失敗: %v", err)
-	}
-	got := s.Related(page)
-	if len(got.Tagged) != taggedLimit || got.TaggedTotal != taggedLimit+5 {
-		t.Fatalf("上限の扱いが違う: %d 件 / 全 %d 件", len(got.Tagged), got.TaggedTotal)
+	if len(plain.Duplicates) != 0 {
+		t.Fatalf("タグページでないのに重複が出ている: %+v", plain.Duplicates)
 	}
 }

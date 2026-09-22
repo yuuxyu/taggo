@@ -242,8 +242,6 @@ export namespace store {
 	    outgoing: RelatedPage[];
 	    incoming: RelatedPage[];
 	    sameTag: RelatedPage[];
-	    tagged: RelatedPage[];
-	    taggedTotal: number;
 	    duplicates: RelatedPage[];
 	
 	    static createFrom(source: any = {}) {
@@ -255,8 +253,6 @@ export namespace store {
 	        this.outgoing = this.convertValues(source["outgoing"], RelatedPage);
 	        this.incoming = this.convertValues(source["incoming"], RelatedPage);
 	        this.sameTag = this.convertValues(source["sameTag"], RelatedPage);
-	        this.tagged = this.convertValues(source["tagged"], RelatedPage);
-	        this.taggedTotal = source["taggedTotal"];
 	        this.duplicates = this.convertValues(source["duplicates"], RelatedPage);
 	    }
 	

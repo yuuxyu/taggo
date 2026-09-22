@@ -17,7 +17,7 @@
  * ＋白文字に固定する（isImage で配色を切り替える）。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BookOpenIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { setTags, type Entry } from "../api/taggo";
 import type { DetailHistory } from "../hooks/useDetailHistory";
@@ -64,7 +64,7 @@ const EDGE_SETTLE_MS = 300;
 
 /**
  * target から container までのどこかに、direction の向きへまだスクロールできる
- * 要素があるかを返す。関連ページの欄など、内側のスクロールを優先するために使う。
+ * 要素があるかを返す。内側にスクロールできる欄があれば、そちらを優先するために使う。
  */
 function canScrollFurther(target: EventTarget | null, container: HTMLElement, direction: 1 | -1) {
   for (let el = target instanceof Element ? target : null; el; el = el.parentElement) {
@@ -106,7 +106,7 @@ export function DetailPanel({
   const isImage = entry.kind === "image" && !entry.cloudOnly;
   const isMarkdown = entry.kind === "markdown";
 
-  // 関連ページ。Markdown は常に本文を左、関連ページを右の 2 カラムにする。
+  // 関連ページ。Markdown は常に本文の右脇に関連ページの欄を置く。
   // ノートを行き来してもレイアウトが跳ねないよう、リンクが 1 件も無くても右の列は残す。
   const related = useRelatedPages(entry);
 
@@ -364,42 +364,33 @@ export function DetailPanel({
           )}
           {!entry.cloudOnly && entry.kind === "markdown" && (
             <div
-              // 幅は本文（全角 38 文字 = 18px × 38 = 42.75rem = 171）に左右の余白を足したもの。
-              // さらに間隔（6）と関連ページの列（56）を足す。
-              // 画面の半分ほどのウィンドウ（約 1000px）でも 2 カラムに収まるよう、
-              // 横に並べるときは余白と間隔を詰め、60rem（960px）から横に並べる。
-              // それより少し狭いだけなら、本文の列が縮んで 2 カラムのまま収まる。
-              className="mx-auto min-h-full max-w-243 px-7 pb-18 min-[60rem]:px-5"
+              // 幅は本文（全角 38 文字 = 18px × 38 = 42.75rem = 171）に左右の余白（5 × 2）、
+              // 間隔（6）、関連ページの欄（56）を足したもの。
+              className="mx-auto flex min-h-full max-w-243 items-start justify-center gap-6 px-5 pb-18"
               style={{ paddingTop: contentTop }}
             >
-              <div className="flex flex-col gap-8 min-[60rem]:flex-row min-[60rem]:items-start min-[60rem]:justify-center min-[60rem]:gap-6">
-                {/* 本文の 1 行が長くなりすぎないよう、横幅は本文の最大幅（全角 38 文字）で止める。 */}
-                <div className="min-w-0 flex-1 min-[60rem]:max-w-171">
-                  <MarkdownPreview
-                    entry={entry}
-                    onFollowLink={onFollowLink}
-                    onOpenImage={onOpenImage}
-                    onLoaded={applyPendingScroll}
-                  />
-                </div>
-                <div
-                  // 本文が長くても関連ページが見えているよう、横に並ぶ幅では貼り付ける。
-                  // ヘッダーに隠れない位置で止め、収まらないぶんはこの中だけでスクロールする。
-                  className="w-full shrink-0 min-[60rem]:sticky min-[60rem]:top-(--related-top) min-[60rem]:max-h-[calc(100dvh-var(--related-top)-5rem)] min-[60rem]:w-56 min-[60rem]:overflow-auto"
-                  style={{ "--related-top": `${contentTop}px` } as CSSProperties}
-                >
-                  {/* 読み込み中は空けておき、「無い」表示が一瞬出るのを避ける。 */}
-                  {related && (
-                    <RelatedPages
-                      related={related}
-                      tagPage={entry.tagPage}
-                      onOpen={(page) => onFollowLink(page.title, page.path)}
-                      onTagClick={onTagClick}
-                      onSearchTag={onSearchTag}
-                    />
-                  )}
-                </div>
+              {/* 本文の 1 行が長くなりすぎないよう、横幅は本文の最大幅（全角 38 文字）で止める。
+                  ウィンドウが狭いときは本文の側が縮む。 */}
+              <div className="min-w-0 max-w-171 flex-1">
+                <MarkdownPreview
+                  entry={entry}
+                  onFollowLink={onFollowLink}
+                  onOpenImage={onOpenImage}
+                  onLoaded={applyPendingScroll}
+                />
               </div>
+              {/* 関連ページは本文の脇に置き、本文と一緒にスクロールする。 */}
+              <aside className="w-56 shrink-0" aria-label="関連ページ">
+                {/* 読み込み中は空けておき、「無い」表示が一瞬出るのを避ける。 */}
+                {related && (
+                  <RelatedPages
+                    related={related}
+                    tagPage={entry.tagPage}
+                    onOpen={(page) => onFollowLink(page.title, page.path)}
+                    onTagClick={onTagClick}
+                  />
+                )}
+              </aside>
             </div>
           )}
           {!entry.cloudOnly && entry.kind === "audio" && (

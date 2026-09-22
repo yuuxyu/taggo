@@ -42,11 +42,6 @@ type Related struct {
 	// SameTag はタグが重なっているノート。リンクで既に出ているものは除き、
 	// 重なるタグの多い順、同じなら更新日時の新しい順に、上限件数まで並ぶ。
 	SameTag []RelatedPage `json:"sameTag"`
-	// Tagged は、そのノートがタグページのときに、説明しているタグが付いたファイル。
-	// 種類を問わず更新日時の新しい順に、上限件数まで並ぶ。
-	Tagged []RelatedPage `json:"tagged"`
-	// TaggedTotal は Tagged の上限を超えた分も含めた件数。
-	TaggedTotal int `json:"taggedTotal"`
 	// Duplicates は、同じタグをタグページとして宣言しているほかのノート。
 	// 1 つのタグにタグページは 1 つのはずなので、あれば画面で警告する。
 	Duplicates []RelatedPage `json:"duplicates"`
@@ -59,7 +54,6 @@ func EmptyRelated() Related {
 		Outgoing:   []RelatedPage{},
 		Incoming:   []RelatedPage{},
 		SameTag:    []RelatedPage{},
-		Tagged:     []RelatedPage{},
 		Duplicates: []RelatedPage{},
 	}
 }
@@ -120,7 +114,7 @@ func (s *Store) Related(entry *model.Entry) Related {
 	})
 
 	seen[entry.Path] = struct{}{}
-	s.fillTagPage(entry, &related, seen)
+	s.fillTagPage(entry, &related)
 	related.SameTag = s.sameTagNotes(entry.Tags, seen)
 	return related
 }

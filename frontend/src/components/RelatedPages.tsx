@@ -10,10 +10,9 @@
  *
  * リンクの無いノートでも右の列が空にならないよう、タグが重なるノートも数件並べる。
  *
- * タグページ（Front Matter の `tag:` でタグを説明していると宣言したノート）では、
- * そのタグが付いたファイルを種類を問わず先頭に並べる。本文がタグの説明、
- * 右の列がそのタグの目次という形になる。同じタグを宣言しているほかのノートがあれば、
- * さらにその上へ警告として出す。
+ * タグページ（Front Matter の `tag:` でタグを説明していると宣言したノート）でも
+ * 並べる欄は通常のノートと同じ。同じタグを宣言しているほかのノートがあれば、
+ * 先頭に警告として出す。
  */
 
 import { useEffect, useState } from "react";
@@ -44,8 +43,6 @@ interface Props extends CardProps {
   related: Related;
   /** 開いているノートがタグページなら、説明しているタグ。 */
   tagPage?: string;
-  /** そのタグだけで一覧を絞り込み直す。タグの付いたファイルを全部見るときに使う。 */
-  onSearchTag: (tag: string) => void;
 }
 
 /**
@@ -141,28 +138,22 @@ function Section({
   title,
   icon,
   pages,
-  count = pages.length,
   emptyText = "まだありません",
-  footer,
   onOpen,
   onTagClick,
 }: {
   title: string;
   icon: React.ReactNode;
   pages: RelatedPage[];
-  /** 見出しに添える件数。並べきれなかった分も数えたいときに渡す。 */
-  count?: number;
   /** 1 件も無いときに出す文言。 */
   emptyText?: string;
-  /** 一覧の下に添えるもの。 */
-  footer?: React.ReactNode;
 } & CardProps) {
   return (
     <section>
       <h3 className="m-0 mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-ink-muted">
         {icon}
         <span className="min-w-0 truncate">{title}</span>
-        <span className="tabular-nums text-ink-faint">{count}</span>
+        <span className="tabular-nums text-ink-faint">{pages.length}</span>
       </h3>
       {/* 右の列は常に出すので、リンクが無くても見出しは残し、無いことを控えめに示す。 */}
       {pages.length === 0 ? (
@@ -179,19 +170,16 @@ function Section({
           ))}
         </ul>
       )}
-      {footer}
     </section>
   );
 }
 
-export function RelatedPages({ related, tagPage, onOpen, onTagClick, onSearchTag }: Props) {
+export function RelatedPages({ related, tagPage, onOpen, onTagClick }: Props) {
   // 古いバックエンドの応答でも落ちないよう、欠けていれば空として扱う。
-  const tagged = related.tagged ?? [];
   const duplicates = related.duplicates ?? [];
-  const rest = related.taggedTotal - tagged.length;
 
   return (
-    <aside className="flex flex-col gap-5" aria-label="関連ページ">
+    <div className="flex flex-col gap-5">
       {tagPage && duplicates.length > 0 && (
         <section className="rounded-lg bg-danger-soft px-3 py-2.5 text-xs text-danger">
           <p className="m-0 mb-2 flex items-start gap-1.5">
@@ -207,28 +195,6 @@ export function RelatedPages({ related, tagPage, onOpen, onTagClick, onSearchTag
             ))}
           </ul>
         </section>
-      )}
-      {tagPage && (
-        <Section
-          title={`#${tagPage} が付いたファイル`}
-          icon={<BookOpenIcon className="size-3.5 shrink-0" aria-hidden="true" />}
-          pages={tagged}
-          count={related.taggedTotal}
-          emptyText="このタグが付いたファイルはまだありません"
-          footer={
-            rest > 0 && (
-              <button
-                type="button"
-                className="mt-2 text-xs text-accent-ink hover:underline"
-                onClick={() => onSearchTag(tagPage)}
-              >
-                残り {rest.toLocaleString()} 件も一覧で見る
-              </button>
-            )
-          }
-          onOpen={onOpen}
-          onTagClick={onTagClick}
-        />
       )}
       <Section
         title="このページからリンク"
@@ -252,6 +218,6 @@ export function RelatedPages({ related, tagPage, onOpen, onTagClick, onSearchTag
         onOpen={onOpen}
         onTagClick={onTagClick}
       />
-    </aside>
+    </div>
   );
 }
