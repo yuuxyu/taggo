@@ -95,7 +95,7 @@ function Thumbnail({ src, className }: { src: string; className: string }) {
 
 function YouTubeCard({ preview }: { preview: LinkPreview }) {
   return (
-    <Frame url={preview.url} className="max-w-[28rem] flex-col">
+    <Frame url={preview.url} className="flex-col">
       {preview.image && (
         <div className="relative aspect-video w-full bg-sunken">
           <Thumbnail src={preview.image} className="absolute inset-0 size-full" />
