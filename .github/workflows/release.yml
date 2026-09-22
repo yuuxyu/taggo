@@ -18,7 +18,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # タグを SemVer 2.0.0 として検証し、版番号を取り出す。
       # Windows のファイルバージョンは数字しか書けないため、プレリリース部を除いた版も別に持つ。
@@ -36,12 +36,12 @@ jobs:
           "core=$($Matches[1]).$($Matches[2]).$($Matches[3])" >> $env:GITHUB_OUTPUT
           "prerelease=$(if ($Matches[4]) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -53,6 +53,13 @@ jobs:
           $wails = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
           go install "github.com/wailsapp/wails/v2/cmd/wails@$wails"
 
+      # main.go が //go:embed で frontend/dist を参照するため、テストより先に作っておく
+      - name: フロントエンドをビルド
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: テスト
         run: go test ./...
 
@@ -63,8 +70,9 @@ jobs:
           $config.info.productVersion = "${{ steps.version.outputs.core }}"
           $config | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8NoBOM
 
+      # フロントエンドはビルド済みなので -s で作り直しを省く
       - name: ビルド
-        run: wails build -clean -platform windows/amd64 -trimpath -ldflags "-s -w"
+        run: wails build -s -clean -platform windows/amd64 -trimpath -ldflags "-s -w"
 
       - name: 成果物をまとめる
         id: dist
