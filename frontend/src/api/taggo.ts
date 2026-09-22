@@ -122,6 +122,9 @@ export const getMarkdownSource = (path: string): Promise<string> => Backend.Mark
  */
 export const getLinkPreview = (url: string): Promise<LinkPreview> => Backend.LinkPreview(url);
 
+/** Markdown ファイルを、拡張子に紐づいたアプリ（既定のテキストエディタ）で開く。 */
+export const openInEditor = (path: string): Promise<void> => Backend.OpenInEditor(path);
+
 /** 1 ファイルのタグを置き換える。 */
 export const setTags = (path: string, tags: string[]): Promise<TagEditResult> =>
   Backend.SetTags(path, tags);

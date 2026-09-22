@@ -26,6 +26,8 @@ export function MarkdownSource(arg1:string):Promise<string>;
 
 export function OpenFolder(arg1:string):Promise<void>;
 
+export function OpenInEditor(arg1:string):Promise<void>;
+
 export function RelatedPages(arg1:string):Promise<store.Related>;
 
 export function RemoveTags(arg1:Array<string>,arg2:Array<string>):Promise<Array<app.TagEditResult>>;

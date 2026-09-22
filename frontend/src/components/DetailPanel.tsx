@@ -13,13 +13,16 @@
  * ヘッダー左端の「戻る／進む」で、リンクをたどる前のノートへ戻れる。
  * 履歴そのものは App が持ち、ここは操作と表示だけを受け持つ。
  *
+ * 本文は編集しない方針なので、ヘッダーの「エディタで開く」から、拡張子に紐づいた
+ * アプリ（既定のテキストエディタ）へファイルを渡す。保存された変更はウォッチャーが拾う。
+ *
  * 本文中の画像をクリックすると、画像ビューアをこの上に重ねて開く。画像はノートでは
  * ないので履歴には積まず、ビューアを閉じればそのまま同じ位置の本文へ戻る。
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { BookOpenIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
-import { setTags, type Entry } from "../api/taggo";
+import { BookOpenIcon, PencilSquareIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
+import { openInEditor, setTags, type Entry } from "../api/taggo";
 import type { DetailHistory } from "../hooks/useDetailHistory";
 import { Button } from "./Button";
 import { CloudOnlyNotice } from "./CloudOnlyNotice";
@@ -273,6 +276,14 @@ export function DetailPanel({
     }
   };
 
+  const openEditor = async () => {
+    try {
+      await openInEditor(entry.path);
+    } catch (err) {
+      onError(String(err));
+    }
+  };
+
   // ヘッダー・フッターは半透明にして、下を流れる本文をうっすら見せる。
   // 文字が重なっても読めるよう背景はぼかし、罫線も地に合わせて薄める。
   const glassBar = "border-line/70 bg-surface/75 backdrop-blur-md backdrop-saturate-150";
@@ -355,6 +366,17 @@ export function DetailPanel({
                 {entry.relPath}
               </p>
             </div>
+            {/* クラウド上にだけあるファイルは、開くとダウンロードが始まるので出さない。 */}
+            {!entry.cloudOnly && (
+              <Button
+                variant="ghost"
+                onClick={() => void openEditor()}
+                title="拡張子に紐づいたエディタで開く"
+              >
+                <PencilSquareIcon className="size-4" aria-hidden="true" />
+                エディタで開く
+              </Button>
+            )}
             <Button variant="ghost" onClick={onClose} title="閉じる（Esc）">
               <XMarkIcon className="size-4" aria-hidden="true" />
               閉じる
