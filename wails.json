@@ -9,5 +9,12 @@
   "author": {
     "name": "yuuxyu",
     "email": "tomohiro8.dev@gmail.com"
+  },
+  "info": {
+    "companyName": "yuuxyu",
+    "productName": "taggo",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright (c) 2026 yuuxyu",
+    "comments": "Markdown を使った、タグ管理のローカル Wiki"
   }
 }

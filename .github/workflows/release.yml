@@ -1,0 +1,109 @@
+# セマンティックバージョニングのタグ（v1.2.3 や v1.2.3-rc.1）を push したときに、
+# Windows 向けの taggo.exe をビルドして GitHub のリリースへ添付する。
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      # タグを SemVer 2.0.0 として検証し、版番号を取り出す。
+      # Windows のファイルバージョンは数字しか書けないため、プレリリース部を除いた版も別に持つ。
+      - name: バージョンを確かめる
+        id: version
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $semver = '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-((0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$'
+          if ($tag -notmatch $semver) {
+            Write-Error "タグ $tag はセマンティックバージョニングの形式ではありません"
+            exit 1
+          }
+          $version = $tag.Substring(1)
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "core=$($Matches[1]).$($Matches[2]).$($Matches[3])" >> $env:GITHUB_OUTPUT
+          "prerelease=$(if ($Matches[4]) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # go.mod に書かれた Wails と同じ版の CLI を入れる
+      - name: Wails CLI を入れる
+        run: |
+          $wails = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$wails"
+
+      - name: テスト
+        run: go test ./...
+
+      # exe のプロパティに出る製品バージョンをタグに合わせる
+      - name: 製品バージョンを書き込む
+        run: |
+          $config = Get-Content wails.json -Raw | ConvertFrom-Json
+          $config.info.productVersion = "${{ steps.version.outputs.core }}"
+          $config | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8NoBOM
+
+      - name: ビルド
+        run: wails build -clean -platform windows/amd64 -trimpath -ldflags "-s -w"
+
+      - name: 成果物をまとめる
+        id: dist
+        run: |
+          $name = "taggo-${{ github.ref_name }}-windows-amd64.exe"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build/bin/taggo.exe "dist/$name"
+          $hash = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name" | Set-Content "dist/$name.sha256" -Encoding ascii -NoNewline
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      # CHANGELOG.md から、このバージョンの節だけを抜き出してリリースノートにする
+      - name: リリースノートを作る
+        run: |
+          $version = [regex]::Escape("${{ steps.version.outputs.version }}")
+          $lines = Get-Content CHANGELOG.md -Encoding utf8
+          $notes = @()
+          $inSection = $false
+          foreach ($line in $lines) {
+            if ($line -match "^## \[?$version\]?") { $inSection = $true; continue }
+            if ($inSection -and $line -match '^## ') { break }
+            if ($inSection -and $line -match '^\[[^\]]+\]: ') { continue }
+            if ($inSection) { $notes += $line }
+          }
+          if (-not $inSection) {
+            Write-Error "CHANGELOG.md に ${{ steps.version.outputs.version }} の節がありません"
+            exit 1
+          }
+          ($notes -join "`n").Trim() | Set-Content dist/notes.md -Encoding utf8NoBOM
+
+      - name: リリースを作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $flags = @()
+          if ("${{ steps.version.outputs.prerelease }}" -eq "true") { $flags += "--prerelease" }
+          gh release create "${{ github.ref_name }}" `
+            "dist/${{ steps.dist.outputs.name }}" `
+            "dist/${{ steps.dist.outputs.name }}.sha256" `
+            --title "taggo ${{ github.ref_name }}" `
+            --notes-file dist/notes.md `
+            @flags
