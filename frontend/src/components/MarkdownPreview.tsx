@@ -21,8 +21,13 @@ import "highlight.js/styles/github.css";
 
 interface Props {
   entry: Entry;
-  /** ノートへのリンクをたどるときに呼ぶ。行き先が一覧に無ければ検索に落とす。 */
-  onFollowLink: (target: string, path?: string) => void;
+  /**
+   * ノートへのリンクをたどるときに呼ぶ。link は書かれたパスをデコードしたもの。
+   * path を省くと、行き先がまだ無いノートとして新しく作る。
+   */
+  onFollowLink: (link: string, path?: string) => void;
+  /** 行き先がまだ無いリンク（小文字にしたもの）。本文では色を変えて示す。 */
+  missingLinks: ReadonlySet<string>;
   /** 本文中の画像をクリックしたときに、その画像のパスと代替テキストを渡して呼ぶ。 */
   onOpenImage: (path: string, alt?: string) => void;
   /**
@@ -253,12 +258,21 @@ function bareURL(node: ExtraProps["node"]): string | null {
   return text === href || text === target || `http://${text}` === target ? href : null;
 }
 
-/** リンクの行き先が一覧に無いときに、検索へ落とすための言葉。拡張子なしのファイル名。 */
-function noteLabel(href: string): string {
+/**
+ * 本文のリンクを、Go 側がノート間のリンクとして持つ形へ直す。
+ * フラグメント（#…）を除き、エスケープを戻す。
+ */
+function noteLink(href: string): string {
   const path = href.replace(/#.*$/, "");
-  const name = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
-  return name.replace(/\.(md|markdown)$/i, "");
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
 }
+
+/** 行き先がまだ無いノートへのリンクの色。prose がリンクに使う変数を差し替える。 */
+const MISSING_LINK = "[--tw-prose-links:var(--color-danger)] decoration-dashed";
 
 /**
  * React の子要素を、そこに含まれる文字列だけに畳み込む。
@@ -273,7 +287,7 @@ function toPlainText(node: ReactNode): string {
   return "";
 }
 
-export function MarkdownPreview({ entry, onFollowLink, onOpenImage, onLoaded }: Props) {
+export function MarkdownPreview({ entry, onFollowLink, missingLinks, onOpenImage, onLoaded }: Props) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 最後に本文を読み込んだファイル。同じファイルの読み直しかどうかを見分ける。
@@ -341,15 +355,19 @@ export function MarkdownPreview({ entry, onFollowLink, onOpenImage, onLoaded }: 
           },
           a({ href, children, ...rest }) {
             // 他のノートへのリンクは、ブラウザに渡さずその場でプレビューを切り替える。
+            // 行き先がまだ無ければ色を変え、クリックでそのノートを作ってエディタで開く。
             const notePath = resolveNotePath(href, entry);
             if (notePath !== null && href !== undefined) {
+              const link = noteLink(href);
+              const missing = missingLinks.has(link.toLowerCase());
               return (
                 <a
                   href={href}
-                  title={notePath}
+                  className={missing ? MISSING_LINK : undefined}
+                  title={missing ? `${notePath}（まだありません。クリックで作成してエディタで開きます）` : notePath}
                   onClick={(e) => {
                     e.preventDefault();
-                    onFollowLink(noteLabel(href), notePath);
+                    onFollowLink(link, missing ? undefined : notePath);
                   }}
                 >
                   {children}

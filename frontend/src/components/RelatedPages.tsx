@@ -6,7 +6,8 @@
  * リンクだけで、行き先はそのノートの位置を基準に決まる。
  *
  * 行き先がまだ存在しないリンクも、書きかけのメモでは珍しくないため、
- * 「まだ無いノート」として控えめに出す。
+ * 「まだ無いノート」として控えめに出す。クリックすると、その場所にノートを作って
+ * 既定のエディタで開く。
  *
  * リンクの無いノートでも右の列が空にならないよう、タグが重なるノートも数件並べる。
  *
@@ -23,7 +24,15 @@ import {
   ExclamationTriangleIcon,
   TagIcon,
 } from "@heroicons/react/16/solid";
-import { getRelatedPages, type Entry, type Related, type RelatedPage } from "../api/taggo";
+import {
+  Events,
+  getRelatedPages,
+  on,
+  type Entry,
+  type EntryChanged,
+  type Related,
+  type RelatedPage,
+} from "../api/taggo";
 import { TagBadge } from "./TagBadge";
 
 interface CardProps {
@@ -61,7 +70,37 @@ export function useRelatedPages(entry: Entry): Related | null {
     // タグを書き換えるとリンクの索引も張り直されるため、更新日時も見る。
   }, [entry.cloudOnly, entry.path, entry.modTime]);
 
+  // まだ無いノートへのリンクがあるうちは、ほかのファイルが増えるたびに読み直す。
+  // リンクから作ったノートを、開き直さなくても「ある」側へ移すため。
+  const hasMissing = related?.outgoing.some((page) => !page.path) ?? false;
+  useEffect(() => {
+    if (!hasMissing) return;
+    let cancelled = false;
+    const off = on<EntryChanged>(Events.entryChanged, (change) => {
+      if (change.removed || change.path === entry.path) return;
+      void getRelatedPages(entry.path).then((got) => {
+        if (!cancelled) setRelated(got);
+      });
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [hasMissing, entry.path]);
+
   return related;
+}
+
+/**
+ * 行き先がまだ無いリンクを、本文のリンクと突き合わせられる形で集める。
+ * 大文字小文字は、Windows に合わせて区別しない。
+ */
+export function missingLinksOf(related: Related | null): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const page of related?.outgoing ?? []) {
+    if (!page.path && page.target) out.add(page.target.toLowerCase());
+  }
+  return out;
 }
 
 function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & CardProps) {
@@ -77,7 +116,7 @@ function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & CardP
       <button
         type="button"
         className="flex w-full flex-col overflow-hidden rounded-lg text-left focus-visible:outline-hidden"
-        title={missing ? `「${page.target}」はまだ見つかりません` : page.relPath}
+        title={missing ? `「${page.target}」はまだありません。クリックで作成してエディタで開きます` : page.relPath}
         onClick={() => onOpen(page)}
       >
         <span className="flex w-full flex-col items-start gap-1 px-3 py-2.5">

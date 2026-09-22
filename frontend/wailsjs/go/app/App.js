@@ -14,6 +14,10 @@ export function CancelLoadMore() {
   return window['go']['app']['App']['CancelLoadMore']();
 }
 
+export function CreateNote(arg1, arg2) {
+  return window['go']['app']['App']['CreateNote'](arg1, arg2);
+}
+
 export function Entry(arg1) {
   return window['go']['app']['App']['Entry'](arg1);
 }

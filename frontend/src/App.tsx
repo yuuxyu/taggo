@@ -14,6 +14,7 @@ import {
 } from "@heroicons/react/20/solid";
 import {
   appendTagToQuery,
+  createNote,
   Events,
   getEntry,
   on,
@@ -237,30 +238,25 @@ export default function App({ initialSettings }: Props) {
 
   // ノート間のリンクをたどる。行き先のパスが分かっていればそれを開く。
   // 一覧の外にあっても、登録済みのノートならそのまま開ける。
-  // パスが分からないのは行き先のファイルがまだ無いときなので、名前で一覧から探す。
-  // それでも見つからなければ、検索条件のほうを切り替える。
+  // パスが分からない、または開けないのは行き先のノートがまだ無いときなので、
+  // その場所に新しく作って既定のエディタで開く。既存のファイルは書き換えない。
   const handleFollowLink = useCallback(
-    async (target: string, path?: string) => {
-      if (path !== undefined) {
-        if (await openPath(path)) return;
-      } else {
-        const needle = target.toLowerCase();
-        const found = entries.find((e) => {
-          const base = e.name.replace(/\.[^.]+$/, "").toLowerCase();
-          return base === needle || e.title.toLowerCase() === needle;
-        });
-        if (found) {
-          pushHistory(found.path, found.title);
-          return;
-        }
+    async (from: string, link: string, path?: string) => {
+      if (path !== undefined && (await openPath(path))) return;
+      const name = link.slice(Math.max(link.lastIndexOf("/"), link.lastIndexOf("\\")) + 1);
+      try {
+        const created = await createNote(from, link);
+        notify(
+          "info",
+          created
+            ? `「${name}」を作成して、エディタで開きました。`
+            : `「${name}」はまだ読み込んでいないため、エディタで開きました。`,
+        );
+      } catch (err) {
+        notify("error", String(err));
       }
-      // ファイル自体が無いのか、今の絞り込みから外れているだけなのかは
-      // 一覧からは分からないので、どちらにも当てはまる言い方にする。
-      setQuery(target);
-      clearHistory();
-      notify("info", `「${target}」が今の一覧に見つからないため、検索条件に切り替えました。`);
     },
-    [entries, notify, setQuery, openPath, pushHistory, clearHistory],
+    [notify, openPath],
   );
 
   const handleBulkApplied = useCallback(
@@ -437,7 +433,7 @@ export default function App({ initialSettings }: Props) {
           onClose={closeDetail}
           onTagClick={handleTagClick}
           onSearchTag={handleSearchTag}
-          onFollowLink={(target, path) => void handleFollowLink(target, path)}
+          onFollowLink={(link, path) => void handleFollowLink(detailEntry.path, link, path)}
           onEntryUpdated={updateEntry}
           onError={(message) => notify("error", message)}
           onNavigate={navigate}

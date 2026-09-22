@@ -20,7 +20,7 @@
  * ないので履歴には積まず、ビューアを閉じればそのまま同じ位置の本文へ戻る。
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BookOpenIcon, PencilSquareIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
 import { openInEditor, setTags, type Entry } from "../api/taggo";
 import type { DetailHistory } from "../hooks/useDetailHistory";
@@ -30,7 +30,7 @@ import { HistoryNav } from "./HistoryNav";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Pager } from "./Pager";
-import { RelatedPages, useRelatedPages } from "./RelatedPages";
+import { missingLinksOf, RelatedPages, useRelatedPages } from "./RelatedPages";
 import { TagBadge } from "./TagBadge";
 import { TagEditor } from "./TagEditor";
 
@@ -40,8 +40,11 @@ interface Props {
   onTagClick: (tag: string) => void;
   /** そのタグだけで一覧を絞り込み直す。タグページから、そのタグの一覧へ移るときに使う。 */
   onSearchTag: (tag: string) => void;
-  /** リンクをたどる。実体のパスが分かっている場合は一緒に渡す。 */
-  onFollowLink: (target: string, path?: string) => void;
+  /**
+   * リンクをたどる。link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
+   * 実体のパスが分かっている場合は一緒に渡す。行き先がまだ無ければ新しく作る。
+   */
+  onFollowLink: (link: string, path?: string) => void;
   /** 保存後の最新状態を一覧へ返す。 */
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
@@ -88,6 +91,7 @@ export function DetailPanel({
   // 関連ページ。Markdown は常に本文の右脇に関連ページの欄を置く。
   // ノートを行き来してもレイアウトが跳ねないよう、リンクが 1 件も無くても右の列は残す。
   const related = useRelatedPages(entry);
+  const missingLinks = useMemo(() => missingLinksOf(related), [related]);
 
   // 別のエントリに切り替わったら編集中の内容を捨て、編集フォームも閉じる。
   useEffect(() => {
@@ -313,6 +317,7 @@ export function DetailPanel({
                 <MarkdownPreview
                   entry={entry}
                   onFollowLink={onFollowLink}
+                  missingLinks={missingLinks}
                   onOpenImage={(path, alt) => setImage({ path, alt })}
                   onLoaded={applyPendingScroll}
                 />
@@ -324,7 +329,7 @@ export function DetailPanel({
                   <RelatedPages
                     related={related}
                     tagPage={entry.tagPage}
-                    onOpen={(page) => onFollowLink(page.title, page.path)}
+                    onOpen={(page) => onFollowLink(page.target ?? "", page.path)}
                     onTagClick={onTagClick}
                   />
                 )}

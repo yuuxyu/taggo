@@ -156,6 +156,14 @@ export const getLinkPreview = (url: string): Promise<LinkPreview> => Backend.Lin
 /** Markdown ファイルを、拡張子に紐づいたアプリ（既定のテキストエディタ）で開く。 */
 export const openInEditor = (path: string): Promise<void> => Backend.OpenInEditor(path);
 
+/**
+ * from のノートに書かれたリンクの行き先がまだ無ければ新しく作り、既定のエディタで開く。
+ * link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
+ * 新しく作ったときは true、既にあったファイルを開いただけなら false になる。
+ */
+export const createNote = (from: string, link: string): Promise<boolean> =>
+  Backend.CreateNote(from, link);
+
 /** 1 ファイルのタグを置き換える。 */
 export const setTags = (path: string, tags: string[]): Promise<TagEditResult> =>
   Backend.SetTags(path, tags);

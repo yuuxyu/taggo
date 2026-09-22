@@ -23,8 +23,26 @@ func (a *App) OpenInEditor(path string) error {
 	if err := a.ensureLocal(e); err != nil {
 		return err
 	}
+	return openWithDefaultApp(e.Path)
+}
 
-	file, err := windows.UTF16PtrFromString(e.Path)
+// CreateNote は、fromPath のノートに書かれたリンク link の行き先がまだ無ければ
+// 新しく作り、拡張子に紐づいたアプリ（既定のテキストエディタ）で開く。
+// link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
+// 新しく作ったときは true を、既にあったファイルを開いただけなら false を返す。
+//
+// 作ったファイルはフォルダの監視が拾って一覧へ載せる。
+func (a *App) CreateNote(fromPath, link string) (bool, error) {
+	path, created, err := a.prepareNote(fromPath, link)
+	if err != nil {
+		return false, err
+	}
+	return created, openWithDefaultApp(path)
+}
+
+// openWithDefaultApp はファイルを、拡張子に紐づいたアプリで開く。
+func openWithDefaultApp(path string) error {
+	file, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err
 	}

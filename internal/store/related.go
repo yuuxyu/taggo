@@ -181,11 +181,24 @@ func noteKeysOf(e *model.Entry) []string {
 // フォルダが基準。キーでは Markdown の拡張子を落として .md と .markdown の
 // 違いを吸収し、小文字へ揃える（Windows はパスの大文字小文字を区別しない）。
 func linkTarget(link, fromPath, root string) string {
+	return noteKey(linkPath(link, fromPath, root))
+}
+
+// linkPath はリンク 1 件の行き先を、ファイルシステム上のパスへ直す。
+// リンク元のあるフォルダが基準で、"/" 始まりは開いているフォルダが基準。
+func linkPath(link, fromPath, root string) string {
 	base := filepath.Dir(fromPath)
 	if strings.HasPrefix(link, "/") || strings.HasPrefix(link, `\`) {
 		base = root
 	}
-	return noteKey(filepath.Join(base, filepath.FromSlash(link)))
+	return filepath.Join(base, filepath.FromSlash(link))
+}
+
+// LinkPath は fromPath のノートに書かれたリンクの行き先を、ファイルシステム上の
+// パスとして返す。索引のキーと違って、大文字小文字と拡張子は書かれたまま残す。
+// まだ無いノートを作るときに、どこへ作るのかを決めるために使う。
+func (s *Store) LinkPath(link, fromPath string) string {
+	return linkPath(link, fromPath, s.Root())
 }
 
 // noteKey は Markdown のパスを索引のキーへ直す。
