@@ -4,11 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/yuuxyu/taggo/internal/model"
 	"github.com/yuuxyu/taggo/internal/store"
 )
 
@@ -37,7 +39,13 @@ func newTestApp(t *testing.T, files map[string]string) (*App, string) {
 	if err := a.OpenFolder(root); err != nil {
 		t.Fatalf("フォルダの読み込みに失敗: %v", err)
 	}
-	waitForScan(t, a, len(files))
+	notes := 0
+	for rel := range files {
+		if model.IsMarkdown(rel) {
+			notes++
+		}
+	}
+	waitForScan(t, a, notes)
 	return a, root
 }
 
@@ -218,39 +226,77 @@ func TestRelatedPages(t *testing.T) {
 	}
 }
 
-func TestAssetHandlerServesEntriesOnly(t *testing.T) {
-	a, root := newTestApp(t, map[string]string{
-		"a.md": "---\ntags: [x]\n---\n\n# A\n",
-	})
-	h := NewAssetHandler(a)
+// pngHead は PNG の先頭 8 バイト。配信の可否は中身で決まるので、これだけで画像とみなされる。
+var pngHead = string([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A})
 
-	// 登録済みエントリは配信される。
+// avifHead は AVIF の先頭。ftyp ボックスのブランドが avif になっている。
+var avifHead = string([]byte{0, 0, 0, 0x20}) + "ftypavif" + string([]byte{0, 0, 0, 0}) + "avifmif1miaf"
+
+// getImage は画像配信のエンドポイントへパスを渡し、応答を返す。
+func getImage(a *App, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, PathFile+"?path="+filepath.Join(root, "a.md"), nil))
+	NewAssetHandler(a).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, PathImage+"?path="+url.QueryEscape(path), nil))
+	return rec
+}
+
+// 本文に埋め込まれた画像は、一覧に載っていなくても開いているフォルダ配下なら配信すること。
+func TestAssetHandlerServesEmbeddedImages(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{
+		"a.md":                                 "# A\n\n![図](./img/a.png)\n",
+		filepath.Join("img", "a.png"):          pngHead,
+		filepath.Join(".attachments", "b.png"): pngHead,
+	})
+
+	// 画像は一覧（DB）には載らない。
+	if n := a.Status().EntryCount; n != 1 {
+		t.Fatalf("Markdown だけが読み込まれるはずが %d 件", n)
+	}
+
+	rec := getImage(a, filepath.Join(root, "img", "a.png"))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("登録済みファイルが配信されない: %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("フォルダ内の画像が配信されない: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("MIME タイプが違う: %q", got)
 	}
 
-	// フォルダ外のファイルは配信しない。
-	outside := filepath.Join(t.TempDir(), "secret.md")
-	if err := os.WriteFile(outside, []byte("秘密"), 0o644); err != nil {
-		t.Fatalf("ファイル作成に失敗: %v", err)
+	// 走査では飛ばす隠しフォルダの画像も、本文から参照されうるので配信する。
+	if rec := getImage(a, filepath.Join(root, ".attachments", "b.png")); rec.Code != http.StatusOK {
+		t.Fatalf("隠しフォルダの画像が配信されない: %d", rec.Code)
 	}
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, PathFile+"?path="+outside, nil))
-	if rec.Code == http.StatusOK {
-		t.Fatal("開いているフォルダ外のファイルが配信されてしまった")
+}
+
+// 画像でないファイルや、フォルダの外のファイルは配信しないこと。
+func TestAssetHandlerRejectsOthers(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{
+		"a.md":      "---\ntags: [x]\n---\n\n# A\n",
+		"notes.txt": "対象外",
+		"偽物.png":    "画像ではない",
+	})
+
+	for name, path := range map[string]string{
+		"Markdown":   filepath.Join(root, "a.md"),
+		"テキスト":       filepath.Join(root, "notes.txt"),
+		"拡張子だけ画像":    filepath.Join(root, "偽物.png"),
+		"存在しない":      filepath.Join(root, "無い.png"),
+		"フォルダ":       root,
+		"相対パスで外へ出る":  filepath.Join(root, "..", "secret.png"),
+		"path クエリが空": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if rec := getImage(a, path); rec.Code == http.StatusOK {
+				t.Fatalf("配信してはいけないファイルが配信された: %q", path)
+			}
+		})
 	}
 
-	// 未登録の拡張子（走査対象外）も配信しない。
-	unlisted := filepath.Join(root, "notes.txt")
-	if err := os.WriteFile(unlisted, []byte("対象外"), 0o644); err != nil {
+	outside := filepath.Join(t.TempDir(), "secret.png")
+	if err := os.WriteFile(outside, []byte(pngHead), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗: %v", err)
 	}
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, PathFile+"?path="+unlisted, nil))
-	if rec.Code == http.StatusOK {
-		t.Fatal("走査対象外のファイルが配信されてしまった")
+	if rec := getImage(a, outside); rec.Code == http.StatusOK {
+		t.Fatal("開いているフォルダ外の画像が配信されてしまった")
 	}
 }
 
@@ -293,41 +339,15 @@ func indexOf(haystack, needle string) int {
 // MIME タイプを返すことを確かめる。嘘の型を返すとブラウザが描画を拒否し、
 // 「画像を表示できません」になってしまう。
 func TestAssetHandlerContentTypeFollowsContent(t *testing.T) {
-	// 中身は AVIF、名前は .jpg。taggo がデコードできないので原寸配信へ落ちる。
-	avif := "\x00\x00\x00\x20ftypavif\x00\x00\x00\x00avifmif1miaf"
-	a, root := newTestApp(t, map[string]string{"実はavif.jpg": avif})
+	// 中身は AVIF、名前は .jpg。
+	a, root := newTestApp(t, map[string]string{"a.md": "# A", "実はavif.jpg": avifHead})
 
-	rec := httptest.NewRecorder()
-	NewAssetHandler(a).ServeHTTP(rec,
-		httptest.NewRequest(http.MethodGet, PathThumb+"?path="+filepath.Join(root, "実はavif.jpg"), nil))
-
+	rec := getImage(a, filepath.Join(root, "実はavif.jpg"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("配信に失敗: %d %s", rec.Code, rec.Body.String())
 	}
 	if got := rec.Header().Get("Content-Type"); got != "image/avif" {
 		t.Fatalf("中身に合った MIME タイプを返していない: %q", got)
-	}
-}
-
-// TestEntryReportsFormatMismatch は、拡張子と中身の食い違いを
-// エントリが伝えることを確かめる。UI はこれを使って理由を表示する。
-func TestEntryReportsFormatMismatch(t *testing.T) {
-	a, root := newTestApp(t, map[string]string{
-		"実はavif.jpg": "\x00\x00\x00\x20ftypavif\x00\x00\x00\x00avifmif1miaf",
-	})
-
-	entry, err := a.Entry(filepath.Join(root, "実はavif.jpg"))
-	if err != nil {
-		t.Fatalf("エントリを取得できない: %v", err)
-	}
-	if entry.Format != ".avif" {
-		t.Fatalf("実体の形式が伝わっていない: %q", entry.Format)
-	}
-	if entry.Writable {
-		t.Fatal("扱えない形式は書き込み不可であるべき")
-	}
-	if entry.Err == "" {
-		t.Fatal("理由が伝わっていない")
 	}
 }
 

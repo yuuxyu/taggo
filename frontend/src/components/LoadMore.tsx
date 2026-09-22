@@ -30,7 +30,7 @@ export function LoadMoreBanner({ status, onLoadMore, onDismiss }: BannerProps) {
     <div className="mx-4.5 mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md bg-accent-soft px-3 py-2 text-xs text-accent-ink">
       <InformationCircleIcon className="size-4 shrink-0" aria-hidden="true" />
       <span className="min-w-60 flex-1">
-        対応ファイル <strong className="tabular-nums">{total.toLocaleString()}</strong> 件のうち、
+        Markdown <strong className="tabular-nums">{total.toLocaleString()}</strong> 件のうち、
         パス順の先頭 <strong className="tabular-nums">{status.entryCount.toLocaleString()}</strong>{" "}
         件を読み込みました。残りの{" "}
         <strong className="tabular-nums">{status.remaining.toLocaleString()}</strong>{" "}

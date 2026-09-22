@@ -14,7 +14,7 @@ import ReactMarkdown, { type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
-import { fileURL, getMarkdownSource, type Entry } from "../api/taggo";
+import { getMarkdownSource, imageURL, type Entry } from "../api/taggo";
 import { LinkCard } from "./LinkCard";
 import { Mermaid } from "./Mermaid";
 import "highlight.js/styles/github.css";
@@ -23,8 +23,8 @@ interface Props {
   entry: Entry;
   /** ノートへのリンクをたどるときに呼ぶ。行き先が一覧に無ければ検索に落とす。 */
   onFollowLink: (target: string, path?: string) => void;
-  /** 本文中の画像をクリックしたときに、その画像のパスを渡して呼ぶ。 */
-  onOpenImage: (path: string) => void;
+  /** 本文中の画像をクリックしたときに、その画像のパスと代替テキストを渡して呼ぶ。 */
+  onOpenImage: (path: string, alt?: string) => void;
   /**
    * 本文を読み込んで描画し終えたときに呼ぶ。
    * 戻ってきたときのスクロール位置の復元は、本文の高さが決まってからでないとできない。
@@ -162,12 +162,12 @@ function resolveNotePath(href: string | undefined, entry: Entry): string | null 
 }
 
 /**
- * 本文中の画像。開いているフォルダの外や、taggo が取り込んでいない形式は
+ * 本文中の画像。開いているフォルダの外の画像や、表示できない形式のファイルは
  * 配信されないため、読み込めなかったときは元の記述を添えて理由を示す。
  *
  * 本文から参照された画像は、taggo の配信 URL へ書き換えて読み込む。
- * フォルダ内の画像はクリックでその画像のプレビューへ移れる。外部 URL の画像は
- * taggo の一覧に無いので、クリックしても何もしない。
+ * フォルダ内の画像はクリックで画像ビューアを開ける。外部 URL の画像は
+ * ローカルのファイルではないので、クリックしても何もしない。
  */
 function MarkdownImage({
   src,
@@ -180,7 +180,7 @@ function MarkdownImage({
   alt?: string;
   title?: string;
   entry: Entry;
-  onOpen: (path: string) => void;
+  onOpen: (path: string, alt?: string) => void;
 }) {
   const [failed, setFailed] = useState(false);
   const localPath = src ? resolveLocalPath(src, entry) : null;
@@ -197,7 +197,7 @@ function MarkdownImage({
   }
   return (
     <img
-      src={fileURL(localPath)}
+      src={imageURL(localPath)}
       alt={alt ?? ""}
       title={title ?? "クリックで画像を開く"}
       loading="lazy"
@@ -208,12 +208,12 @@ function MarkdownImage({
       onClick={(e) => {
         // リンクで囲まれた画像は、リンクの行き先のほうを優先する。
         if (e.currentTarget.closest("a")) return;
-        onOpen(localPath);
+        onOpen(localPath, alt);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onOpen(localPath);
+          onOpen(localPath, alt);
         }
       }}
     />

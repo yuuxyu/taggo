@@ -1,8 +1,12 @@
 /**
- * 画像のプレビュー。漫画ビューアのように、既定では画像全体が見えるよう
- * ウィンドウにフィットさせて表示する（縦長画像は高さ基準、横長画像は幅基準に
- * 自動で切り替わる object-fit: contain の挙動）。ズームやページ送りの操作パネルは、
- * DetailPanel が管理する「マウスを動かした間だけ出す」HUD として重ねる。
+ * Markdown の本文中の画像をクリックしたときに開く画像ビューア。
+ *
+ * Markdown プレビューの上に重ねて開き、閉じればそのまま元の Markdown プレビューへ戻る。
+ * 画像は一覧にもタグ管理にも載せないので、前後の画像への移動やタグの表示は持たない。
+ *
+ * 漫画ビューアのように、既定では画像全体が見えるようウィンドウにフィットさせて表示する
+ * （縦長画像は高さ基準、横長画像は幅基準に自動で切り替わる object-fit: contain の挙動）。
+ * ヘッダーと倍率の操作パネルは、マウスを動かした間だけ出す HUD として重ねる。
  *
  * フィットは「全体を表示」の 1 種類だけにしている。高さ基準のフィットは、
  * 縦長画像では全体表示と同じ結果になり、横長画像では幅がはみ出して横スクロールが
@@ -10,9 +14,9 @@
  * 倍率指定（＋ / 原寸 / Ctrl+ホイール）で足りる。
  *
  * 操作の割り当ては次のとおり。
- *  - ホイール          … 前後のファイルへページ送り（タグ編集中は送らない）
  *  - Ctrl + ホイール   … カーソル位置を軸にした拡大・縮小
- *  - ドラッグ          … はみ出しているときの画像の移動
+ *  - ホイール・ドラッグ … はみ出しているときの画像の移動
+ *  - Esc・マウスの戻るボタン … 閉じて Markdown プレビューへ戻る
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -21,33 +25,26 @@ import {
   MinusIcon,
   PlusIcon,
   Square2StackIcon,
+  XMarkIcon,
 } from "@heroicons/react/20/solid";
-import { fileURL, type Entry } from "../api/taggo";
+import { imageURL } from "../api/taggo";
 import { Button } from "./Button";
-import { Pager } from "./Pager";
 
 interface Props {
-  entry: Entry;
-  /** true の間だけ操作 HUD を表示する。DetailPanel がマウス移動から判定する。 */
-  uiVisible: boolean;
-  /** 前後のファイルへの移動。種類を問わず一覧の並び順で動く。 */
-  onNavigate: (direction: 1 | -1) => void;
-  /**
-   * false の間はホイールでのページ送りをしない。タグ編集欄が出ている間に
-   * ホイールを回して、編集中のファイルから意図せず離れてしまうのを防ぐ。
-   */
-  wheelNavigation: boolean;
-  /** 一覧での現在位置（0 始まり）。-1 ならページ送り UI を出さない。 */
-  index: number;
-  total: number;
+  /** 画像ファイルの絶対パス。 */
+  path: string;
+  /** 本文に書かれていた代替テキスト。 */
+  alt?: string;
+  /** 閉じて Markdown プレビューへ戻る。 */
+  onClose: () => void;
 }
 
 /** 倍率の刻み。1 が原寸。 */
 const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
-/** ホイール 1 ジェスチャーにつき 1 ページだけ送るためのクールダウン。 */
-export const WHEEL_COOLDOWN_MS = 350;
 /** 実際の倍率が刻みとほぼ同じとき、同じ値へ「動かない」のを避けるための許容差。 */
 const ZOOM_EPSILON = 0.005;
+/** HUD を自動で隠すまでの無操作時間。 */
+const HUD_HIDE_MS = 2200;
 
 type ZoomMode = "fit-contain" | number;
 
@@ -58,6 +55,11 @@ interface ZoomAnchor {
   /** 画像内の相対位置（0..1）。 */
   fx: number;
   fy: number;
+}
+
+/** パスからファイル名を取り出す。 */
+function baseName(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
 }
 
 /**
@@ -102,14 +104,7 @@ function steppedZoom(base: number, direction: 1 | -1): number | null {
   return smaller.length > 0 ? smaller[smaller.length - 1] : null;
 }
 
-export function ImagePreview({
-  entry,
-  uiVisible,
-  onNavigate,
-  wheelNavigation,
-  index,
-  total,
-}: Props) {
+export function ImagePreview({ path, alt, onClose }: Props) {
   // 既定は「全体を表示」。縦長画像は高さが、横長画像は幅が自動でウィンドウに
   // 合うため、画像の向きによらず全体が常に見える（object-fit: contain の性質）。
   const [zoom, setZoom] = useState<ZoomMode>("fit-contain");
@@ -117,9 +112,9 @@ export function ImagePreview({
   // はみ出していて、ドラッグで動かせる状態かどうか。カーソルの形に使う。
   const [pannable, setPannable] = useState(false);
   const [panning, setPanning] = useState(false);
-  // 倍率指定の基準にする原寸の幅。メタデータから分からない画像もあるので、
-  // 読み込めた時点で実際の幅を控えておく。
-  const [naturalWidth, setNaturalWidth] = useState(0);
+  // 倍率指定の基準にする原寸。読み込めた時点で実際の大きさを控えておく。
+  const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const anchorRef = useRef<ZoomAnchor | null>(null);
@@ -128,8 +123,64 @@ export function ImagePreview({
   useEffect(() => {
     setZoom("fit-contain");
     setFailed(false);
-    setNaturalWidth(0);
-  }, [entry.path]);
+    setNatural(null);
+  }, [path]);
+
+  // 開いたらビューアへフォーカスを移す。
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, []);
+
+  // マウスが動いた直後だけ HUD を出し、止まればしばらくして隠す。
+  const [hudVisible, setHudVisible] = useState(true);
+  useEffect(() => {
+    let hideTimer: number;
+    const onMouseMove = () => {
+      setHudVisible(true);
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => setHudVisible(false), HUD_HIDE_MS);
+    };
+    onMouseMove();
+    window.addEventListener("mousemove", onMouseMove);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.clearTimeout(hideTimer);
+    };
+  }, []);
+
+  // Esc とマウスの戻るボタンで閉じる。下にある Markdown プレビューも同じキーで
+  // 閉じたり前後のノートへ移ったりするので、キャプチャで先に受けて届かないようにする。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") e.stopPropagation();
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 3 || e.button === 4) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.button === 3) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("mousedown", onMouseDown, { capture: true });
+    window.addEventListener("mouseup", onMouseUp, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      window.removeEventListener("mousedown", onMouseDown, { capture: true });
+      window.removeEventListener("mouseup", onMouseUp, { capture: true });
+    };
+  }, [onClose]);
 
   // ホイールのリスナーから呼ぶので、step 自体は付け替えが起きないよう
   // 依存を持たせない。いまの倍率は ref 経由で読む。
@@ -174,45 +225,34 @@ export function ImagePreview({
     return () => observer.disconnect();
   }, [syncPannable]);
 
-  // ホイールは前後の画像へのページ送り、Ctrl + ホイールは拡大・縮小に割り当てる。
-  // React の onWheel は既定で passive 登録されて preventDefault が効かないため、
-  // ネイティブのリスナーを使う。
+  // Ctrl + ホイールは拡大・縮小に割り当てる。ふつうのホイールは、はみ出しているときの
+  // スクロールとしてブラウザに任せる。React の onWheel は既定で passive 登録されて
+  // preventDefault が効かないため、ネイティブのリスナーを使う。
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
 
-    let cooling = false;
     const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
       e.preventDefault();
       if (e.deltaY === 0) return;
-
-      if (e.ctrlKey) {
-        // 拡大の軸はカーソルが指している点。倍率が変わったあとに同じ点が
-        // 同じ位置へ来るよう、補正に使う情報を残す。
-        const img = imgRef.current;
-        if (img) {
-          const r = paintedRect(img);
-          anchorRef.current = {
-            clientX: e.clientX,
-            clientY: e.clientY,
-            fx: r.width > 0 ? Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) : 0.5,
-            fy: r.height > 0 ? Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) : 0.5,
-          };
-        }
-        step(e.deltaY > 0 ? -1 : 1);
-        return;
+      // 拡大の軸はカーソルが指している点。倍率が変わったあとに同じ点が
+      // 同じ位置へ来るよう、補正に使う情報を残す。
+      const img = imgRef.current;
+      if (img) {
+        const r = paintedRect(img);
+        anchorRef.current = {
+          clientX: e.clientX,
+          clientY: e.clientY,
+          fx: r.width > 0 ? Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) : 0.5,
+          fy: r.height > 0 ? Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) : 0.5,
+        };
       }
-
-      if (!wheelNavigation || cooling) return;
-      cooling = true;
-      window.setTimeout(() => {
-        cooling = false;
-      }, WHEEL_COOLDOWN_MS);
-      onNavigate(e.deltaY > 0 ? 1 : -1);
+      step(e.deltaY > 0 ? -1 : 1);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [onNavigate, step, wheelNavigation]);
+  }, [step]);
 
   // はみ出しているときは、ドラッグで画像を動かせるようにする。
   const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
@@ -240,19 +280,26 @@ export function ImagePreview({
     stageRef.current?.releasePointerCapture(e.pointerId);
   };
 
-  const meta = entry.image;
-  const hasMeta = Boolean(meta?.width || meta?.taken || meta?.make || meta?.model || meta?.lens);
   // 原寸が分からないうちは幅を指定せず、画像そのものの大きさに任せる。
-  const baseWidth = meta?.width || naturalWidth;
+  const baseWidth = natural?.width ?? 0;
+  const name = baseName(path);
 
   // 表示方式の切り替えボタン。いま選ばれているものが分かるよう、
   // 選択中は押し込んだ見た目（hud）にする。
   const modeVariant = (active: boolean) => (active ? "hud" : "hudGhost");
+  const hudClass = `transition-opacity duration-300 ${hudVisible ? "opacity-100" : "pointer-events-none opacity-0"}`;
 
   return (
     // HUD はスクロールしないこの外側の箱に対して配置する。スクロールする側に
     // 置くと、拡大してずらしたときに HUD まで一緒に流れてしまう。
-    <div className="relative size-full bg-black">
+    <div
+      ref={rootRef}
+      className="fixed inset-0 z-[110] bg-black outline-hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`画像: ${name}`}
+      tabIndex={-1}
+    >
       <div
         ref={stageRef}
         /* 画像は縦横とも中央に置く。「全体を表示」は object-fit が中央寄せするので、
@@ -261,7 +308,7 @@ export function ImagePreview({
            中央寄せに safe を付けているのは、はみ出したときに中央寄せのままだと
            先頭側（上・左）がスクロールで届かなくなるため。safe なら、はみ出した
            ときだけ先頭揃えに切り替わる。 */
-        className={`flex size-full touch-none items-center-safe justify-center-safe overflow-auto select-none ${
+        className={`flex size-full touch-none items-center-safe justify-center-safe overflow-auto overscroll-contain select-none ${
           panning ? "cursor-grabbing" : pannable ? "cursor-grab" : ""
         }`}
         onPointerDown={onPointerDown}
@@ -277,19 +324,15 @@ export function ImagePreview({
             /* Preflight の img { max-width: 100% } は倍率指定の邪魔になるので外す。
                縮まないようにしているのは、flex アイテムの既定（flex-shrink: 1）だと
                ウィンドウより大きい倍率を指定しても縮められてしまうため。 */
-            className={`max-w-none shrink-0 ${
-              zoom === "fit-contain" ? "size-full object-contain" : ""
-            }`}
-            src={fileURL(entry.path)}
-            alt={entry.title}
+            className={`max-w-none shrink-0 ${zoom === "fit-contain" ? "size-full object-contain" : ""}`}
+            src={imageURL(path)}
+            alt={alt ?? name}
             draggable={false}
             style={
-              typeof zoom === "number" && baseWidth > 0
-                ? { width: `${baseWidth * zoom}px` }
-                : undefined
+              typeof zoom === "number" && baseWidth > 0 ? { width: `${baseWidth * zoom}px` } : undefined
             }
             onLoad={(e) => {
-              setNaturalWidth(e.currentTarget.naturalWidth);
+              setNatural({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight });
               syncPannable();
             }}
             onError={() => setFailed(true)}
@@ -297,89 +340,55 @@ export function ImagePreview({
         )}
       </div>
 
-      {/* ---- 下部の操作 HUD ----
-          マウスが動いた間だけ表示する。常に画像の上に乗るので、
-          背景の画像が何色でも読めるよう暗いグラデーションを敷く。
+      {/* ---- 上部のヘッダー ----
+          常に画像の上に乗るので、背景の画像が何色でも読めるよう暗いグラデーションを敷く。 */}
+      <header
+        className={`absolute inset-x-0 top-0 z-10 flex items-start gap-4 bg-linear-to-b from-black/70 to-transparent px-5 pt-4 pb-7 text-white ${hudClass}`}
+      >
+        <div className="min-w-0 flex-1">
+          <h2 className="m-0 truncate text-lg leading-snug" title={path}>
+            {alt || name}
+          </h2>
+          <p className="mt-0.5 mb-0 truncate text-xs text-white/70">
+            {alt ? name : null}
+            {alt && natural ? " · " : null}
+            {natural ? `${natural.width} × ${natural.height} px` : null}
+          </p>
+        </div>
+        <Button variant="hudGhost" onClick={onClose} title="閉じてノートへ戻る（Esc）">
+          <XMarkIcon className="size-4" aria-hidden="true" />
+          閉じる
+        </Button>
+      </header>
+
+      {/* ---- 下部の倍率操作 ----
           外枠はクリックを受け取らない。受け取ってしまうと、拡大時に画面の
           いちばん下へ出る横スクロールバーを掴めなくなるため。 */}
       <div
-        className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1.5 bg-linear-to-t from-black/70 to-transparent px-5 pt-5 pb-4 text-left text-white transition-opacity duration-300 ${
-          uiVisible ? "opacity-100" : "opacity-0"
-        }`}
+        className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-linear-to-t from-black/70 to-transparent px-5 pt-5 pb-4 text-white ${hudClass}`}
       >
-        {/* 撮影情報は操作の手前に置く。ボタンの下に置くと、Markdown や音声の
-            プレビューに対してページ送りの位置がその行のぶんだけ上へずれてしまう。 */}
-        {hasMeta && (
-          <dl
-            className={`m-0 flex flex-wrap gap-x-4.5 gap-y-1 p-0 text-xs text-white/70 ${
-              uiVisible ? "pointer-events-auto" : ""
-            }`}
+        <div className={`flex flex-wrap items-center gap-1.5 ${hudVisible ? "pointer-events-auto" : ""}`}>
+          <Button variant="hudGhost" onClick={() => step(-1)} title="縮小" aria-label="縮小">
+            <MinusIcon className="size-4" />
+          </Button>
+          <span className="min-w-16 text-center text-xs tabular-nums text-white/70">
+            {zoom === "fit-contain" ? "全体表示" : `${Math.round(zoom * 100)}%`}
+          </span>
+          <Button variant="hudGhost" onClick={() => step(1)} title="拡大" aria-label="拡大">
+            <PlusIcon className="size-4" />
+          </Button>
+          <Button
+            variant={modeVariant(zoom === "fit-contain")}
+            aria-pressed={zoom === "fit-contain"}
+            onClick={() => setZoom("fit-contain")}
           >
-            {meta?.width ? (
-              <>
-                <dt className="mr-1 after:content-['：']">解像度</dt>
-                <dd className="m-0 text-white">
-                  {meta.width} × {meta.height} px
-                </dd>
-              </>
-            ) : null}
-            {meta?.taken && (
-              <>
-                <dt className="mr-1 after:content-['：']">撮影日時</dt>
-                <dd className="m-0 text-white">{meta.taken}</dd>
-              </>
-            )}
-            {(meta?.make || meta?.model) && (
-              <>
-                <dt className="mr-1 after:content-['：']">機器</dt>
-                <dd className="m-0 text-white">
-                  {[meta.make, meta.model].filter(Boolean).join(" ")}
-                </dd>
-              </>
-            )}
-            {meta?.lens && (
-              <>
-                <dt className="mr-1 after:content-['：']">レンズ</dt>
-                <dd className="m-0 text-white">{meta.lens}</dd>
-              </>
-            )}
-          </dl>
-        )}
-
-        <div
-          className={`flex flex-wrap items-center justify-between gap-2.5 ${
-            uiVisible ? "pointer-events-auto" : ""
-          }`}
-        >
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="hudGhost" onClick={() => step(-1)} title="縮小" aria-label="縮小">
-              <MinusIcon className="size-4" />
-            </Button>
-            <span className="min-w-16 text-center text-xs tabular-nums text-white/70">
-              {zoom === "fit-contain" ? "全体表示" : `${Math.round(zoom * 100)}%`}
-            </span>
-            <Button variant="hudGhost" onClick={() => step(1)} title="拡大" aria-label="拡大">
-              <PlusIcon className="size-4" />
-            </Button>
-            <Button
-              variant={modeVariant(zoom === "fit-contain")}
-              aria-pressed={zoom === "fit-contain"}
-              onClick={() => setZoom("fit-contain")}
-            >
-              <ArrowsPointingOutIcon className="size-4" aria-hidden="true" />
-              全体を表示
-            </Button>
-            <Button
-              variant={modeVariant(zoom === 1)}
-              aria-pressed={zoom === 1}
-              onClick={() => setZoom(1)}
-            >
-              <Square2StackIcon className="size-4" aria-hidden="true" />
-              原寸
-            </Button>
-          </div>
-
-          <Pager index={index} total={total} onNavigate={onNavigate} onImage />
+            <ArrowsPointingOutIcon className="size-4" aria-hidden="true" />
+            全体を表示
+          </Button>
+          <Button variant={modeVariant(zoom === 1)} aria-pressed={zoom === 1} onClick={() => setZoom(1)}>
+            <Square2StackIcon className="size-4" aria-hidden="true" />
+            原寸
+          </Button>
         </div>
       </div>
     </div>

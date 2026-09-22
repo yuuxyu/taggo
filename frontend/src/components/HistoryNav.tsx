@@ -3,7 +3,7 @@
  *
  * ブラウザと同じ並びと操作にそろえ、覚えることを増やさない。
  *  - ← / →            … 1 つ戻る・進む（ホバーで行き先の名前が出る）
- *  - 時計のボタン      … これまでに見たファイルの一覧を開き、好きな位置へ飛ぶ
+ *  - 時計のボタン      … これまでに見たノートの一覧を開き、好きな位置へ飛ぶ
  *  - Alt + ← / →      … キーボードでの戻る・進む（DetailPanel 側で受ける）
  *  - マウスの戻る／進むボタン … 同上
  *
@@ -14,22 +14,18 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ClockIcon } from "@heroicons/react/20/solid";
 import type { HistoryItem } from "../hooks/useDetailHistory";
-import { Button, type ButtonVariant } from "./Button";
+import { Button } from "./Button";
 
 interface Props {
   items: HistoryItem[];
   index: number;
   onGo: (index: number) => void;
-  /** 画像の上では白基調のボタンにする。 */
-  variant: ButtonVariant;
-  /** 一覧の配色も画像の上かどうかで変える。 */
-  onImage: boolean;
 }
 
 /** アイコンだけのボタンは、文字付きのボタンより左右の余白を詰める。 */
 const ICON_ONLY = "px-2!";
 
-export function HistoryNav({ items, index, onGo, variant, onImage }: Props) {
+export function HistoryNav({ items, index, onGo }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -56,13 +52,13 @@ export function HistoryNav({ items, index, onGo, variant, onImage }: Props) {
     };
   }, [menuOpen]);
 
-  // 別のファイルへ移ったら一覧は閉じる。
+  // 別のノートへ移ったら一覧は閉じる。
   useEffect(() => setMenuOpen(false), [index, items]);
 
   return (
     <div className="-ml-2 flex shrink-0 items-center" ref={menuRef}>
       <Button
-        variant={variant}
+        variant="ghost"
         className={ICON_ONLY}
         disabled={!prev}
         onClick={() => onGo(index - 1)}
@@ -72,7 +68,7 @@ export function HistoryNav({ items, index, onGo, variant, onImage }: Props) {
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
       </Button>
       <Button
-        variant={variant}
+        variant="ghost"
         className={ICON_ONLY}
         disabled={!next}
         onClick={() => onGo(index + 1)}
@@ -83,11 +79,11 @@ export function HistoryNav({ items, index, onGo, variant, onImage }: Props) {
       </Button>
       <div className="relative">
         <Button
-          variant={variant}
+          variant="ghost"
           className={ICON_ONLY}
           disabled={items.length < 2}
           onClick={() => setMenuOpen((open) => !open)}
-          title="これまでに見たファイル"
+          title="これまでに見たノート"
           aria-label="履歴"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -97,9 +93,7 @@ export function HistoryNav({ items, index, onGo, variant, onImage }: Props) {
         {menuOpen && (
           <ul
             role="menu"
-            className={`absolute top-full left-0 z-20 m-0 mt-1 flex max-h-[60vh] w-80 list-none flex-col overflow-auto rounded-lg border p-1 shadow-card ${
-              onImage ? "border-white/20 bg-black/85 text-white" : "border-line bg-surface text-ink"
-            }`}
+            className="absolute top-full left-0 z-20 m-0 mt-1 flex max-h-[60vh] w-80 list-none flex-col overflow-auto rounded-lg border border-line bg-surface p-1 text-ink shadow-card"
           >
             {items
               .map((item, i) => ({ item, i }))
@@ -112,9 +106,9 @@ export function HistoryNav({ items, index, onGo, variant, onImage }: Props) {
                       type="button"
                       role="menuitem"
                       aria-current={current ? "page" : undefined}
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
-                        onImage ? "hover:bg-white/15" : "hover:bg-sunken"
-                      } ${current ? "font-semibold" : ""}`}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sunken ${
+                        current ? "font-semibold" : ""
+                      }`}
                       title={item.path}
                       onClick={() => {
                         setMenuOpen(false);

@@ -15,9 +15,14 @@ func buildTree(t *testing.T) string {
 	root := t.TempDir()
 
 	files := map[string]string{
-		"a.md":                "---\ntags: [golang]\n---\n\n# A\n",
-		"sub/b.md":            "---\ntags: [設計]\n---\n\n# B\n",
-		"sub/notes.txt":       "対象外の拡張子",
+		"a.md":          "---\ntags: [golang]\n---\n\n# A\n",
+		"sub/b.md":      "---\ntags: [設計]\n---\n\n# B\n",
+		"sub/notes.txt": "対象外の拡張子",
+		// 画像と音声は Markdown から参照されるだけで、一覧には載せない。
+		"sub/photo.png":       "画像",
+		"sub/photo.jpg":       "画像",
+		"song.mp3":            "音声",
+		"voice.wav":           "音声",
 		"node_modules/dep.md": "---\ntags: [除外]\n---\n\n# Dep\n",
 		".hidden/secret.md":   "---\ntags: [隠し]\n---\n\n# Secret\n",
 	}

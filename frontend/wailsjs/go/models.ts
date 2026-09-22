@@ -94,59 +94,11 @@ export namespace linkcard {
 
 export namespace model {
 	
-	export class AudioMeta {
-	    title?: string;
-	    artist?: string;
-	    album?: string;
-	    genre?: string;
-	    year?: string;
-	    durationSec?: number;
-	    hasCoverArt?: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new AudioMeta(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.title = source["title"];
-	        this.artist = source["artist"];
-	        this.album = source["album"];
-	        this.genre = source["genre"];
-	        this.year = source["year"];
-	        this.durationSec = source["durationSec"];
-	        this.hasCoverArt = source["hasCoverArt"];
-	    }
-	}
-	export class ImageMeta {
-	    width?: number;
-	    height?: number;
-	    taken?: string;
-	    make?: string;
-	    model?: string;
-	    lens?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new ImageMeta(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.width = source["width"];
-	        this.height = source["height"];
-	        this.taken = source["taken"];
-	        this.make = source["make"];
-	        this.model = source["model"];
-	        this.lens = source["lens"];
-	    }
-	}
 	export class Entry {
 	    path: string;
 	    relPath: string;
 	    name: string;
 	    ext: string;
-	    format: string;
-	    kind: string;
 	    size: number;
 	    // Go type: time
 	    modTime: any;
@@ -156,8 +108,6 @@ export namespace model {
 	    links?: string[];
 	    tagPage?: string;
 	    writable: boolean;
-	    image?: ImageMeta;
-	    audio?: AudioMeta;
 	    err?: string;
 	    cloudOnly?: boolean;
 	
@@ -171,8 +121,6 @@ export namespace model {
 	        this.relPath = source["relPath"];
 	        this.name = source["name"];
 	        this.ext = source["ext"];
-	        this.format = source["format"];
-	        this.kind = source["kind"];
 	        this.size = source["size"];
 	        this.modTime = this.convertValues(source["modTime"], null);
 	        this.tags = source["tags"];
@@ -181,8 +129,6 @@ export namespace model {
 	        this.links = source["links"];
 	        this.tagPage = source["tagPage"];
 	        this.writable = source["writable"];
-	        this.image = this.convertValues(source["image"], ImageMeta);
-	        this.audio = this.convertValues(source["audio"], AudioMeta);
 	        this.err = source["err"];
 	        this.cloudOnly = source["cloudOnly"];
 	    }
@@ -217,7 +163,6 @@ export namespace store {
 	    relPath?: string;
 	    preview?: string;
 	    tags?: string[];
-	    kind?: string;
 	    cloudOnly?: boolean;
 	    tagPage?: string;
 	
@@ -233,7 +178,6 @@ export namespace store {
 	        this.relPath = source["relPath"];
 	        this.preview = source["preview"];
 	        this.tags = source["tags"];
-	        this.kind = source["kind"];
 	        this.cloudOnly = source["cloudOnly"];
 	        this.tagPage = source["tagPage"];
 	    }

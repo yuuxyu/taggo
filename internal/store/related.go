@@ -24,10 +24,8 @@ type RelatedPage struct {
 	RelPath string   `json:"relPath,omitempty"`
 	Preview string   `json:"preview,omitempty"`
 	Tags    []string `json:"tags,omitempty"`
-	// Kind は行き先の種類。タグページには画像や音声も並ぶので、見せ方を切り替えるのに使う。
-	Kind model.Kind `json:"kind,omitempty"`
-	// CloudOnly は行き先の中身がクラウド上にしか無いこと。サムネイルを
-	// 取りに行くとダウンロードが始まるので、画面側で控えるために使う。
+	// CloudOnly は行き先の中身がクラウド上にしか無いこと。本文を読むと
+	// ダウンロードが始まるので、画面側でそれと分かるように出すために使う。
 	CloudOnly bool `json:"cloudOnly,omitempty"`
 	// TagPage は行き先がタグページなら、そのタグ。
 	TagPage string `json:"tagPage,omitempty"`
@@ -143,7 +141,7 @@ func (s *Store) sameTagNotes(tags []string, exclude map[string]struct{}) []Relat
 	_ = s.db.View(func(tx *buntdb.Tx) error {
 		return tx.Descend(idxModTime, func(_, raw string) bool {
 			e := decodeEntry(raw)
-			if e == nil || e.Kind != model.KindMarkdown {
+			if e == nil {
 				return true
 			}
 			if _, skip := exclude[e.Path]; skip {
@@ -173,11 +171,7 @@ func (s *Store) sameTagNotes(tags []string, exclude map[string]struct{}) []Relat
 }
 
 // noteKeysOf は、そのエントリがリンク先として名指されうるキーを返す。
-// リンク先になれるのは Markdown だけなので、それ以外は索引に載せない。
 func noteKeysOf(e *model.Entry) []string {
-	if e.Kind != model.KindMarkdown {
-		return nil
-	}
 	return []string{noteKey(e.Path)}
 }
 
@@ -251,7 +245,6 @@ func relatedPage(target string, e *model.Entry) RelatedPage {
 		RelPath:   e.RelPath,
 		Preview:   e.Preview,
 		Tags:      e.Tags,
-		Kind:      e.Kind,
 		CloudOnly: e.CloudOnly,
 		TagPage:   e.TagPage,
 	}

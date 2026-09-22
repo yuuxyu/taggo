@@ -20,7 +20,7 @@ type TagPageGroup struct {
 // tagPageKey は、タグページを索引に載せるときのキーを返す。
 // タグページでないか、クラウド上にだけあって中身を読めていないノートは空を返す。
 func tagPageKey(e *model.Entry) string {
-	if e.Kind != model.KindMarkdown || e.TagPage == "" {
+	if e.TagPage == "" {
 		return ""
 	}
 	return strings.ToLower(e.TagPage)

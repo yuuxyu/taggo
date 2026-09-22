@@ -8,17 +8,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yuuxyu/taggo/internal/model"
 	"gopkg.in/yaml.v3"
 )
 
-func init() { Register(markdownHandler{}) }
-
 // markdownHandler は YAML Front Matter の tags フィールドを読み書きする。
 type markdownHandler struct{}
-
-func (markdownHandler) Kind() model.Kind     { return model.KindMarkdown }
-func (markdownHandler) Extensions() []string { return []string{".md", ".markdown"} }
 
 const (
 	// previewRunes はカードに載せる本文抜粋の最大文字数。

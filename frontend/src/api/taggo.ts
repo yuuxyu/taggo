@@ -41,7 +41,7 @@ export interface ScanDone {
   entryCount?: number;
   tagCount?: number;
   maxEntries?: number;
-  /** 上限で打ち切ったため、まだ読み込んでいない対応ファイルの数。 */
+  /** 上限で打ち切ったため、まだ読み込んでいない Markdown ファイルの数。 */
   remaining?: number;
   /** 続きの読み込み（loadMore）の完了かどうか。 */
   loadedMore?: boolean;
@@ -144,12 +144,8 @@ export function on<T>(event: string, handler: (payload: T) => void): () => void 
 }
 
 /**
- * 原寸ファイルの配信 URL。画像の拡大表示や音声再生に使う。
- * Go 側のアセットハンドラーが、開いているフォルダ配下の登録済みファイルだけを返す。
+ * Markdown の本文に埋め込まれた画像の配信 URL。
+ * Go 側のアセットハンドラーが、開いているフォルダ配下にある表示できる画像だけを返す。
  */
-export const fileURL = (path: string): string =>
-  `/taggo/file?path=${encodeURIComponent(path)}`;
-
-/** サムネイルの配信 URL。カードのグリッドで使う。 */
-export const thumbURL = (path: string, width = 480): string =>
-  `/taggo/thumb?path=${encodeURIComponent(path)}&w=${width}`;
+export const imageURL = (path: string): string =>
+  `/taggo/image?path=${encodeURIComponent(path)}`;

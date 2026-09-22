@@ -1,8 +1,8 @@
 /**
  * taggo のメイン画面。
  *
- * 最上部の検索バーとカード型グリッドの 2 層だけ。
- * フォルダーツリーは持たない。詳細プレビューは画面遷移せずオーバーレイで開く。
+ * 最上部の検索バーと、ノートを並べたカード型グリッドの 2 層だけ。
+ * フォルダーツリーは持たない。ノートの詳細プレビューは画面遷移せずオーバーレイで開く。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -42,13 +42,13 @@ const LOAD_ALL_CONFIRM_THRESHOLD = 100_000;
 export default function App() {
   const library = useLibrary();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // 詳細プレビューで見ているファイルは、戻る／進むのための履歴として持つ。
+  // 詳細プレビューで見ているノートは、戻る／進むのための履歴として持つ。
   const history = useDetailHistory();
   const { start: startHistory, push: pushHistory, replace: replaceHistory, clear: clearHistory } =
     history;
   const detailPath = history.current?.path ?? null;
-  // 一覧（今の検索結果）に無いのにプレビューで開いたファイル。本文中の画像や
-  // リンク先は絞り込みの外にあることが多いので、一覧とは別に持っておく。
+  // 一覧（今の検索結果）に無いのにプレビューで開いたノート。リンク先や
+  // タグページは絞り込みの外にあることが多いので、一覧とは別に持っておく。
   const [outside, setOutside] = useState<ReadonlyMap<string, Entry>>(new Map());
   const [bulkOpen, setBulkOpen] = useState(false);
   // 「すべて読み込む」の確認ダイアログを出しているか。
@@ -59,7 +59,7 @@ export default function App() {
   const { entries, query, setQuery, notify, replaceEntry } = library;
 
   // 一覧が入れ替わっても、開いているプレビューは最新のエントリを指し続ける。
-  // 「前へ／次へ」で隣のファイルへ移れるよう、位置も一緒に持つ。
+  // 「前へ／次へ」で隣のノートへ移れるよう、位置も一緒に持つ。
   const detailIndex = useMemo(
     () => (detailPath === null ? -1 : entries.findIndex((e) => e.path === detailPath)),
     [detailPath, entries],
@@ -67,7 +67,7 @@ export default function App() {
   const detailEntry =
     detailIndex >= 0 ? entries[detailIndex] : detailPath === null ? null : (outside.get(detailPath) ?? null);
 
-  // 一覧の外で開いたファイルも、外部での変更や削除に追従させる。
+  // 一覧の外で開いたノートも、外部での変更や削除に追従させる。
   useEffect(
     () =>
       on<EntryChanged>(Events.entryChanged, (change) => {
@@ -85,7 +85,7 @@ export default function App() {
     [],
   );
 
-  // 見ていたファイルが消えたら、プレビューを閉じる。
+  // 見ていたノートが消えたら、プレビューを閉じる。
   useEffect(() => {
     if (detailPath !== null && detailEntry === null) clearHistory();
   }, [detailPath, detailEntry, clearHistory]);
@@ -100,7 +100,7 @@ export default function App() {
   );
 
   /**
-   * パスの分かっているファイルをプレビューで開き、履歴に積む。
+   * パスの分かっているノートをプレビューで開き、履歴に積む。
    * 一覧に無ければ Go 側から取り寄せる。開けなければ false を返す。
    */
   const openPath = useCallback(
@@ -124,7 +124,7 @@ export default function App() {
     [entries, pushHistory],
   );
 
-  // 詳細プレビューの前後移動。いまの検索結果・並び順のまま、種類を問わず隣へ動く。
+  // 詳細プレビューの前後移動。いまの検索結果・並び順のまま隣のノートへ動く。
   // 端では止める（ループしない）。めくるたびに履歴が伸びないよう、今の項目を置き換える。
   const navigate = useCallback(
     (direction: 1 | -1) => {
@@ -198,7 +198,7 @@ export default function App() {
   );
 
   // ノート間のリンクをたどる。行き先のパスが分かっていればそれを開く。
-  // 一覧の外にあっても、登録済みのファイルならそのまま開ける。
+  // 一覧の外にあっても、登録済みのノートならそのまま開ける。
   // パスが分からないのは行き先のファイルがまだ無いときなので、名前で一覧から探す。
   // それでも見つからなければ、検索条件のほうを切り替える。
   const handleFollowLink = useCallback(
@@ -225,14 +225,6 @@ export default function App() {
     [entries, notify, setQuery, openPath, pushHistory, clearHistory],
   );
 
-  // Markdown の本文中の画像をクリックしたら、その画像のプレビューへ移る。
-  const handleOpenImage = useCallback(
-    async (path: string) => {
-      if (!(await openPath(path))) notify("error", `画像を開けませんでした: ${path}`);
-    },
-    [notify, openPath],
-  );
-
   const handleBulkApplied = useCallback(
     (results: TagEditResult[]) => {
       for (const result of results) {
@@ -241,7 +233,7 @@ export default function App() {
       const failed = results.filter((r) => !r.ok).length;
       const ok = results.filter((r) => r.ok).length;
       if (failed === 0) {
-        notify("info", `${ok} 件のファイルへタグを書き込みました。`);
+        notify("info", `${ok} 件のノートへタグを書き込みました。`);
       }
     },
     [notify, replaceEntry],
@@ -336,11 +328,11 @@ export default function App() {
           <div className="flex h-full flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
             <FolderOpenIcon className="size-10 text-ink-faint" aria-hidden="true" />
             <p className="m-0 text-base font-semibold text-ink">
-              フォルダを選ぶとタグ管理を始められます
+              フォルダを選ぶと、そこが Wiki になります
             </p>
             <p className="m-0 max-w-105">
-              選んだフォルダ配下の Markdown・画像・音声を読み込み、
-              ファイルに埋め込まれたタグでそのまま検索できます。
+              選んだフォルダ配下の Markdown をノートとして読み込み、
+              Front Matter に書かれたタグとリンクでたどれるようにします。
               タグはファイル自身に書き込むので、taggo を使わなくなっても情報は残ります。
             </p>
             <Button variant="primary" onClick={() => void library.chooseFolder()}>
@@ -351,7 +343,7 @@ export default function App() {
         ) : entries.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
             <p className="m-0 text-base font-semibold text-ink">
-              {library.progress ? "読み込み中です…" : "条件に合うファイルがありません"}
+              {library.progress ? "読み込み中です…" : "条件に合うノートがありません"}
             </p>
             {!library.progress && query !== "" && (
               <p className="m-0 max-w-105">
@@ -407,7 +399,6 @@ export default function App() {
           onTagClick={handleTagClick}
           onSearchTag={handleSearchTag}
           onFollowLink={(target, path) => void handleFollowLink(target, path)}
-          onOpenImage={(path) => void handleOpenImage(path)}
           onEntryUpdated={updateEntry}
           onError={(message) => notify("error", message)}
           onNavigate={navigate}
@@ -452,7 +443,7 @@ export default function App() {
           lines={[
             library.pendingFolder.path,
             "クラウド上にだけあるファイルは中身を開かずに一覧へ出すので、読み込んでもダウンロードは始まりません。",
-            "中身を見たいファイルは、カードを開いて個別に取り込めます。",
+            "中身を読みたいノートは、カードを開いて個別に取り込めます。",
           ]}
           confirmLabel="読み込む"
           onConfirm={() => void library.confirmPendingFolder()}

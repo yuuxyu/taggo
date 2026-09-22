@@ -18,7 +18,6 @@ import (
 	"github.com/yuuxyu/taggo/internal/scan"
 	"github.com/yuuxyu/taggo/internal/search"
 	"github.com/yuuxyu/taggo/internal/store"
-	"github.com/yuuxyu/taggo/internal/thumb"
 	"github.com/yuuxyu/taggo/internal/watcher"
 )
 
@@ -34,10 +33,9 @@ const (
 
 // App はアプリ全体の状態を持つ。
 type App struct {
-	ctx    context.Context
-	store  *store.Store
-	thumbs *thumb.Cache
-	links  *linkcard.Client
+	ctx   context.Context
+	store *store.Store
+	links *linkcard.Client
 
 	// maxEntries は 1 回の読み込みで展開する件数の上限。
 	// 本番では store.MaxEntries で、テストでは小さくして上限まわりを確かめる。
@@ -55,9 +53,9 @@ type App struct {
 	// 開かなかったファイルの数。
 	cloudOnly int
 	// cursor は上限で打ち切ったときの再開位置（ルートからの相対パス）。
-	// 空なら、フォルダの対応ファイルは全部読み込み済み。
+	// 空なら、フォルダの Markdown ファイルは全部読み込み済み。
 	cursor string
-	// remaining は、まだ読み込んでいない対応ファイルの数。
+	// remaining は、まだ読み込んでいない Markdown ファイルの数。
 	remaining int
 }
 
@@ -67,7 +65,7 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{store: s, thumbs: thumb.NewCache(), links: linkcard.New(), maxEntries: store.MaxEntries}, nil
+	return &App{store: s, links: linkcard.New(), maxEntries: store.MaxEntries}, nil
 }
 
 // Startup は Wails の起動フックから呼ばれ、以降 runtime API を使えるようにする。
@@ -102,7 +100,7 @@ type Status struct {
 	// MaxEntries は 1 回の読み込みで展開する件数の上限。
 	// 「続きを読み込む」で増える件数の表示に使う。
 	MaxEntries int `json:"maxEntries"`
-	// Remaining は、上限で打ち切ったためにまだ読み込んでいない対応ファイルの数。
+	// Remaining は、上限で打ち切ったためにまだ読み込んでいない Markdown ファイルの数。
 	// 0 より大きければ、LoadMore で続きを読み込める。
 	Remaining int `json:"remaining"`
 	// CloudOnly は、中身がクラウド上にしか無いため読み込まなかった件数。
@@ -136,7 +134,7 @@ type ScanProgress struct {
 // 実際の読み込みは呼び出し側が OpenFolder を呼んで始める。
 func (a *App) SelectFolder() (string, error) {
 	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "タグ管理するフォルダを選択",
+		Title: "Wiki として開くフォルダを選択",
 	})
 	if err != nil {
 		return "", fmt.Errorf("フォルダ選択ダイアログを開けませんでした: %w", err)
@@ -199,7 +197,6 @@ func (a *App) ensureLocal(entry *model.Entry) error {
 
 	cloud := model.NewCloudOnly(entry.Path, info.Name(), info.Size(), info.ModTime())
 	cloud.RelPath = entry.RelPath
-	a.thumbs.Invalidate(entry.Path)
 	if err := a.putEntry(cloud); err == nil {
 		a.emit(EventEntryChanged, map[string]any{"path": entry.Path, "entry": cloud})
 	}
@@ -255,7 +252,6 @@ func (a *App) OpenFolder(root string) error {
 	a.mu.Unlock()
 
 	a.stopWatcher()
-	a.thumbs.Clear()
 	if err := a.store.Reset(abs); err != nil {
 		return err
 	}
@@ -457,9 +453,6 @@ func (a *App) MarkdownSource(path string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("エントリが見つかりません: %s", path)
 	}
-	if e.Kind != model.KindMarkdown {
-		return "", fmt.Errorf("Markdown ファイルではありません: %s", path)
-	}
 	if e.CloudOnly {
 		return "", fmt.Errorf("クラウド上にだけあるファイルのため読み込みません: %s", e.Name)
 	}
@@ -520,8 +513,6 @@ func (a *App) startWatcher(root string) {
 // consumeChanges はウォッチャーの通知を DB へ反映し、フロントエンドへ転送する。
 func (a *App) consumeChanges(w *watcher.Watcher) {
 	for change := range w.Changes() {
-		a.thumbs.Invalidate(change.Path)
-
 		if change.Removed {
 			prev, had := a.store.Get(change.Path)
 			if !had {

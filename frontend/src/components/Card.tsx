@@ -1,11 +1,11 @@
 /**
- * グリッドに並ぶカード 1 枚。
- * 種別ごとにプレビュー領域の見た目を変え、下部に埋め込みタグをバッジで並べる。
+ * グリッドに並ぶノートのカード 1 枚。
+ * 上部に本文の抜粋を、下部に埋め込みタグをバッジで並べる。
  */
 
-import { memo, useState } from "react";
+import { memo } from "react";
 import { BookOpenIcon, CheckIcon, CloudIcon, LockClosedIcon } from "@heroicons/react/16/solid";
-import { thumbURL, type Entry } from "../api/taggo";
+import type { Entry } from "../api/taggo";
 import { TagBadge } from "./TagBadge";
 
 interface Props {
@@ -31,97 +31,13 @@ function formatSize(bytes: number): string {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
-/** 再生時間を m:ss 形式にする。 */
-function formatDuration(seconds: number): string {
-  const total = Math.round(seconds);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-/** 音声カードに出す簡易な波形イメージ。ファイルパスから決定的に形を作る。 */
-function WaveformGlyph({ seed }: { seed: string }) {
-  // 実際の波形はデコードしないと分からないため、カードでは擬似的な形を出し、
-  // 実波形は詳細プレビューのプレイヤーで描く。
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  const bars = Array.from({ length: 28 }, (_, i) => {
-    hash = (hash * 1103515245 + 12345) >>> 0;
-    const height = 18 + ((hash >>> 8) % 64);
-    return <rect key={i} x={i * 8} y={(100 - height) / 2} width={4} height={height} rx={2} />;
-  });
-  return (
-    <svg
-      className="h-16 w-full fill-accent opacity-55"
-      viewBox="0 0 224 100"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      {bars}
-    </svg>
-  );
-}
-
-/**
- * 表示できない画像について、分かっている理由を返す。
- * 走査時のメタデータ読み取りで理由が判明していればそれを使い、
- * 判明していない場合でも、拡張子と中身が食い違っていることは伝える。
- */
-function describeImageFailure(entry: Entry): string {
-  if (entry.err) return entry.err;
-  if (entry.format && entry.format !== entry.ext) {
-    const actual = entry.format.replace(".", "").toUpperCase();
-    return `中身は ${actual} 形式のため表示できません`;
-  }
-  return "画像を表示できません";
-}
-
 function CardPreview({ entry }: { entry: Entry }) {
-  const [failed, setFailed] = useState(false);
-
-  // 中身がクラウド上にしか無いファイルは、サムネイルを要求した時点で
-  // ダウンロードが始まる。取り込むまでは取りに行かない。
+  // 中身がクラウド上にしか無いノートは本文を読んでいないので、抜粋の代わりに印を出す。
   if (entry.cloudOnly) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1.5 p-3 text-center text-xs text-ink-faint">
         <CloudIcon className="size-6" aria-hidden="true" />
         クラウド上のみ
-      </div>
-    );
-  }
-
-  if (entry.kind === "image") {
-    if (failed) {
-      return (
-        <div className="grid h-full place-items-center p-3 text-center text-xs text-ink-faint">
-          {describeImageFailure(entry)}
-        </div>
-      );
-    }
-    return (
-      <img
-        className="block size-full object-cover"
-        src={thumbURL(entry.path)}
-        alt={entry.title}
-        loading="lazy"
-        draggable={false}
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  if (entry.kind === "audio") {
-    return (
-      <div className="flex h-full flex-col justify-center px-3.5 py-3">
-        <WaveformGlyph seed={entry.path} />
-        <div className="mt-2 flex justify-between gap-2.5 overflow-hidden text-xs whitespace-nowrap text-ink-faint">
-          {entry.audio?.artist && <span className="truncate">{entry.audio.artist}</span>}
-          {entry.audio?.durationSec ? (
-            <span className="tabular-nums">{formatDuration(entry.audio.durationSec)}</span>
-          ) : null}
-        </div>
       </div>
     );
   }
@@ -206,14 +122,6 @@ export const Card = memo(function Card({
         </h3>
         <div className="flex items-center gap-2 text-xs text-ink-faint">
           <span className="rounded-sm bg-sunken px-1.5 uppercase">{entry.ext.replace(".", "")}</span>
-          {entry.format && entry.format !== entry.ext && (
-            <span
-              className="rounded-sm bg-accent-soft px-1.5 uppercase text-accent-ink"
-              title={`中身は ${entry.format} 形式です`}
-            >
-              実体 {entry.format.replace(".", "")}
-            </span>
-          )}
           <span className="tabular-nums">{formatSize(entry.size)}</span>
           {entry.tagPage && (
             <span

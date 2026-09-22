@@ -1,4 +1,4 @@
-// Package scan は指定フォルダ配下を走査し、対応ファイルのメタデータを読み取る。
+// Package scan は指定フォルダ配下を走査し、Markdown ファイルのメタデータを読み取る。
 package scan
 
 import (
@@ -35,14 +35,14 @@ type Options struct {
 // Result は 1 回の走査の結果。
 type Result struct {
 	Entries []*model.Entry
-	// Skipped は、対応拡張子だがメタデータを読めなかったファイルの数。
+	// Skipped は、Markdown だがメタデータを読めなかったファイルの数。
 	Skipped int
 	// CloudOnly は、中身がクラウド上にしか無いため開かなかったファイルの数。
 	// エントリ自体は一覧へ出しているので、利用者への注意書きに使う。
 	CloudOnly int
 	// LimitReached は上限に達して打ち切ったかどうか。
 	LimitReached bool
-	// Remaining は上限で打ち切ったあとに残っている対応ファイルの数。
+	// Remaining は上限で打ち切ったあとに残っている Markdown ファイルの数。
 	// 数えるのはディレクトリの列挙だけで、ファイルは開かない。
 	Remaining int
 	// Cursor は今回の対象にした最後のファイルの相対パス。
@@ -101,7 +101,7 @@ type collected struct {
 	remaining int
 }
 
-// collectPaths は対応拡張子のファイルを集める。
+// collectPaths は Markdown ファイルを集める。
 // メタデータの読み取りより先に対象を全部確定させることで、
 // 進捗の分母（発見総数）を最初から表示できるようにしている。
 //
@@ -121,11 +121,6 @@ func collectPaths(ctx context.Context, opts Options) (collected, error) {
 	var after []string
 	if opts.StartAfter != "" {
 		after = splitPath(opts.StartAfter)
-	}
-
-	supported := map[string]struct{}{}
-	for _, ext := range meta.Extensions() {
-		supported[ext] = struct{}{}
 	}
 
 	var c collected
@@ -154,7 +149,7 @@ func collectPaths(ctx context.Context, opts Options) (collected, error) {
 			}
 			return nil
 		}
-		if _, ok := supported[model.Ext(path)]; !ok {
+		if !model.IsMarkdown(path) {
 			return nil
 		}
 		if after != nil && compareWalkOrder(splitPath(relPath(opts.Root, path)), after) <= 0 {

@@ -17,7 +17,6 @@ func newEntry(path, title string, daysAgo int, tags []string) *model.Entry {
 		RelPath: path,
 		Name:    path,
 		Ext:     ".md",
-		Kind:    model.KindMarkdown,
 		ModTime: time.Now().AddDate(0, 0, -daysAgo),
 		Tags:    model.NormalizeTags(tags),
 		Title:   title,
@@ -292,7 +291,6 @@ func mdEntry(path, title string, links ...string) *model.Entry {
 		RelPath: path,
 		Name:    filepath.Base(path),
 		Ext:     ".md",
-		Kind:    model.KindMarkdown,
 		ModTime: time.Now(),
 		Tags:    []string{},
 		Title:   title,
@@ -359,9 +357,7 @@ func TestRelatedSameTag(t *testing.T) {
 	newer := newEntry("newer.md", "新しい", 1, []string{"go"})
 	linked := newEntry("linked.md", "リンク先", 1, []string{"go"})
 	other := newEntry("other.md", "無関係", 1, []string{"料理"})
-	audio := newEntry("song.mp3", "曲", 1, []string{"go"})
-	audio.Kind = model.KindAudio
-	if err := s.PutAll([]*model.Entry{self, both, older, newer, linked, other, audio}); err != nil {
+	if err := s.PutAll([]*model.Entry{self, both, older, newer, linked, other}); err != nil {
 		t.Fatalf("投入に失敗: %v", err)
 	}
 

@@ -24,7 +24,7 @@ const (
 	entryPrefix = "entry:"
 	idxModTime  = "entry_modtime"
 	// idxRelPath はフォルダ階層込みの相対パスで並べるためのインデックス。
-	// タイトル（Markdown なら見出し、音声ならタグの曲名）ではなく実際の
+	// タイトル（見出し）ではなく実際の
 	// ファイルパスで並べることで、同じフォルダの中身が自然にまとまる。
 	idxRelPath = "entry_relpath"
 )

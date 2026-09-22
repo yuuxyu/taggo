@@ -72,7 +72,7 @@ func (a *App) bulk(paths []string, transform func(current []string) []string) []
 // applyTags は 1 ファイルのタグを transform の結果で書き換え、
 // 書き込みに成功した場合だけインメモリ DB を更新する。
 //
-// 要件どおり、読み取り専用ファイルや非対応フォーマットはエラーとして返し、
+// 要件どおり、読み取り専用ファイルや Markdown 以外のファイルはエラーとして返し、
 // メモリ上だけ更新して実ファイルと食い違わせることはしない。
 func (a *App) applyTags(path string, transform func(current []string) []string) TagEditResult {
 	entry, ok := a.store.Get(path)
@@ -112,7 +112,6 @@ func (a *App) applyTags(path string, transform func(current []string) []string) 
 	if err := a.store.Put(updated); err != nil {
 		return failed(path, err)
 	}
-	a.thumbs.Invalidate(path)
 	a.emit(EventEntryChanged, map[string]any{"path": path, "entry": updated})
 
 	return TagEditResult{Path: path, OK: true, Entry: updated}
@@ -121,8 +120,6 @@ func (a *App) applyTags(path string, transform func(current []string) []string) 
 // describeWriteError は、ライブラリ由来のエラーを UI に出して意味の通る文言へ整える。
 func describeWriteError(entry *model.Entry, err error) error {
 	switch {
-	case errors.Is(err, meta.ErrFormatReadOnly):
-		return fmt.Errorf("%s 形式はタグの書き込みに対応していません: %s", strings.TrimPrefix(entry.Ext, "."), entry.Name)
 	case errors.Is(err, meta.ErrUnsupported):
 		return fmt.Errorf("対応していないファイル形式です: %s", entry.Name)
 	case errors.Is(err, os.ErrPermission):

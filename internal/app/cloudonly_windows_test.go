@@ -2,8 +2,6 @@ package app
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -26,7 +24,7 @@ func setAttributes(t *testing.T, path string, attrs uint32) {
 
 // 走査のあとで同期サービスがファイルを「オンラインのみ」へ戻した場合を再現する。
 // 変わるのは属性だけなのでウォッチャーは気付かず、DB 上はローカルのままになる。
-// その状態でも、プレビュー・配信・タグ書き込みのどれもファイルを開かないこと。
+// その状態でも、プレビューとタグ書き込みのどちらもファイルを開かないこと。
 func TestDehydratedAfterScanIsNotOpened(t *testing.T) {
 	const body = "---\ntags: [golang]\n---\n\n# 本文\n"
 
@@ -37,12 +35,6 @@ func TestDehydratedAfterScanIsNotOpened(t *testing.T) {
 		{"Markdown プレビュー", func(a *App, path string) bool {
 			_, err := a.MarkdownSource(path)
 			return err == nil
-		}},
-		{"ファイル配信", func(a *App, path string) bool {
-			rec := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, PathFile+"?path="+url.QueryEscape(path), nil)
-			NewAssetHandler(a).ServeHTTP(rec, req)
-			return rec.Code == http.StatusOK
 		}},
 		{"タグ書き込み", func(a *App, path string) bool {
 			return a.SetTags(path, []string{"rust"}).OK
@@ -87,5 +79,25 @@ func TestDehydratedAfterScanIsNotOpened(t *testing.T) {
 				t.Fatalf("取り込んだあとの件数が違う: got %d, want 0", n)
 			}
 		})
+	}
+}
+
+// 本文に埋め込まれた画像の中身がクラウド上にしか無いときは、ノートを開いただけで
+// ダウンロードが始まらないよう、配信を断ること。取り込まれてローカルに戻れば配信する。
+func TestCloudOnlyImageIsNotServed(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{
+		"note.md": "# 本文\n\n![図](./a.png)\n",
+		"a.png":   pngHead,
+	})
+	path := filepath.Join(root, "a.png")
+	setAttributes(t, path, fileAttributeOffline)
+
+	if rec := getImage(a, path); rec.Code == http.StatusOK {
+		t.Fatal("クラウド上にだけある画像を配信した")
+	}
+
+	setAttributes(t, path, syscall.FILE_ATTRIBUTE_NORMAL)
+	if rec := getImage(a, path); rec.Code != http.StatusOK {
+		t.Fatalf("ローカルに戻った画像が配信されない: %d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -21,16 +21,9 @@ import {
   ArrowUturnLeftIcon,
   BookOpenIcon,
   ExclamationTriangleIcon,
-  MusicalNoteIcon,
   TagIcon,
 } from "@heroicons/react/16/solid";
-import {
-  getRelatedPages,
-  thumbURL,
-  type Entry,
-  type Related,
-  type RelatedPage,
-} from "../api/taggo";
+import { getRelatedPages, type Entry, type Related, type RelatedPage } from "../api/taggo";
 import { TagBadge } from "./TagBadge";
 
 interface CardProps {
@@ -46,14 +39,14 @@ interface Props extends CardProps {
 }
 
 /**
- * 関連ページを読み込む。Markdown 以外では何も読まない。
+ * 関連ページを読み込む。中身がクラウド上にしか無いノートでは何も読まない。
  * 一覧が入れ替わってもリンク関係は変わらないので、開いているノートだけを見る。
  */
 export function useRelatedPages(entry: Entry): Related | null {
   const [related, setRelated] = useState<Related | null>(null);
 
   useEffect(() => {
-    if (entry.kind !== "markdown" || entry.cloudOnly) {
+    if (entry.cloudOnly) {
       setRelated(null);
       return;
     }
@@ -66,7 +59,7 @@ export function useRelatedPages(entry: Entry): Related | null {
       cancelled = true;
     };
     // タグを書き換えるとリンクの索引も張り直されるため、更新日時も見る。
-  }, [entry.kind, entry.cloudOnly, entry.path, entry.modTime]);
+  }, [entry.cloudOnly, entry.path, entry.modTime]);
 
   return related;
 }
@@ -74,9 +67,6 @@ export function useRelatedPages(entry: Entry): Related | null {
 function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & CardProps) {
   // 行き先が無いリンクは、Go 側で path を省いて返す。
   const missing = !page.path;
-  // タグページには画像も並ぶので、小さなサムネイルを添える。
-  // 中身がクラウド上にしか無い画像は、取りに行くとダウンロードが始まるので出さない。
-  const thumbnail = page.kind === "image" && !page.cloudOnly ? page.path : undefined;
 
   return (
     <li
@@ -90,20 +80,8 @@ function RelatedCard({ page, onOpen, onTagClick }: { page: RelatedPage } & CardP
         title={missing ? `「${page.target}」はまだ見つかりません` : page.relPath}
         onClick={() => onOpen(page)}
       >
-        {thumbnail && (
-          <img
-            className="block h-24 w-full border-b border-line bg-sunken object-cover"
-            src={thumbURL(thumbnail, 240)}
-            alt=""
-            loading="lazy"
-            draggable={false}
-          />
-        )}
         <span className="flex w-full flex-col items-start gap-1 px-3 py-2.5">
           <span className="flex max-w-full items-start gap-1 text-sm leading-snug font-semibold break-words">
-            {page.kind === "audio" && (
-              <MusicalNoteIcon className="mt-0.5 size-3.5 shrink-0 text-ink-faint" aria-hidden="true" />
-            )}
             {page.tagPage && (
               <BookOpenIcon className="mt-0.5 size-3.5 shrink-0 text-accent-ink" aria-label="タグページ" />
             )}

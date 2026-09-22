@@ -121,7 +121,7 @@ func (w *Watcher) handle(event fsnotify.Event) {
 	if w.ignoreTemp(filepath.Base(name)) {
 		return
 	}
-	if _, ok := meta.HandlerFor(model.Ext(name)); !ok {
+	if !model.IsMarkdown(name) {
 		return
 	}
 	w.schedule(name)
