@@ -6,9 +6,12 @@
  * マウスを動かした間だけ本文の上に一時的にオーバーレイ表示し、動きが止まれば
  * しばらくして消える。
  *
- * タグ編集の入力欄はコンテンツの邪魔になるため常には出さず、タグは読み取り専用の
- * バッジで表示するだけにして、「タグを編集」ボタンを押したときだけ編集フォーム
- * （入力欄・候補・保存操作）を表示する。
+ * タグ（本文の [[タグ]]）はバッジで表示するだけで、ここでは編集しない。
+ *
+ * ヘッダーの「ピン留め」で、このノートを一覧の先頭にピン留めする。
+ *
+ * まだ無いページ（ページの無いタグや、行き先の無いリンク）も、ファイルを作らずにここで開く。
+ * 本文の代わりに「md ファイルを作成する」ボタンを出し、関連ページはふつうのノートと同じく並べる。
  *
  * ヘッダー左端の「戻る／進む」で、リンクをたどる前のノートへ戻れる。
  * 履歴そのものは App が持ち、ここは操作と表示だけを受け持つ。
@@ -21,8 +24,8 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { BookOpenIcon, PencilSquareIcon, TagIcon, XMarkIcon } from "@heroicons/react/20/solid";
-import { openInEditor, setTags, type Entry } from "../api/taggo";
+import { DocumentPlusIcon, MapPinIcon, PencilSquareIcon, XMarkIcon } from "@heroicons/react/20/solid";
+import { openInEditor, type Entry } from "../api/taggo";
 import type { DetailHistory } from "../hooks/useDetailHistory";
 import { Button } from "./Button";
 import { CloudOnlyNotice } from "./CloudOnlyNotice";
@@ -30,22 +33,26 @@ import { HistoryNav } from "./HistoryNav";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Pager } from "./Pager";
-import { missingLinksOf, RelatedPages, useRelatedPages } from "./RelatedPages";
+import { missingLinksOf, missingTagsOf, RelatedPages, useRelatedPages } from "./RelatedPages";
 import { TagBadge } from "./TagBadge";
-import { TagEditor } from "./TagEditor";
 
 interface Props {
   entry: Entry;
   onClose: () => void;
   onTagClick: (tag: string) => void;
-  /** そのタグだけで一覧を絞り込み直す。タグページから、そのタグの一覧へ移るときに使う。 */
-  onSearchTag: (tag: string) => void;
   /**
    * リンクをたどる。link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
-   * 実体のパスが分かっている場合は一緒に渡す。行き先がまだ無ければ新しく作る。
+   * 実体のパスが分かっている場合は一緒に渡す。行き先がまだ無ければ、まだ無いページとして開く。
    */
   onFollowLink: (link: string, path?: string) => void;
-  /** 保存後の最新状態を一覧へ返す。 */
+  /** タグのページ（ファイル名がそのタグのノート）を開く。まだ無ければ、まだ無いページとして開く。 */
+  onFollowTag: (tag: string) => void;
+  /** まだ無いページの md ファイルを作り、既定のエディタで開く。 */
+  onCreatePage: (entry: Entry) => Promise<void>;
+  /** 一覧の先頭にピン留めしているか。 */
+  pinned: boolean;
+  onTogglePin: (pinned: boolean) => void;
+  /** クラウド上にだけあったファイルを取り込んだあとの最新状態を一覧へ返す。 */
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
   /** 前後のノートへの移動。一覧の並び順で動く。 */
@@ -70,8 +77,11 @@ export function DetailPanel({
   entry,
   onClose,
   onTagClick,
-  onSearchTag,
   onFollowLink,
+  onFollowTag,
+  onCreatePage,
+  pinned,
+  onTogglePin,
   onEntryUpdated,
   onError,
   onNavigate,
@@ -82,30 +92,20 @@ export function DetailPanel({
   const { go: goHistory, reportScroll, navId } = history;
   const historyIndex = history.index;
   const historyLength = history.items.length;
-  const [draft, setDraft] = useState<string[]>(entry.tags);
-  const [saving, setSaving] = useState(false);
-  const [tagsOpen, setTagsOpen] = useState(false);
   // 本文中の画像から開いた画像ビューア。閉じれば null に戻り、本文がそのまま見える。
   const [image, setImage] = useState<OpenImage | null>(null);
 
-  // 関連ページ。Markdown は常に本文の右脇に関連ページの欄を置く。
-  // ノートを行き来してもレイアウトが跳ねないよう、リンクが 1 件も無くても右の列は残す。
+  // 関連ページ。本文の下に、タグごとのグループにしてグリッドで並べる。
   const related = useRelatedPages(entry);
   const missingLinks = useMemo(() => missingLinksOf(related), [related]);
-
-  // 別のエントリに切り替わったら編集中の内容を捨て、編集フォームも閉じる。
-  useEffect(() => {
-    setDraft(entry.tags);
-    setTagsOpen(false);
-  }, [entry.path, entry.tags]);
+  const missingTags = useMemo(() => missingTagsOf(related), [related]);
 
   // 別のノートへ移ったら、前のノートの画像は閉じる。
   useEffect(() => setImage(null), [entry.path]);
   const closeImage = useCallback(() => setImage(null), []);
 
   // マウスが動いた直後だけヘッダー／タグ UI を出し、止まればしばらくして隠す。
-  // ただしタグ編集欄などにフォーカスが残っている間は、入力中の欄が
-  // 見えなくなってしまわないよう隠さない。
+  // ただしヘッダーのボタンなどにフォーカスが残っている間は隠さない。
   const [overlayVisible, setOverlayVisible] = useState(true);
   const overlayRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -145,30 +145,12 @@ export function DetailPanel({
     return () => observer.disconnect();
   }, []);
 
-  // タグ編集フォームの外側をクリックしたら閉じる。
-  const tagBarRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!tagsOpen) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (tagBarRef.current && !tagBarRef.current.contains(e.target as Node)) {
-        setTagsOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", onPointerDown);
-    return () => window.removeEventListener("mousedown", onPointerDown);
-  }, [tagsOpen]);
-
-  // Esc はまずタグ編集フォームを閉じ、閉じていればプレビュー自体を閉じる。
-  // 左右キーで前後のノートへ移動する。
+  // Esc でプレビューを閉じ、左右キーで前後のノートへ移動する。
   // 画像ビューアを開いている間は、これらのキーはビューアが先に受けて止める。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (tagsOpen) {
-          setTagsOpen(false);
-        } else {
-          onClose();
-        }
+        onClose();
         return;
       }
       // Alt + 左右は、ブラウザと同じく履歴の戻る／進む。入力欄の中でも効かせる。
@@ -177,7 +159,7 @@ export function DetailPanel({
         goHistory(historyIndex + (e.key === "ArrowLeft" ? -1 : 1));
         return;
       }
-      // タグ入力中の左右キーはキャレット移動に使うので奪わない。
+      // 入力欄の中の左右キーはキャレット移動に使うので奪わない。
       const active = document.activeElement;
       const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
       if (typing) return;
@@ -192,7 +174,7 @@ export function DetailPanel({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, onNavigate, tagsOpen, goHistory, historyIndex]);
+  }, [onClose, onNavigate, goHistory, historyIndex]);
 
   // マウスの戻る／進むボタン（ボタン 3 / 4）でも履歴を移動する。
   // WebView 自体のページ遷移に使われないよう、押した時点で既定の動作を止める。
@@ -256,29 +238,11 @@ export function DetailPanel({
     pendingScroll.current = history.current?.scrollTop ?? 0;
     const samePath = shownPath.current === entry.path;
     shownPath.current = entry.path;
-    if (entry.cloudOnly || samePath) applyPendingScroll();
+    // 本文を読み込まないページ（クラウド上にしか無い・まだ無い）は、待たずに合わせる。
+    if (entry.cloudOnly || entry.missing || samePath) applyPendingScroll();
     // 移動（navId）ごとに一度だけ合わせる。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navId]);
-
-  const dirty = draft.length !== entry.tags.length || draft.some((t, i) => t !== entry.tags[i]);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const result = await setTags(entry.path, draft);
-      if (!result.ok) {
-        onError(result.error ?? "タグの保存に失敗しました");
-        setDraft(entry.tags);
-        return;
-      }
-      if (result.entry) onEntryUpdated(result.entry);
-    } catch (err) {
-      onError(`タグの保存に失敗しました: ${String(err)}`);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const openEditor = async () => {
     try {
@@ -306,34 +270,46 @@ export function DetailPanel({
           )}
           {!entry.cloudOnly && (
             <div
-              // 幅は本文（全角 38 文字 = 18px × 38 = 42.75rem = 171）に左右の余白（5 × 2）、
-              // 間隔（6）、関連ページの欄（56）を足したもの。
-              className="mx-auto flex min-h-full max-w-243 items-start justify-center gap-6 px-5 pb-18"
+              // 関連ページのグリッドは本文より広く取り、カードを横に多く並べる。
+              className="mx-auto flex min-h-full max-w-243 flex-col items-center px-5 pb-18"
               style={{ paddingTop: contentTop }}
             >
-              {/* 本文の 1 行が長くなりすぎないよう、横幅は本文の最大幅（全角 38 文字）で止める。
-                  ウィンドウが狭いときは本文の側が縮む。 */}
-              <div className="min-w-0 max-w-171 flex-1">
+              {/* 本文の 1 行が長くなりすぎないよう、横幅は本文の最大幅
+                  （全角 38 文字 = 18px × 38 = 42.75rem = 171）で止める。 */}
+              <div className="w-full max-w-171">
+                {entry.missing ? (
+                  <MissingPageNotice entry={entry} onCreate={onCreatePage} />
+                ) : (
                 <MarkdownPreview
                   entry={entry}
                   onFollowLink={onFollowLink}
                   missingLinks={missingLinks}
+                  onFollowTag={onFollowTag}
+                  missingTags={missingTags}
                   onOpenImage={(path, alt) => setImage({ path, alt })}
                   onLoaded={applyPendingScroll}
                 />
+                )}
               </div>
-              {/* 関連ページは本文の脇に置き、本文と一緒にスクロールする。 */}
-              <aside className="w-56 shrink-0" aria-label="関連ページ">
-                {/* 読み込み中は空けておき、「無い」表示が一瞬出るのを避ける。 */}
-                {related && (
+              {/* 関連ページは本文の下にグリッドで並べ、本文と一緒にスクロールする。
+                  読み込み中は出さず、「無い」表示が一瞬出るのを避ける。 */}
+              {related && (
+                <aside className="mt-14 w-full border-t border-line pt-6" aria-label="関連ページ">
                   <RelatedPages
                     related={related}
-                    tagPage={entry.tagPage}
-                    onOpen={(page) => onFollowLink(page.target ?? "", page.path)}
+                    onOpen={(page) => {
+                      // 行き先があれば開く。まだ無ければ、リンクなら書かれた場所に、
+                      // タグならフォルダの直下に作る。
+                      if (page.path || page.target) {
+                        onFollowLink(page.target ?? "", page.path);
+                      } else if (page.tag) {
+                        onFollowTag(page.tag);
+                      }
+                    }}
                     onTagClick={onTagClick}
                   />
-                )}
-              </aside>
+                </aside>
+              )}
             </div>
           )}
         </div>
@@ -353,26 +329,27 @@ export function DetailPanel({
             )}
             <div className="min-w-0 flex-1">
               <h2 className="m-0 text-lg leading-snug break-words">{entry.title}</h2>
-              {entry.tagPage && (
-                <button
-                  type="button"
-                  className="mt-0.5 inline-flex max-w-full items-center gap-1 text-xs font-semibold text-accent-ink hover:underline"
-                  title={`#${entry.tagPage} で絞り込む`}
-                  onClick={() => onSearchTag(entry.tagPage!)}
-                >
-                  <BookOpenIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                  <span className="truncate">#{entry.tagPage} のタグページ</span>
-                </button>
-              )}
               <p
                 className="mt-0.5 mb-0 truncate text-xs text-ink-faint"
                 title={entry.path}
               >
-                {entry.relPath}
+                {entry.missing ? `${entry.relPath}（まだありません）` : entry.relPath}
               </p>
             </div>
+            {/* まだ無いページは一覧に無いので、ピン留めもエディタで開くこともできない。 */}
+            {!entry.missing && (
+            <Button
+              variant={pinned ? "primary" : "ghost"}
+              aria-pressed={pinned}
+              onClick={() => onTogglePin(!pinned)}
+              title={pinned ? "ピン留めを外す" : "一覧の先頭にピン留め"}
+            >
+              <MapPinIcon className="size-4" aria-hidden="true" />
+              {pinned ? "ピン留め中" : "ピン留め"}
+            </Button>
+            )}
             {/* クラウド上にだけあるファイルは、開くとダウンロードが始まるので出さない。 */}
-            {!entry.cloudOnly && (
+            {!entry.cloudOnly && !entry.missing && (
               <Button
                 variant="ghost"
                 onClick={() => void openEditor()}
@@ -388,64 +365,16 @@ export function DetailPanel({
             </Button>
           </header>
 
-          <div className="px-5 pb-3" ref={tagBarRef}>
-            {tagsOpen ? (
-              <div className="flex flex-col gap-2">
-                <TagEditor
-                  tags={draft}
-                  onChange={setDraft}
-                  disabled={!entry.writable || saving}
-                  placeholder={
-                    entry.writable ? "タグを追加（Enter で確定）" : "読み取り専用のため編集できません"
-                  }
-                />
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  {!entry.writable && (
-                    <span className="text-danger">
-                      このファイルは読み取り専用のため、タグを書き込めません。
-                    </span>
-                  )}
-                  <span className="flex-1" />
-                  <Button
-                    variant="default"
-                    disabled={!dirty || saving}
-                    onClick={() => setDraft(entry.tags)}
-                  >
-                    変更を取り消す
-                  </Button>
-                  <Button
-                    variant="primary"
-                    disabled={!dirty || saving || !entry.writable}
-                    onClick={() => void save()}
-                  >
-                    {saving ? "保存中…" : "ファイルへ保存"}
-                  </Button>
-                  <Button variant="ghost" onClick={() => setTagsOpen(false)}>
-                    閉じる
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                {entry.tags.length > 0 ? (
-                  entry.tags.map((tag) => <TagBadge key={tag} tag={tag} onClick={onTagClick} />)
-                ) : (
-                  <span className="text-xs text-ink-faint">
-                    タグなし
-                  </span>
-                )}
-                <Button
-                  variant="ghost"
-                  className="ml-auto"
-                  aria-expanded={false}
-                  onClick={() => setTagsOpen(true)}
-                >
-                  <TagIcon className="size-4" aria-hidden="true" />
-                  タグを編集
-                </Button>
-              </div>
-            )}
-          </div>
+          {/* タグは本文の [[タグ]] から読んだもので、ここでは編集しない。 */}
+          {!entry.missing && (
+            <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
+              {entry.tags.length > 0 ? (
+                entry.tags.map((tag) => <TagBadge key={tag} tag={tag} onClick={onTagClick} />)
+              ) : (
+                <span className="text-xs text-ink-faint">タグなし</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ---- 前後のノートへの移動 ---- */}
@@ -461,6 +390,34 @@ export function DetailPanel({
       </div>
 
       {image && <ImagePreview path={image.path} alt={image.alt} onClose={closeImage} />}
+    </div>
+  );
+}
+
+/**
+ * まだ無いページで、本文の代わりに出す案内。md ファイルを作るとエディタが開き、
+ * 保存するとフォルダの監視が拾って、このページがふつうのノートに切り替わる。
+ */
+function MissingPageNotice({ entry, onCreate }: { entry: Entry; onCreate: (entry: Entry) => Promise<void> }) {
+  const [creating, setCreating] = useState(false);
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line px-6 py-10 text-center">
+      <p className="m-0 text-base font-semibold text-ink">このノートはまだありません</p>
+      <p className="m-0 text-sm text-ink-muted">
+        「{entry.name}」を作ると、本文を書けるようになります。
+        下に、このページを指しているノートが並びます。
+      </p>
+      <Button
+        variant="primary"
+        disabled={creating}
+        onClick={() => {
+          setCreating(true);
+          void onCreate(entry).finally(() => setCreating(false));
+        }}
+      >
+        <DocumentPlusIcon className="size-4" aria-hidden="true" />
+        md ファイルを作成する
+      </Button>
     </div>
   );
 }

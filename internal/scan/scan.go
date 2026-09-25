@@ -1,4 +1,8 @@
-// Package scan は指定フォルダ配下を走査し、Markdown ファイルのメタデータを読み取る。
+// Package scan は指定フォルダを走査し、Markdown ファイルのメタデータを読み取る。
+//
+// 対象はフォルダの直下にあるファイルだけで、サブフォルダの中は見ない。
+// ノートのファイル名がタグを表すので、フォルダをまたいで同じ名前のノートが
+// 並ばないようにするため。
 package scan
 
 import (
@@ -61,7 +65,7 @@ type candidate struct {
 	cloudOnly bool
 }
 
-// Scan は Root 配下を走査してエントリを組み立てる。
+// Scan は Root の直下を走査してエントリを組み立てる。
 // ctx がキャンセルされた場合は、そこまでに読めた分と ctx.Err() を返す。
 func Scan(ctx context.Context, opts Options) (Result, error) {
 	c, err := collectPaths(ctx, opts)
@@ -137,17 +141,7 @@ func collectPaths(ctx context.Context, opts Options) (collected, error) {
 			if path == opts.Root {
 				return nil
 			}
-			if isSkippableDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			// 再開位置より前にあるフォルダは、中身も全部読み込み済みなので潜らない。
-			if after != nil {
-				dir := splitPath(relPath(opts.Root, path))
-				if !hasPrefix(after, dir) && compareWalkOrder(dir, after) < 0 {
-					return filepath.SkipDir
-				}
-			}
-			return nil
+			return filepath.SkipDir // サブフォルダの中は対象にしない
 		}
 		if !model.IsMarkdown(path) {
 			return nil
@@ -198,19 +192,6 @@ func compareWalkOrder(a, b []string) int {
 	return len(a) - len(b)
 }
 
-// hasPrefix は、パス要素の並び path が prefix で始まるかを判定する。
-func hasPrefix(path, prefix []string) bool {
-	if len(prefix) > len(path) {
-		return false
-	}
-	for i := range prefix {
-		if path[i] != prefix[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // splitPath は相対パスを要素に分ける。
 func splitPath(rel string) []string {
 	return strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/")
@@ -222,20 +203,6 @@ func relPath(root, path string) string {
 		return rel
 	}
 	return path
-}
-
-// isSkippableDir は、走査対象から外すディレクトリ名かを判定する。
-// バージョン管理や依存関係のディレクトリはタグ管理の対象にならないうえ、
-// ファイル数が多く走査時間を押し上げるため除外する。
-func isSkippableDir(name string) bool {
-	if strings.HasPrefix(name, ".") {
-		return true
-	}
-	switch name {
-	case "node_modules", "vendor", "target", "dist", "build":
-		return true
-	}
-	return false
 }
 
 // readAll は各ファイルのメタデータを並列に読み取る。

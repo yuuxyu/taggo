@@ -13,18 +13,18 @@ import {
   XMarkIcon,
 } from "@heroicons/react/20/solid";
 import {
-  appendTagToQuery,
-  createNote,
+  createPage,
   Events,
   getEntry,
   on,
+  setPinned,
+  linkedPage,
+  tagPage,
   takeStartupWarnings,
   type Entry,
   type EntryChanged,
   type Settings,
-  type TagEditResult,
 } from "./api/taggo";
-import { BulkTagDialog } from "./components/BulkTagDialog";
 import { Button } from "./components/Button";
 import { CardGrid } from "./components/CardGrid";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -32,7 +32,6 @@ import { DetailPanel } from "./components/DetailPanel";
 import { LoadMoreBanner, NotLoadedHint } from "./components/LoadMore";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { TagPageHeader } from "./components/TagPageHeader";
 import { Toolbar } from "./components/Toolbar";
 import { useDetailHistory } from "./hooks/useDetailHistory";
 import { useLibrary } from "./hooks/useLibrary";
@@ -53,16 +52,14 @@ export default function App({ initialSettings }: Props) {
   const [settings, setSettings] = useState(initialSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const library = useLibrary(initialSettings.sort);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   // 詳細プレビューで見ているノートは、戻る／進むのための履歴として持つ。
   const history = useDetailHistory();
   const { start: startHistory, push: pushHistory, replace: replaceHistory, clear: clearHistory } =
     history;
   const detailPath = history.current?.path ?? null;
   // 一覧（今の検索結果）に無いのにプレビューで開いたノート。リンク先や
-  // タグページは絞り込みの外にあることが多いので、一覧とは別に持っておく。
+  // タグのページは絞り込みの外にあることが多いので、一覧とは別に持っておく。
   const [outside, setOutside] = useState<ReadonlyMap<string, Entry>>(new Map());
-  const [bulkOpen, setBulkOpen] = useState(false);
   // 「すべて読み込む」の確認ダイアログを出しているか。
   const [confirmLoadAll, setConfirmLoadAll] = useState(false);
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
@@ -119,6 +116,25 @@ export default function App({ initialSettings }: Props) {
   );
 
   /**
+   * 取り寄せたページ（まだ無いページを含む）をプレビューで開き、履歴に積む。
+   * 一覧に載っていればその項目を、無ければ一覧の外として持って開く。
+   */
+  const openEntry = useCallback(
+    (entry: Entry) => {
+      // パスの大文字小文字は、Windows に合わせて区別しない。
+      const wanted = entry.path.toLowerCase();
+      const inList = entries.find((e) => e.path.toLowerCase() === wanted);
+      if (inList) {
+        pushHistory(inList.path, inList.title);
+        return;
+      }
+      setOutside((prev) => new Map(prev).set(entry.path, entry));
+      pushHistory(entry.path, entry.title);
+    },
+    [entries, pushHistory],
+  );
+
+  /**
    * パスの分かっているノートをプレビューで開き、履歴に積む。
    * 一覧に無ければ Go 側から取り寄せる。開けなければ false を返す。
    */
@@ -155,22 +171,12 @@ export default function App({ initialSettings }: Props) {
     [detailIndex, entries, replaceHistory],
   );
 
-  const selectedEntries = useMemo(
-    () => entries.filter((e) => selected.has(e.path)),
-    [entries, selected],
-  );
-
   // オーバーレイを閉じる共通処理。閉じたあとは必ず検索バーへ戻す。
   const closeDetail = useCallback(() => {
     clearHistory();
     setOutside(new Map());
     setFocusSignal((n) => n + 1);
   }, [clearHistory]);
-
-  const closeBulk = useCallback(() => {
-    setBulkOpen(false);
-    setFocusSignal((n) => n + 1);
-  }, []);
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
@@ -192,85 +198,69 @@ export default function App({ initialSettings }: Props) {
     [settings, setSort, reload, closeSettings, notify],
   );
 
-  const toggleSelect = useCallback((entry: Entry) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(entry.path)) {
-        next.delete(entry.path);
-      } else {
-        next.add(entry.path);
-      }
-      return next;
-    });
-  }, []);
-
-  // タグバッジのクリックで、そのタグを検索バーへ差し込んで絞り込む。
+  // タグバッジのクリックで、そのタグで検索し直す。タグの名前と一致するので、
+  // そのタグのページが先頭に、タグを付けたノートがその後ろに並ぶ。
   const handleTagClick = useCallback(
     (tag: string) => {
-      void appendTagToQuery(query, tag).then((next) => {
-        setQuery(next);
-        clearHistory();
-      });
-    },
-    [query, setQuery, clearHistory],
-  );
-
-  // タグページのバッジや「すべて表示」から、そのタグだけで絞り込み直す。
-  // バッジのクリックと違って今の検索条件には足さず、そのタグの全体を見せる。
-  const handleSearchTag = useCallback(
-    (tag: string) => {
-      void appendTagToQuery("", tag).then((next) => {
-        setQuery(next);
-        clearHistory();
-      });
+      setQuery(tag);
+      clearHistory();
     },
     [setQuery, clearHistory],
   );
 
-  // 見出しのタグページを開く。タグページは一覧から外してあるので、一覧の外として持つ。
-  const openTagPage = useCallback(
-    (entry: Entry) => {
-      setOutside((prev) => new Map(prev).set(entry.path, entry));
-      startHistory(entry.path, entry.title);
+  // ピン留めを切り替える。一覧はピン留めの変更イベントで引き直す。
+  const handleTogglePin = useCallback(
+    (entry: Entry, pinned: boolean) => {
+      void setPinned(entry.path, pinned).catch((err) => notify("error", String(err)));
     },
-    [startHistory],
+    [notify],
   );
 
   // ノート間のリンクをたどる。行き先のパスが分かっていればそれを開く。
-  // 一覧の外にあっても、登録済みのノートならそのまま開ける。
-  // パスが分からない、または開けないのは行き先のノートがまだ無いときなので、
-  // その場所に新しく作って既定のエディタで開く。既存のファイルは書き換えない。
+  // 一覧の外にあっても、登録済みのノートならそのまま開ける。行き先がまだ無ければ、
+  // ファイルは作らずに「まだ無いページ」として開く（作るのはそのページのボタンから）。
   const handleFollowLink = useCallback(
     async (from: string, link: string, path?: string) => {
       if (path !== undefined && (await openPath(path))) return;
-      const name = link.slice(Math.max(link.lastIndexOf("/"), link.lastIndexOf("\\")) + 1);
       try {
-        const created = await createNote(from, link);
+        openEntry(await linkedPage(from, link));
+      } catch (err) {
+        notify("error", String(err));
+      }
+    },
+    [notify, openPath, openEntry],
+  );
+
+  // 本文の [[タグ]] や、関連ページのタグのページをたどる。
+  // ページがあればそれを、無ければ「まだ無いページ」として開く。
+  const handleFollowTag = useCallback(
+    async (tag: string) => {
+      try {
+        openEntry(await tagPage(tag));
+      } catch (err) {
+        notify("error", String(err));
+      }
+    },
+    [notify, openEntry],
+  );
+
+  // まだ無いページの md ファイルを作って、既定のエディタで開く。
+  // 作ったファイルはフォルダの監視が拾い、開いているページがふつうのノートに切り替わる。
+  const handleCreatePage = useCallback(
+    async (entry: Entry) => {
+      try {
+        const created = await createPage(entry.path);
         notify(
           "info",
           created
-            ? `「${name}」を作成して、エディタで開きました。`
-            : `「${name}」はまだ読み込んでいないため、エディタで開きました。`,
+            ? `「${entry.name}」を作成して、エディタで開きました。`
+            : `「${entry.name}」は既にあるため、エディタで開きました。`,
         );
       } catch (err) {
         notify("error", String(err));
       }
     },
-    [notify, openPath],
-  );
-
-  const handleBulkApplied = useCallback(
-    (results: TagEditResult[]) => {
-      for (const result of results) {
-        if (result.ok && result.entry) replaceEntry(result.entry);
-      }
-      const failed = results.filter((r) => !r.ok).length;
-      const ok = results.filter((r) => r.ok).length;
-      if (failed === 0) {
-        notify("info", `${ok} 件のノートへタグを書き込みました。`);
-      }
-    },
-    [notify, replaceEntry],
+    [notify],
   );
 
   const hasFolder = (library.status?.root ?? "") !== "";
@@ -311,10 +301,6 @@ export default function App({ initialSettings }: Props) {
           onChooseFolder={() => void library.chooseFolder()}
           onShowLoadMore={() => setLoadMoreBannerOpen(true)}
           onCancelLoadMore={() => void library.cancelLoadMore()}
-          selectedCount={selected.size}
-          onClearSelection={() => setSelected(new Set())}
-          onOpenBulkEditor={() => setBulkOpen(true)}
-          onSelectAll={() => setSelected(new Set(entries.map((e) => e.path)))}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       </header>
@@ -358,7 +344,6 @@ export default function App({ initialSettings }: Props) {
       )}
 
       <main className="flex min-h-0 flex-1 flex-col bg-canvas">
-        {hasFolder && <TagPageHeader groups={library.tagPages} onOpen={openTagPage} />}
         {!hasFolder ? (
           <div className="flex h-full flex-col items-center justify-center gap-2.5 p-10 text-center text-ink-muted">
             <FolderOpenIcon className="size-10 text-ink-faint" aria-hidden="true" />
@@ -366,9 +351,9 @@ export default function App({ initialSettings }: Props) {
               フォルダを選ぶと、そこが Wiki になります
             </p>
             <p className="m-0 max-w-105">
-              選んだフォルダ配下の Markdown をノートとして読み込み、
-              Front Matter に書かれたタグとリンクでたどれるようにします。
-              タグはファイル自身に書き込むので、taggo を使わなくなっても情報は残ります。
+              選んだフォルダの直下にある Markdown をノートとして読み込み、
+              タグとリンクでたどれるようにします。ノートのファイル名は、そのままタグになります。
+              タグは本文に [[タグ]] と書くので、taggo を使わなくなっても情報は残ります。
             </p>
             <Button variant="primary" onClick={() => void library.chooseFolder()}>
               <FolderOpenIcon className="size-4" aria-hidden="true" />
@@ -382,17 +367,7 @@ export default function App({ initialSettings }: Props) {
             </p>
             {!library.progress && query !== "" && (
               <p className="m-0 max-w-105">
-                検索条件を緩めてみてください。
-                <code className="rounded-sm bg-sunken px-1.5 py-px font-mono text-[0.9em]">
-                  #タグ
-                </code>
-                は完全一致、
-                <code className="rounded-sm bg-sunken px-1.5 py-px font-mono text-[0.9em]">
-                  -#タグ
-                </code>
-                は除外、
-                <code className="rounded-sm bg-sunken px-1.5 py-px font-mono text-[0.9em]">OR</code>
-                でタグの候補を広げられます。
+                空白で区切った語は、すべてを含むノートだけに絞り込みます。語を減らしてみてください。
               </p>
             )}
             {!library.progress && remaining > 0 && (
@@ -404,11 +379,11 @@ export default function App({ initialSettings }: Props) {
             <div className="min-h-0 flex-1">
               <CardGrid
                 entries={entries}
-                selected={selected}
-                selectionMode={selected.size > 0}
+                head={library.head}
+                pins={library.pins}
                 onOpen={(entry) => startHistory(entry.path, entry.title)}
-                onToggleSelect={toggleSelect}
                 onTagClick={handleTagClick}
+                onTogglePin={handleTogglePin}
               />
             </div>
             {/* 絞り込んでいるときは、読み込んでいない分が結果に入っていないことを
@@ -432,22 +407,17 @@ export default function App({ initialSettings }: Props) {
           entry={detailEntry}
           onClose={closeDetail}
           onTagClick={handleTagClick}
-          onSearchTag={handleSearchTag}
           onFollowLink={(link, path) => void handleFollowLink(detailEntry.path, link, path)}
+          onFollowTag={(tag) => void handleFollowTag(tag)}
+          onCreatePage={handleCreatePage}
+          pinned={library.pins.has(detailEntry.path)}
+          onTogglePin={(pinned) => handleTogglePin(detailEntry, pinned)}
           onEntryUpdated={updateEntry}
           onError={(message) => notify("error", message)}
           onNavigate={navigate}
           index={detailIndex}
           total={entries.length}
           history={history}
-        />
-      )}
-
-      {bulkOpen && (
-        <BulkTagDialog
-          entries={selectedEntries}
-          onClose={closeBulk}
-          onApplied={handleBulkApplied}
         />
       )}
 

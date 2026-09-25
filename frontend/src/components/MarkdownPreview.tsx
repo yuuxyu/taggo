@@ -3,7 +3,9 @@
  *
  * CommonMark / GFM に準拠してレンダリングし、コードハイライト・テーブル・mermaid を扱う。
  * URL だけを書いた段落は、リンク先の OGP をもとにしたリンクカードにする。
- * Front Matter はバックエンド側で本文から切り離されているため、ここには届かない。
+ * `[[タグ]]` は、そのタグのページ（ファイル名がそのタグのノート）へのリンクにする。
+ * 先頭の「---」で囲んだブロック（ほかのツールの Front Matter）はバックエンド側で
+ * 本文から外してあるため、ここには届かない。
  *
  * 本文は react-markdown が生成する素の HTML なので、装飾は Tailwind の
  * typography プラグイン（prose）に任せ、配色だけをアプリのトークンへ差し替える。
@@ -15,6 +17,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import { getMarkdownSource, imageURL, type Entry } from "../api/taggo";
+import { remarkBracketTags } from "../bracketTags";
 import { resolveLocalPath } from "../notePath";
 import { LinkCard } from "./LinkCard";
 import { Mermaid } from "./Mermaid";
@@ -24,11 +27,15 @@ interface Props {
   entry: Entry;
   /**
    * ノートへのリンクをたどるときに呼ぶ。link は書かれたパスをデコードしたもの。
-   * path を省くと、行き先がまだ無いノートとして新しく作る。
+   * path を省くと、行き先がまだ無いノートとして（ファイルは作らずに）開く。
    */
   onFollowLink: (link: string, path?: string) => void;
   /** 行き先がまだ無いリンク（小文字にしたもの）。本文では色を変えて示す。 */
   missingLinks: ReadonlySet<string>;
+  /** `[[タグ]]` をたどるときに呼ぶ。tag は正規化したタグ。 */
+  onFollowTag: (tag: string) => void;
+  /** ページがまだ無いタグ（小文字にしたもの）。本文の `[[タグ]]` の色を変えて示す。 */
+  missingTags: ReadonlySet<string>;
   /** 本文中の画像をクリックしたときに、その画像のパスと代替テキストを渡して呼ぶ。 */
   onOpenImage: (path: string, alt?: string) => void;
   /**
@@ -225,7 +232,15 @@ function toPlainText(node: ReactNode): string {
   return "";
 }
 
-export function MarkdownPreview({ entry, onFollowLink, missingLinks, onOpenImage, onLoaded }: Props) {
+export function MarkdownPreview({
+  entry,
+  onFollowLink,
+  missingLinks,
+  onFollowTag,
+  missingTags,
+  onOpenImage,
+  onLoaded,
+}: Props) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 最後に本文を読み込んだファイル。同じファイルの読み直しかどうかを見分ける。
@@ -282,7 +297,7 @@ export function MarkdownPreview({ entry, onFollowLink, missingLinks, onOpenImage
       className={`prose prose-lg max-w-[38em] break-words ${PROSE_COLORS} ${PROSE_TWEAKS} ${HLJS_DARK}`}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBracketTags]}
         rehypePlugins={[rehypeHighlight]}
         components={{
           p({ node, children, ...rest }) {
@@ -291,9 +306,32 @@ export function MarkdownPreview({ entry, onFollowLink, missingLinks, onOpenImage
             // 取得できなかったときは、ただのリンクの段落として出す。
             return url === null ? paragraph : <LinkCard url={url} fallback={paragraph} />;
           },
-          a({ href, children, ...rest }) {
+          a({ node, href, children, ...rest }) {
+            // [[タグ]] は、そのタグのページを開く。ページがまだ無ければ色を変え、
+            // クリックすると、まだ無いページとして開く（ファイルはそのページのボタンから作る）。
+            const tag = node?.properties?.dataTag;
+            if (typeof tag === "string") {
+              const missing = missingTags.has(tag.toLowerCase());
+              return (
+                <a
+                  href="#"
+                  className={missing ? MISSING_LINK : undefined}
+                  title={
+                    missing
+                      ? `「${tag}」のページはまだありません。クリックで開くと、md ファイルを作成できます`
+                      : `「${tag}」のページを開く`
+                  }
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onFollowTag(tag);
+                  }}
+                >
+                  {children}
+                </a>
+              );
+            }
             // 他のノートへのリンクは、ブラウザに渡さずその場でプレビューを切り替える。
-            // 行き先がまだ無ければ色を変え、クリックでそのノートを作ってエディタで開く。
+            // 行き先がまだ無ければ色を変え、クリックでまだ無いページとして開く。
             const notePath = resolveNotePath(href, entry);
             if (notePath !== null && href !== undefined) {
               const link = noteLink(href);
@@ -302,7 +340,7 @@ export function MarkdownPreview({ entry, onFollowLink, missingLinks, onOpenImage
                 <a
                   href={href}
                   className={missing ? MISSING_LINK : undefined}
-                  title={missing ? `${notePath}（まだありません。クリックで作成してエディタで開きます）` : notePath}
+                  title={missing ? `${notePath}（まだありません。クリックで開くと、md ファイルを作成できます）` : notePath}
                   onClick={(e) => {
                     e.preventDefault();
                     onFollowLink(link, missing ? undefined : notePath);

@@ -18,24 +18,16 @@ func writeTemp(t *testing.T, name, content string) string {
 }
 
 func TestMarkdownRead(t *testing.T) {
-	h := markdownHandler{}
-	path := writeTemp(t, "note.md", `---
-tags:
-  - golang
-  - 開発メモ
-created: 2026-09-18
----
+	path := writeTemp(t, "note.md", `# ここから本文
 
-# ここから本文
-
-本文の 1 行目です。[別のノート](./other.md) と [参照先](sub/ref.markdown) を参照。
+本文の 1 行目です。[別のノート](./other.md) と [参照先](sub/ref.markdown) を参照。[[golang]] の話。
 
 `+"```go\nfmt.Println(\"コードは抜粋に含めない\")\n```"+`
 
-締めの行。
+締めの行。[[開発メモ]]
 `)
 
-	got, err := h.Read(path)
+	got, err := readMarkdown(path)
 	if err != nil {
 		t.Fatalf("Markdown の読み取りに失敗: %v", err)
 	}
@@ -54,106 +46,70 @@ created: 2026-09-18
 	if !strings.Contains(got.Preview, "本文の 1 行目です") {
 		t.Fatalf("本文が抜粋に入っていない: %q", got.Preview)
 	}
-	if strings.Contains(got.Preview, "](") {
-		t.Fatalf("リンクの URL が抜粋に残っている: %q", got.Preview)
+	if strings.Contains(got.Preview, "](") || strings.Contains(got.Preview, "[[") {
+		t.Fatalf("リンクの記法が抜粋に残っている: %q", got.Preview)
 	}
-	if !strings.Contains(got.Preview, "別のノート") {
-		t.Fatalf("リンクの表示文字が抜粋から消えている: %q", got.Preview)
+	if !strings.Contains(got.Preview, "別のノート") || !strings.Contains(got.Preview, "golang の話") {
+		t.Fatalf("リンクやタグの表示文字が抜粋から消えている: %q", got.Preview)
+	}
+}
+
+// 先頭の「---」で囲んだブロック（ほかのツールの Front Matter）は、中身を読まずに本文から外すこと。
+// tags: や title: を書いてあっても、タグや見出しにはならない。
+func TestMarkdownIgnoresFrontMatter(t *testing.T) {
+	path := writeTemp(t, "note.md", "---\ntags: [golang]\ntitle: 使わないタイトル\n---\n\n本文だけ。[[本文のタグ]]\n")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := Read(path, info)
+	if err != nil {
+		t.Fatalf("読み取りに失敗: %v", err)
+	}
+	if !reflect.DeepEqual(e.Tags, []string{"本文のタグ"}) {
+		t.Fatalf("Front Matter の tags: がタグになっている: %v", e.Tags)
+	}
+	if e.Title != "note.md" {
+		t.Fatalf("Front Matter の title: が見出しになっている: %q", e.Title)
+	}
+	if e.Preview != "本文だけ。本文のタグ" {
+		t.Fatalf("Front Matter が抜粋に混ざっている: %q", e.Preview)
+	}
+}
+
+func TestStripFrontMatter(t *testing.T) {
+	cases := map[string]struct{ in, want string }{
+		"あり":         {"---\na: 1\n---\n本文\n", "本文\n"},
+		"CRLF":       {"---\r\na: 1\r\n---\r\n本文\r\n", "本文\r\n"},
+		"... で閉じる":   {"---\na: 1\n...\n本文\n", "本文\n"},
+		"閉じていない":     {"---\n本文\n", "---\n本文\n"},
+		"先頭ではない":     {"本文\n---\na\n---\n", "本文\n---\na\n---\n"},
+		"YAML でなくても": {"---\n: [壊れた\n---\n本文\n", "本文\n"},
+	}
+	for name, c := range cases {
+		if got := string(StripFrontMatter([]byte(c.in))); got != c.want {
+			t.Errorf("%s: got %q, want %q", name, got, c.want)
+		}
 	}
 }
 
 func TestMarkdownExcerptSkipsTableMarkup(t *testing.T) {
-	h := markdownHandler{}
 	path := writeTemp(t, "table.md", `# 表のあるノート
 
 | 形式 | 保存先 |
 | --- | --- |
-| Markdown | Front Matter |
+| Markdown | 本文 |
 `)
 
-	got, err := h.Read(path)
+	got, err := readMarkdown(path)
 	if err != nil {
 		t.Fatalf("読み取りに失敗: %v", err)
 	}
 	if strings.Contains(got.Preview, "---") || strings.Contains(got.Preview, "|") {
 		t.Fatalf("表の記号が抜粋に残っている: %q", got.Preview)
 	}
-	if !strings.Contains(got.Preview, "Front Matter") {
+	if !strings.Contains(got.Preview, "保存先") {
 		t.Fatalf("表のセルの中身が抜粋に入っていない: %q", got.Preview)
-	}
-}
-
-func TestMarkdownWriteTagsPreservesOtherFields(t *testing.T) {
-	path := writeTemp(t, "note.md", `---
-title: 元のタイトル
-created: 2026-09-18
-tags: [old]
----
-
-# 見出し
-
-本文。
-`)
-
-	// パッケージ関数側を通して、正規化（重複除去・ソート）まで含めて確認する。
-	h := markdownHandler{}
-	if err := WriteTags(path, []string{"新タグ", "another", " 新タグ "}); err != nil {
-		t.Fatalf("タグ書き込みに失敗: %v", err)
-	}
-
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("書き込み後の読み込みに失敗: %v", err)
-	}
-	front, body, err := SplitFrontMatter(raw)
-	if err != nil {
-		t.Fatalf("書き込み後の Front Matter が壊れている: %v", err)
-	}
-	if front["created"] == nil || front["title"] != "元のタイトル" {
-		t.Fatalf("タグ以外のフィールドが失われた: %+v", front)
-	}
-	if !strings.Contains(string(body), "# 見出し") {
-		t.Fatalf("本文が失われた: %q", string(body))
-	}
-
-	got, err := h.Read(path)
-	if err != nil {
-		t.Fatalf("書き込み後の読み取りに失敗: %v", err)
-	}
-	if want := []string{"another", "新タグ"}; !reflect.DeepEqual(got.Tags, want) {
-		t.Fatalf("書き戻したタグが一致しない: got %v, want %v", got.Tags, want)
-	}
-}
-
-func TestMarkdownWriteTagsCreatesFrontMatter(t *testing.T) {
-	path := writeTemp(t, "plain.md", "# Front Matter の無い文書\n\n本文だけ。\n")
-
-	h := markdownHandler{}
-	if err := h.WriteTags(path, []string{"追加"}); err != nil {
-		t.Fatalf("タグ書き込みに失敗: %v", err)
-	}
-	got, err := h.Read(path)
-	if err != nil {
-		t.Fatalf("読み取りに失敗: %v", err)
-	}
-	if want := []string{"追加"}; !reflect.DeepEqual(got.Tags, want) {
-		t.Fatalf("タグが一致しない: got %v, want %v", got.Tags, want)
-	}
-	if got.Title != "Front Matter の無い文書" {
-		t.Fatalf("本文の見出しが失われた: %q", got.Title)
-	}
-}
-
-func TestMarkdownCommaSeparatedTags(t *testing.T) {
-	h := markdownHandler{}
-	path := writeTemp(t, "csv.md", "---\ntags: golang, 設計, テスト\n---\n\n本文。\n")
-
-	got, err := h.Read(path)
-	if err != nil {
-		t.Fatalf("読み取りに失敗: %v", err)
-	}
-	if len(got.Tags) != 3 {
-		t.Fatalf("カンマ区切りタグが分割されていない: %v", got.Tags)
 	}
 }
 
@@ -163,7 +119,7 @@ func TestNoteLinks(t *testing.T) {
 外部は対象外: [web](https://example.com/page.md)。
 画像も対象外: ![図](./img/a.png)、![md風](./x.md)。
 Markdown 以外へのリンクも対象外: [メモ帳](./memo.txt)。
-WikiLink 記法は使わない: [[別のノート]]。
+[[タグ]] はタグとして読むので、リンクには含めない: [[別のノート]]。
 同じ行き先は 1 回だけ: [再掲](./SUB/別のノート.md)。
 `)
 
@@ -174,54 +130,39 @@ WikiLink 記法は使わない: [[別のノート]]。
 	}
 }
 
-// Front Matter の tag: で、そのノートが説明しているタグを宣言できること。
-// 付いているタグ（tags:）とは別に読み、1 つに決められない書き方は無視する。
-func TestMarkdownTagPage(t *testing.T) {
-	h := markdownHandler{}
-	cases := []struct {
-		name  string
-		front string
-		want  string
-	}{
-		{"文字列", "tag: golang\ntags: [プログラミング]\n", "golang"},
-		{"数値", "tag: 2026\n", "2026"},
-		{"リストは対象外", "tag: [golang, rust]\n", ""},
-		{"宣言なし", "tags: [golang]\n", ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			path := writeTemp(t, "page.md", "---\n"+c.front+"---\n\n# 見出し\n")
-			got, err := h.Read(path)
-			if err != nil {
-				t.Fatalf("読み取りに失敗: %v", err)
-			}
-			if got.TagPage != c.want {
-				t.Fatalf("タグページのタグが違う: got %q, want %q", got.TagPage, c.want)
-			}
-		})
-	}
-
-	// tag: はタグとしては数えない。
-	path := writeTemp(t, "page.md", "---\ntag: golang\ntags: [プログラミング]\n---\n")
-	got, _ := h.Read(path)
-	if want := []string{"プログラミング"}; !reflect.DeepEqual(got.Tags, want) {
-		t.Fatalf("tag: がタグに混ざっている: got %v, want %v", got.Tags, want)
+// 本文の [[タグ]] を、出てくる順に集めること。コードの中は読まない。
+func TestBodyTags(t *testing.T) {
+	body := []byte(strings.Join([]string{
+		"# 見出し",
+		"",
+		"[[golang]] と [[開発 メモ]] について。[[golang]] はもう一度。",
+		"`[[インラインコード]]` と ``a ` [[二重]] b`` は対象外、閉じない ` の後の [[閉じない]] は対象。",
+		"[[]] と [[改行",
+		"をまたぐ]] と [ [空白入り] ] は対象外。",
+		"```",
+		"[[コードブロック]]",
+		"```",
+		"[[最後]]",
+	}, "\n"))
+	want := []string{"golang", "開発 メモ", "golang", "閉じない", "最後"}
+	if got := bodyTags(body); !reflect.DeepEqual(got, want) {
+		t.Fatalf("[[タグ]] の抽出が違う: got %v, want %v", got, want)
 	}
 }
 
-// タグを書き換えても、tag: の宣言は残ること。
-func TestMarkdownWriteTagsKeepsTagPage(t *testing.T) {
-	h := markdownHandler{}
-	path := writeTemp(t, "page.md", "---\ntag: golang\ntags: [a]\n---\n\n本文\n")
-	if err := h.WriteTags(path, []string{"b"}); err != nil {
-		t.Fatalf("書き込みに失敗: %v", err)
+// エントリのタグは、本文の [[タグ]] を正規化して重複を除いたものになること。
+func TestReadNormalizesTags(t *testing.T) {
+	path := writeTemp(t, "note.md", "# 見出し\n\n[[Golang]] と [[ 並行  処理 ]] と [[golang]] の話。\n")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	got, err := h.Read(path)
+	e, err := Read(path, info)
 	if err != nil {
 		t.Fatalf("読み取りに失敗: %v", err)
 	}
-	if got.TagPage != "golang" {
-		t.Fatalf("タグの書き換えで tag: が消えた: %q", got.TagPage)
+	if want := []string{"Golang", "並行 処理"}; !reflect.DeepEqual(e.Tags, want) {
+		t.Fatalf("タグが違う: got %v, want %v", e.Tags, want)
 	}
 }
 

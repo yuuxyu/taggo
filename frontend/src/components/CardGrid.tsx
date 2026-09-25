@@ -3,6 +3,9 @@
  *
  * 大量ファイルを描画しても遅くならないよう、react-window の仮想スクロールで
  * 画面に入っている行だけを描く。列数は幅から計算し、ウィンドウ幅の変化に追従する。
+ *
+ * 先頭の別枠（ピン留めしたノートや、検索語と同じ名前のタグのページ）は、
+ * 残りのカードと行を分けて並べる。別枠の最後の行が埋まらなくても、残りは次の行から始める。
  */
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
@@ -51,22 +54,37 @@ function scrollbarWidth(): number {
 
 interface Props {
   entries: Entry[];
-  selected: Set<string>;
-  selectionMode: boolean;
+  /** entries の先頭のうち、残りと行を分けて並べる件数。 */
+  head: number;
+  /** ピン留めしているノートのパス。 */
+  pins: ReadonlySet<string>;
   onOpen: (entry: Entry) => void;
-  onToggleSelect: (entry: Entry) => void;
   onTagClick: (tag: string) => void;
+  onTogglePin: (entry: Entry, pinned: boolean) => void;
 }
 
 /** セルに渡す追加プロパティ。react-window が変更を検知して再描画する。 */
 interface CellProps {
   entries: Entry[];
+  head: number;
+  headRows: number;
   columnCount: number;
-  selected: Set<string>;
-  selectionMode: boolean;
+  pins: ReadonlySet<string>;
   onOpen: (entry: Entry) => void;
-  onToggleSelect: (entry: Entry) => void;
   onTagClick: (tag: string) => void;
+  onTogglePin: (entry: Entry, pinned: boolean) => void;
+}
+
+/**
+ * セルの位置から、そこに置くエントリの番号を求める。置くものが無ければ -1。
+ * 先頭の別枠は headRows 行を占め、残りはその次の行の左端から並ぶ。
+ */
+function indexAt(rowIndex: number, columnIndex: number, p: Pick<CellProps, "head" | "headRows" | "columnCount">): number {
+  if (rowIndex < p.headRows) {
+    const i = rowIndex * p.columnCount + columnIndex;
+    return i < p.head ? i : -1;
+  }
+  return p.head + (rowIndex - p.headRows) * p.columnCount + columnIndex;
 }
 
 function Cell({
@@ -74,26 +92,26 @@ function Cell({
   rowIndex,
   style,
   entries,
+  head,
+  headRows,
   columnCount,
-  selected,
-  selectionMode,
+  pins,
   onOpen,
-  onToggleSelect,
   onTagClick,
+  onTogglePin,
 }: CellComponentProps<CellProps>) {
-  const index = rowIndex * columnCount + columnIndex;
-  const entry = entries[index];
+  const index = indexAt(rowIndex, columnIndex, { head, headRows, columnCount });
+  const entry = index < 0 ? undefined : entries[index];
   if (!entry) return null;
 
   return (
     <div style={{ ...style, padding: CELL_PADDING }}>
       <Card
         entry={entry}
-        selected={selected.has(entry.path)}
-        selectionMode={selectionMode}
+        pinned={pins.has(entry.path)}
         onOpen={onOpen}
-        onToggleSelect={onToggleSelect}
         onTagClick={onTagClick}
+        onTogglePin={onTogglePin}
       />
     </div>
   );
@@ -101,11 +119,11 @@ function Cell({
 
 export function CardGrid({
   entries,
-  selected,
-  selectionMode,
+  head,
+  pins,
   onOpen,
-  onToggleSelect,
   onTagClick,
+  onTogglePin,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -129,7 +147,9 @@ export function CardGrid({
   // 余った端数を左の列から 1px ずつ配って合計を幅ちょうどに収める。
   const usable = Math.max(Math.floor(width - scrollbarWidth()), MIN_CARD_WIDTH + GAP);
   const columnCount = Math.max(1, Math.floor(usable / (MIN_CARD_WIDTH + GAP)));
-  const rowCount = Math.ceil(entries.length / columnCount);
+  const headCount = Math.min(head, entries.length);
+  const headRows = Math.ceil(headCount / columnCount);
+  const rowCount = headRows + Math.ceil((entries.length - headCount) / columnCount);
   const baseColumnWidth = Math.floor(usable / columnCount);
   const widerColumns = usable - baseColumnWidth * columnCount;
   const columnWidth = useCallback(
@@ -139,8 +159,10 @@ export function CardGrid({
 
   // 同じカードが並び替えで別のセルへ移っても状態を持ち越さないよう、パスをキーにする。
   const cellKey = useCallback(
-    ({ columnIndex, rowIndex, data }: { columnIndex: number; rowIndex: number; data: CellProps }) =>
-      data.entries[rowIndex * data.columnCount + columnIndex]?.path ?? `${rowIndex}:${columnIndex}`,
+    ({ columnIndex, rowIndex, data }: { columnIndex: number; rowIndex: number; data: CellProps }) => {
+      const index = indexAt(rowIndex, columnIndex, data);
+      return (index < 0 ? undefined : data.entries[index]?.path) ?? `${rowIndex}:${columnIndex}`;
+    },
     [],
   );
 
@@ -152,12 +174,13 @@ export function CardGrid({
           cellComponent={Cell}
           cellProps={{
             entries,
+            head: headCount,
+            headRows,
             columnCount,
-            selected,
-            selectionMode,
+            pins,
             onOpen,
-            onToggleSelect,
             onTagClick,
+            onTogglePin,
           }}
           columnCount={columnCount}
           columnWidth={columnWidth}

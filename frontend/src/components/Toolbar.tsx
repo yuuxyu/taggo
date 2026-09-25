@@ -1,16 +1,9 @@
 /**
  * 検索バーの下に置くツールバー。
- * フォルダの選択、並び順の切り替え、読み込み状況の表示、一括編集の操作、設定の入口をまとめる。
+ * フォルダの選択、並び順の切り替え、読み込み状況の表示、設定の入口をまとめる。
  */
 
-import {
-  CheckIcon,
-  CloudIcon,
-  Cog6ToothIcon,
-  FolderOpenIcon,
-  TagIcon,
-  XMarkIcon,
-} from "@heroicons/react/20/solid";
+import { CloudIcon, Cog6ToothIcon, FolderOpenIcon } from "@heroicons/react/20/solid";
 import type { ScanProgress, SortOrder, Status } from "../api/taggo";
 import { Button } from "./Button";
 
@@ -24,11 +17,6 @@ interface Props {
   onShowLoadMore: () => void;
   /** 続きの読み込みを取りやめる。 */
   onCancelLoadMore: () => void;
-  /** 選択中のファイル数。0 なら一括編集バーは出さない。 */
-  selectedCount: number;
-  onClearSelection: () => void;
-  onOpenBulkEditor: () => void;
-  onSelectAll: () => void;
   onOpenSettings: () => void;
 }
 
@@ -55,10 +43,6 @@ export function Toolbar({
   onChooseFolder,
   onShowLoadMore,
   onCancelLoadMore,
-  selectedCount,
-  onClearSelection,
-  onOpenBulkEditor,
-  onSelectAll,
   onOpenSettings,
 }: Props) {
   const root = status?.root ?? "";
@@ -129,25 +113,6 @@ export function Toolbar({
       )}
 
       <span className="flex-1" />
-
-      {selectedCount > 0 ? (
-        <span className="flex items-center gap-2 text-ink-muted">
-          <strong className="tabular-nums text-ink">{selectedCount}</strong> 件を選択中
-          <Button variant="primary" onClick={onOpenBulkEditor}>
-            <TagIcon className="size-4" aria-hidden="true" />
-            タグを一括編集
-          </Button>
-          <Button variant="ghost" onClick={onClearSelection}>
-            <XMarkIcon className="size-4" aria-hidden="true" />
-            選択を解除
-          </Button>
-        </span>
-      ) : (
-        <Button variant="ghost" onClick={onSelectAll}>
-          <CheckIcon className="size-4" aria-hidden="true" />
-          表示中をすべて選択
-        </Button>
-      )}
 
       <label className="inline-flex items-center gap-1.5 text-ink-muted">
         並び順

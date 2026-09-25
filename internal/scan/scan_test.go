@@ -15,16 +15,18 @@ func buildTree(t *testing.T) string {
 	root := t.TempDir()
 
 	files := map[string]string{
-		"a.md":          "---\ntags: [golang]\n---\n\n# A\n",
-		"sub/b.md":      "---\ntags: [設計]\n---\n\n# B\n",
-		"sub/notes.txt": "対象外の拡張子",
+		"a.md":      "# A\n\n[[golang]]\n",
+		"b.md":      "# B\n\n[[設計]] と [[並行処理]] の話\n",
+		"notes.txt": "対象外の拡張子",
 		// 画像と音声は Markdown から参照されるだけで、一覧には載せない。
-		"sub/photo.png":       "画像",
-		"sub/photo.jpg":       "画像",
-		"song.mp3":            "音声",
-		"voice.wav":           "音声",
-		"node_modules/dep.md": "---\ntags: [除外]\n---\n\n# Dep\n",
-		".hidden/secret.md":   "---\ntags: [隠し]\n---\n\n# Secret\n",
+		"photo.png": "画像",
+		"photo.jpg": "画像",
+		"song.mp3":  "音声",
+		"voice.wav": "音声",
+		// サブフォルダの中は、Markdown でも読まない。
+		"sub/c.md":            "# C\n\n[[サブ]]\n",
+		"node_modules/dep.md": "# Dep\n\n[[除外]]\n",
+		".hidden/secret.md":   "# Secret\n\n[[隠し]]\n",
 	}
 	for rel, content := range files {
 		path := filepath.Join(root, rel)
@@ -55,13 +57,8 @@ func TestScanCollectsSupportedFiles(t *testing.T) {
 	}
 
 	paths := relPaths(got.Entries)
-	if len(paths) != 2 {
-		t.Fatalf("対象は a.md と sub/b.md の 2 件のはず: %v", paths)
-	}
-	for _, p := range paths {
-		if p == "node_modules/dep.md" || p == ".hidden/secret.md" {
-			t.Fatalf("除外されるべきディレクトリが走査された: %v", paths)
-		}
+	if len(paths) != 2 || paths[0] != "a.md" || paths[1] != "b.md" {
+		t.Fatalf("対象は直下の a.md と b.md の 2 件のはず: %v", paths)
 	}
 
 	// 相対パスが走査ルート基準になっていること。
@@ -86,8 +83,8 @@ func TestScanReadsTags(t *testing.T) {
 	if tags := found["a.md"]; len(tags) != 1 || tags[0] != "golang" {
 		t.Fatalf("a.md のタグが読めていない: %v", tags)
 	}
-	if tags := found["sub/b.md"]; len(tags) != 1 || tags[0] != "設計" {
-		t.Fatalf("sub/b.md のタグが読めていない: %v", tags)
+	if tags := found["b.md"]; len(tags) != 2 || tags[0] != "並行処理" || tags[1] != "設計" {
+		t.Fatalf("b.md のタグが読めていない: %v", tags)
 	}
 }
 
@@ -107,11 +104,11 @@ func TestScanRespectsLimit(t *testing.T) {
 }
 
 // buildFlatTree は走査順の確かめやすいフォルダ構成を作る。
-// 走査順は a/b.md → a.md → c.md → d/e.md になる（フォルダ a は a.md より先）。
+// 読むのは直下の a.md → b.md → c.md → d.md の順で、サブフォルダ a と e の中は読まない。
 func buildFlatTree(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, rel := range []string{"a/b.md", "a.md", "c.md", "d/e.md"} {
+	for _, rel := range []string{"a/x.md", "a.md", "b.md", "c.md", "d.md", "e/y.md"} {
 		path := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("ディレクトリ作成に失敗: %v", err)
@@ -130,13 +127,13 @@ func TestScanCountsRemainingAfterLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("走査に失敗: %v", err)
 	}
-	if paths := relPaths(got.Entries); len(paths) != 2 || paths[0] != "a/b.md" || paths[1] != "a.md" {
+	if paths := relPaths(got.Entries); len(paths) != 2 || paths[0] != "a.md" || paths[1] != "b.md" {
 		t.Fatalf("走査順の先頭 2 件になっていない: %v", paths)
 	}
 	if !got.LimitReached || got.Remaining != 2 {
 		t.Fatalf("残り件数が想定外: limitReached=%v remaining=%d", got.LimitReached, got.Remaining)
 	}
-	if filepath.ToSlash(got.Cursor) != "a.md" {
+	if filepath.ToSlash(got.Cursor) != "b.md" {
 		t.Fatalf("再開位置が想定外: %q", got.Cursor)
 	}
 }
@@ -160,7 +157,7 @@ func TestScanResumesFromCursor(t *testing.T) {
 
 	// 上限なしなら最後まで読み切り、残りは無くなる。
 	rest, _ := Scan(context.Background(), Options{Root: root, Workers: 1, StartAfter: second.Cursor})
-	if paths := relPaths(rest.Entries); len(paths) != 1 || paths[0] != "d/e.md" {
+	if paths := relPaths(rest.Entries); len(paths) != 1 || paths[0] != "d.md" {
 		t.Fatalf("残りの読み込みが想定外: %v", paths)
 	}
 	if rest.LimitReached || rest.Remaining != 0 {
@@ -172,11 +169,11 @@ func TestScanResumesAfterDeletedCursor(t *testing.T) {
 	root := buildFlatTree(t)
 
 	// 再開位置のファイルが消えていても、その位置から続きを読める。
-	if err := os.Remove(filepath.Join(root, "a.md")); err != nil {
+	if err := os.Remove(filepath.Join(root, "b.md")); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := Scan(context.Background(), Options{Root: root, Workers: 1, StartAfter: "a.md"})
-	if paths := relPaths(got.Entries); len(paths) != 2 || paths[0] != "c.md" || paths[1] != "d/e.md" {
+	got, _ := Scan(context.Background(), Options{Root: root, Workers: 1, StartAfter: "b.md"})
+	if paths := relPaths(got.Entries); len(paths) != 2 || paths[0] != "c.md" || paths[1] != "d.md" {
 		t.Fatalf("消えた再開位置からの続きが想定外: %v", paths)
 	}
 }
@@ -186,11 +183,10 @@ func TestIsAfterFollowsWalkOrder(t *testing.T) {
 		rel, cursor string
 		want        bool
 	}{
-		{"a.md", filepath.Join("a", "b.md"), true},  // フォルダ a の中身は a.md より先
-		{filepath.Join("a", "z.md"), "a.md", false}, // 同上の逆向き
 		{"b.md", "a.md", true},
+		{"a.md", "b.md", false},
 		{"a.md", "a.md", false},
-		{filepath.Join("d", "e.md"), "c.md", true},
+		{"a.md.md", "a.md", true},
 	}
 	for _, c := range cases {
 		if got := IsAfter(c.rel, c.cursor); got != c.want {

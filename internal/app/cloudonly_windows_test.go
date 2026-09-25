@@ -24,9 +24,9 @@ func setAttributes(t *testing.T, path string, attrs uint32) {
 
 // 走査のあとで同期サービスがファイルを「オンラインのみ」へ戻した場合を再現する。
 // 変わるのは属性だけなのでウォッチャーは気付かず、DB 上はローカルのままになる。
-// その状態でも、プレビューとタグ書き込みのどちらもファイルを開かないこと。
+// その状態でも、プレビューがファイルを開かないこと。
 func TestDehydratedAfterScanIsNotOpened(t *testing.T) {
-	const body = "---\ntags: [golang]\n---\n\n# 本文\n"
+	const body = "# 本文\n\n[[golang]]\n"
 
 	cases := []struct {
 		name string
@@ -35,9 +35,6 @@ func TestDehydratedAfterScanIsNotOpened(t *testing.T) {
 		{"Markdown プレビュー", func(a *App, path string) bool {
 			_, err := a.MarkdownSource(path)
 			return err == nil
-		}},
-		{"タグ書き込み", func(a *App, path string) bool {
-			return a.SetTags(path, []string{"rust"}).OK
 		}},
 	}
 

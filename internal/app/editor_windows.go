@@ -26,14 +26,13 @@ func (a *App) OpenInEditor(path string) error {
 	return openWithDefaultApp(e.Path)
 }
 
-// CreateNote は、fromPath のノートに書かれたリンク link の行き先がまだ無ければ
-// 新しく作り、拡張子に紐づいたアプリ（既定のテキストエディタ）で開く。
-// link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
+// CreatePage は、まだ無いページ path の Markdown ファイルを作り、拡張子に紐づいたアプリ
+// （既定のテキストエディタ）で開く。path は LinkedPage や TagPage が返した「まだ無いページ」のパス。
 // 新しく作ったときは true を、既にあったファイルを開いただけなら false を返す。
 //
 // 作ったファイルはフォルダの監視が拾って一覧へ載せる。
-func (a *App) CreateNote(fromPath, link string) (bool, error) {
-	path, created, err := a.prepareNote(fromPath, link)
+func (a *App) CreatePage(path string) (bool, error) {
+	path, created, err := a.preparePage(path)
 	if err != nil {
 		return false, err
 	}

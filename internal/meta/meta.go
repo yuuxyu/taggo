@@ -1,6 +1,8 @@
-// Package meta は Markdown ファイルの Front Matter に埋め込まれたタグの読み書きを担う。
-// 埋め込みメタデータが taggo における正（Single Source of Truth）であり、
-// サイドカーファイルや影のデータベースは一切持たない。
+// Package meta は Markdown ファイルから、一覧と検索に使う情報（タグ・見出し・抜粋・
+// サムネイル・ノート間のリンク）を読み取る。
+//
+// タグは本文に `[[タグ]]` と書かれたものだけを読む。ノート自身が正（Single Source of Truth）
+// であり、taggo はノートを書き換えず、サイドカーファイルや影のデータベースも持たない。
 package meta
 
 import (
@@ -16,12 +18,12 @@ var ErrUnsupported = errors.New("Markdown ファイルではありません")
 
 // Info は 1 ファイルから抽出しうる情報をまとめたもの。
 type Info struct {
+	// Tags は本文に `[[タグ]]` と書かれたタグ。本文に出てくる順に並ぶ。
 	Tags      []string
 	Title     string
 	Preview   string
 	Thumbnail string
 	Links     []string
-	TagPage   string
 }
 
 // Read は path の Entry を組み立てる。
@@ -34,17 +36,16 @@ func Read(path string, info os.FileInfo) (*model.Entry, error) {
 	}
 
 	e := &model.Entry{
-		Path:     path,
-		Name:     info.Name(),
-		Ext:      model.Ext(path),
-		Size:     info.Size(),
-		ModTime:  info.ModTime(),
-		Tags:     []string{},
-		Title:    info.Name(),
-		Writable: writable(path, info),
+		Path:    path,
+		Name:    info.Name(),
+		Ext:     model.Ext(path),
+		Size:    info.Size(),
+		ModTime: info.ModTime(),
+		Tags:    []string{},
+		Title:   info.Name(),
 	}
 
-	got, err := markdownHandler{}.Read(path)
+	got, err := readMarkdown(path)
 	if err != nil {
 		e.Err = err.Error()
 		return e, nil
@@ -57,15 +58,5 @@ func Read(path string, info os.FileInfo) (*model.Entry, error) {
 	e.Preview = got.Preview
 	e.Thumbnail = got.Thumbnail
 	e.Links = got.Links
-	e.TagPage = model.NormalizeTag(got.TagPage)
 	return e, nil
-}
-
-// WriteTags は実ファイルへタグを書き込み、その成否を返す。
-// 呼び出し側は、これが nil を返したときにのみ再インデックスすること。
-func WriteTags(path string, tags []string) error {
-	if !model.IsMarkdown(path) {
-		return fmt.Errorf("%w: %s", ErrUnsupported, path)
-	}
-	return markdownHandler{}.WriteTags(path, model.NormalizeTags(tags))
 }

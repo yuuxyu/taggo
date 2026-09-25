@@ -17,15 +17,18 @@ import {
   selectFolder,
   type Entry,
   type EntryChanged,
+  type PinsChanged,
   type ScanDone,
   type ScanProgress,
   type SortOrder,
   type Status,
-  type TagPageGroup,
 } from "../api/taggo";
 
 /** 入力が落ち着くまでの待ち時間（ミリ秒）。体感では即時に見える範囲に収める。 */
 const SEARCH_DEBOUNCE_MS = 60;
+
+/** ファイルの変更を受けてから一覧を引き直すまでの待ち時間（ミリ秒）。続けて届く変更をまとめる。 */
+const CHANGE_REFRESH_MS = 200;
 
 export interface Notice {
   id: number;
@@ -38,8 +41,13 @@ export interface Library {
   progress: ScanProgress | null;
   entries: Entry[];
   total: number;
-  /** 検索しているタグのタグページ。一覧（entries）とは別枠で、グリッドの上に見出しとして出す。 */
-  tagPages: TagPageGroup[];
+  /**
+   * entries の先頭のうち、並び順とは別枠で並べる件数。検索語が無ければピン留めしたノート、
+   * あれば検索語と同じ名前のタグのページ。グリッドではこの分を残りと行を分けて並べる。
+   */
+  head: number;
+  /** ピン留めしているノートのパス。ピン留めした順。 */
+  pins: ReadonlySet<string>;
   query: string;
   sort: SortOrder;
   loading: boolean;
@@ -67,7 +75,10 @@ export function useLibrary(initialSort: SortOrder): Library {
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [total, setTotal] = useState(0);
-  const [tagPages, setTagPages] = useState<TagPageGroup[]>([]);
+  // 先頭の別枠に入っているノート。件数ではなくパスで持ち、削除や差し替えがあっても
+  // 一覧の先頭から数え直せるようにする。
+  const [headPaths, setHeadPaths] = useState<ReadonlySet<string>>(new Set());
+  const [pins, setPins] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOrder>(initialSort);
   const [loading, setLoading] = useState(false);
@@ -75,6 +86,8 @@ export function useLibrary(initialSort: SortOrder): Library {
   const [loadMoreBannerOpen, setLoadMoreBannerOpen] = useState(false);
   // 走査が終わった回数。件数が前と同じでも、走査のたびに一覧を引き直すきっかけにする。
   const [scanSeq, setScanSeq] = useState(0);
+  // ファイルの変更を受けた回数。並び順を引き直すきっかけにする。
+  const [changeSeq, setChangeSeq] = useState(0);
 
   const noticeSeq = useRef(0);
 
@@ -100,7 +113,8 @@ export function useLibrary(initialSort: SortOrder): Library {
         const result = await search(q, s);
         setEntries(result.entries ?? []);
         setTotal(result.total ?? 0);
-        setTagPages(result.tagPages ?? []);
+        setHeadPaths(new Set((result.entries ?? []).slice(0, result.head ?? 0).map((e) => e.path)));
+        setPins(new Set(result.pins ?? []));
       } catch (err) {
         notify("error", `検索に失敗しました: ${String(err)}`);
       }
@@ -163,12 +177,12 @@ export function useLibrary(initialSort: SortOrder): Library {
       if (change.removed) {
         setEntries((prev) => prev.filter((e) => e.path !== change.path));
         setTotal((prev) => Math.max(0, prev - 1));
-        setTagPages((prev) => replaceTagPage(prev, change.path, null));
         void getStatus().then(setStatus);
         return;
       }
       if (!change.entry) return;
       const updated = change.entry;
+      // まずはその場で差し替えて、開いているプレビューなどへすぐ反映する。
       setEntries((prev) => {
         const idx = prev.findIndex((e) => e.path === updated.path);
         if (idx < 0) return prev;
@@ -176,7 +190,9 @@ export function useLibrary(initialSort: SortOrder): Library {
         next[idx] = updated;
         return next;
       });
-      setTagPages((prev) => replaceTagPage(prev, updated.path, updated));
+      // 更新日時や内容が変わると、並び順や検索に合うかどうかも変わる。
+      // 件数は変わらないので件数の変化では引き直されず、ここで引き直しを頼む。
+      setChangeSeq((n) => n + 1);
       void getStatus().then(setStatus);
     });
 
@@ -186,6 +202,17 @@ export function useLibrary(initialSort: SortOrder): Library {
       offChanged();
     };
   }, [notify]);
+
+  // ピン留めが変わったら（taggo からの操作でも、設定ファイルを外で書き換えたときでも）引き直す。
+  // 検索条件は最新のものを使いたいので、購読は検索条件と一緒に張り直す。
+  useEffect(
+    () =>
+      on<PinsChanged>(Events.pinsChanged, (change) => {
+        if (change.warning) notify("error", change.warning);
+        void runSearch(query, sort);
+      }),
+    [notify, runSearch, query, sort],
+  );
 
   // 走査完了後と、件数が変わったタイミングで検索結果を引き直す。
   // 件数だけを見ると、同じフォルダを開き直したときに件数が変わらず、
@@ -197,6 +224,18 @@ export function useLibrary(initialSort: SortOrder): Library {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryCount, scanSeq]);
 
+  // ファイルの変更を受けたら、今の検索条件で引き直す。更新日時の順なら、保存したノートが先頭へ移る。
+  // エディタの保存や同期で変更が続けて届くことがあるので、落ち着いてから 1 回だけ引き直す。
+  useEffect(() => {
+    if (changeSeq === 0) return;
+    const timer = window.setTimeout(() => {
+      void runSearch(query, sort);
+    }, CHANGE_REFRESH_MS);
+    return () => window.clearTimeout(timer);
+    // query / sort の変更は別の effect が拾うので、ここでは変更の通知だけを見る。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changeSeq]);
+
   /** 読み込みを始める。 */
   const startOpen = useCallback(
     async (dir: string) => {
@@ -204,7 +243,8 @@ export function useLibrary(initialSort: SortOrder): Library {
         setLoading(true);
         setEntries([]);
         setTotal(0);
-        setTagPages([]);
+        setHeadPaths(new Set());
+        setPins(new Set());
         setLoadMoreBannerOpen(false);
         await openFolder(dir);
       } catch (err) {
@@ -247,6 +287,13 @@ export function useLibrary(initialSort: SortOrder): Library {
     await cancelLoadMoreApi();
   }, []);
 
+  // 別枠の件数は、一覧の先頭から別枠のノートが続く数。
+  const head = useMemo(() => {
+    let n = 0;
+    while (n < entries.length && headPaths.has(entries[n].path)) n += 1;
+    return n;
+  }, [entries, headPaths]);
+
   const replaceEntry = useCallback((entry: Entry) => {
     setEntries((prev) => {
       const idx = prev.findIndex((e) => e.path === entry.path);
@@ -263,7 +310,8 @@ export function useLibrary(initialSort: SortOrder): Library {
       progress,
       entries,
       total,
-      tagPages,
+      head,
+      pins,
       query,
       sort,
       loading,
@@ -285,7 +333,8 @@ export function useLibrary(initialSort: SortOrder): Library {
       progress,
       entries,
       total,
-      tagPages,
+      head,
+      pins,
       query,
       sort,
       loading,
@@ -300,25 +349,6 @@ export function useLibrary(initialSort: SortOrder): Library {
       cancelLoadMore,
     ],
   );
-}
-
-/**
- * 見出しに出しているタグページのうち、path のものを最新のエントリへ差し替える。
- * 消えたとき（entry が null）や、`tag:` の宣言が外れたり別のタグへ変わったりしたときは
- * 見出しから外す。ほかのタグを宣言し直したノートを見出しへ足すのは、次の検索に任せる。
- */
-function replaceTagPage(groups: TagPageGroup[], path: string, entry: Entry | null): TagPageGroup[] {
-  if (!groups.some((g) => g.pages.some((p) => p.path === path))) return groups;
-  return groups
-    .map((g) => ({
-      ...g,
-      pages: g.pages.flatMap((p) => {
-        if (p.path !== path) return [p];
-        const still = entry !== null && (entry.tagPage ?? "").toLowerCase() === g.tag.toLowerCase();
-        return still ? [entry] : [];
-      }),
-    }))
-    .filter((g) => g.pages.length > 0);
 }
 
 /** openFolder を直接呼びたい場面（起動引数など）向けの再エクスポート。 */

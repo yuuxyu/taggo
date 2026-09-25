@@ -11,18 +11,12 @@ import type { app, linkcard, model, store } from "../../wailsjs/go/models";
 
 export type Entry = model.Entry;
 export type Status = app.Status;
-export type TagSuggestion = store.TagSuggestion;
-export type TagEditResult = app.TagEditResult;
 export type RelatedPage = store.RelatedPage;
 export type Related = store.Related;
+export type RelatedGroup = store.RelatedGroup;
 export type SearchResult = store.Result;
 /** リンクカードに出す内容。kind は "page" / "youtube" / "x" のいずれか。 */
 export type LinkPreview = linkcard.Preview;
-/**
- * 検索しているタグのタグページ。生成されたクラスをそのまま使うと、
- * 差し替えのために作り直した値が型に合わなくなるので、データの形だけを取り出す。
- */
-export type TagPageGroup = Pick<store.TagPageGroup, "tag" | "pages">;
 
 /** 一覧の並び順。Go 側の store.SortOrder と対応する。 */
 export type SortOrder = "modified_desc" | "name_asc" | "relevance";
@@ -90,6 +84,12 @@ export interface ScanDone {
   warning?: string;
 }
 
+/** ピン留めの変更イベントのペイロード。 */
+export interface PinsChanged {
+  /** 設定ファイル（.taggo.json）を読めなかったときの理由。 */
+  warning?: string;
+}
+
 /** ファイル変更イベントのペイロード。 */
 export interface EntryChanged {
   path: string;
@@ -101,6 +101,7 @@ export const Events = {
   scanProgress: "scan:progress",
   scanDone: "scan:done",
   entryChanged: "entry:changed",
+  pinsChanged: "pins:changed",
 } as const;
 
 /**
@@ -130,21 +131,34 @@ export const cancelLoadMore = (): Promise<void> => Backend.CancelLoadMore();
 /** 現在の読み込み状況を取得する。 */
 export const getStatus = (): Promise<Status> => Backend.Status();
 
-/** 検索バーの入力でエントリを絞り込む。 */
+/**
+ * 検索バーの入力でエントリを絞り込む。空白で区切った語をすべて含むものが結果になる。
+ * 先頭の head 件は別枠（検索語が無ければピン留め、あれば検索語と同じ名前のタグのページ）。
+ */
 export const search = (query: string, sort: SortOrder): Promise<SearchResult> =>
   Backend.Search({ query, sort, offset: 0, limit: 0 });
-
-/** オートコンプリート候補を取得する。prefix が空なら全タグ。 */
-export const suggestTags = (prefix: string, limit = 30): Promise<TagSuggestion[]> =>
-  Backend.Tags(prefix, limit);
 
 /** 1 件のエントリを取得する。 */
 export const getEntry = (path: string): Promise<Entry> => Backend.Entry(path);
 
-/** そのノートの関連ページ（リンク先とリンク元）を取得する。 */
+/**
+ * from のノートに書かれた Markdown のリンク link の行き先のページを取得する。
+ * link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
+ * 行き先がまだ無ければ、ファイルを作らずに「まだ無いページ」（missing）が返る。
+ */
+export const linkedPage = (from: string, link: string): Promise<Entry> =>
+  Backend.LinkedPage(from, link);
+
+/**
+ * タグを表すページ（ファイル名がそのタグのノート）を取得する。
+ * まだ無ければ、ファイルを作らずに「まだ無いページ」（missing）が返る。
+ */
+export const tagPage = (tag: string): Promise<Entry> => Backend.TagPage(tag);
+
+/** そのノートの関連ページを取得する。まだ無いページでも、そのページを指しているノートが返る。 */
 export const getRelatedPages = (path: string): Promise<Related> => Backend.RelatedPages(path);
 
-/** Markdown の本文（Front Matter を除く）を取得する。 */
+/** Markdown の本文（先頭の「---」で囲んだブロックは除く）を取得する。 */
 export const getMarkdownSource = (path: string): Promise<string> => Backend.MarkdownSource(path);
 
 /**
@@ -157,24 +171,14 @@ export const getLinkPreview = (url: string): Promise<LinkPreview> => Backend.Lin
 export const openInEditor = (path: string): Promise<void> => Backend.OpenInEditor(path);
 
 /**
- * from のノートに書かれたリンクの行き先がまだ無ければ新しく作り、既定のエディタで開く。
- * link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
+ * まだ無いページ（linkedPage や tagPage が返したもの）の md ファイルを作り、既定のエディタで開く。
  * 新しく作ったときは true、既にあったファイルを開いただけなら false になる。
  */
-export const createNote = (from: string, link: string): Promise<boolean> =>
-  Backend.CreateNote(from, link);
+export const createPage = (path: string): Promise<boolean> => Backend.CreatePage(path);
 
-/** 1 ファイルのタグを置き換える。 */
-export const setTags = (path: string, tags: string[]): Promise<TagEditResult> =>
-  Backend.SetTags(path, tags);
-
-/** 複数ファイルへ同じタグを追加する。 */
-export const addTags = (paths: string[], tags: string[]): Promise<TagEditResult[]> =>
-  Backend.AddTags(paths, tags);
-
-/** 複数ファイルから指定タグを取り除く。 */
-export const removeTags = (paths: string[], tags: string[]): Promise<TagEditResult[]> =>
-  Backend.RemoveTags(paths, tags);
+/** 一覧の先頭にノートをピン留めする（pinned が false なら外す）。フォルダの .taggo.json に保存される。 */
+export const setPinned = (path: string, pinned: boolean): Promise<void> =>
+  Backend.SetPinned(path, pinned);
 
 /** 今の設定を取得する。 */
 export const getSettings = (): Promise<Settings> => Backend.GetSettings() as Promise<Settings>;
@@ -188,10 +192,6 @@ export const getSettingsPath = (): Promise<string> => Backend.SettingsPath();
 
 /** 起動時に出た警告（開けなかったフォルダなど）を受け取る。受け取った警告は二度と返らない。 */
 export const takeStartupWarnings = (): Promise<string[]> => Backend.TakeStartupWarnings();
-
-/** 検索バーの文字列へタグを AND 条件として足す。 */
-export const appendTagToQuery = (query: string, tag: string): Promise<string> =>
-  Backend.AppendTagToQuery(query, tag);
 
 /** イベント購読。戻り値を呼ぶと購読を解除する。 */
 export function on<T>(event: string, handler: (payload: T) => void): () => void {

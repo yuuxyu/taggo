@@ -17,7 +17,6 @@ import (
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 	"github.com/yuuxyu/taggo/internal/scan"
-	"github.com/yuuxyu/taggo/internal/search"
 	"github.com/yuuxyu/taggo/internal/settings"
 	"github.com/yuuxyu/taggo/internal/store"
 	"github.com/yuuxyu/taggo/internal/watcher"
@@ -31,6 +30,9 @@ const (
 	EventScanDone = "scan:done"
 	// EventEntryChanged はウォッチャーが検知した変更を伝える。
 	EventEntryChanged = "entry:changed"
+	// EventPinsChanged はピン留めが変わったことを伝える。taggo からの操作のほか、
+	// フォルダの設定ファイル（.taggo.json）が外で書き換えられたときにも送る。
+	EventPinsChanged = "pins:changed"
 )
 
 // App はアプリ全体の状態を持つ。
@@ -61,6 +63,9 @@ type App struct {
 	remaining int
 	// startupWarnings は、起動時に画面へ出せなかった警告。画面が用意できてから取りに来る。
 	startupWarnings []string
+
+	// pinMu はピン留めの読み書き（設定ファイルを読んで直して書く一連の操作）を 1 つずつにする。
+	pinMu sync.Mutex
 }
 
 // New はアプリを組み立てる。インメモリ DB の初期化に失敗した場合のみエラーを返す。
@@ -125,6 +130,8 @@ type ScanDone struct {
 	Added int `json:"added,omitempty"`
 	// Cancelled は、利用者の操作で続きの読み込みを取りやめたかどうか。
 	Cancelled bool `json:"cancelled,omitempty"`
+	// Warning は、読み込みは済んだが知らせておきたいこと（ピン留めの設定を読めなかったなど）。
+	Warning string `json:"warning,omitempty"`
 }
 
 // ScanProgress は走査の進捗イベントのペイロード。
@@ -226,7 +233,7 @@ func (a *App) adjustCloudOnly(was, now bool) {
 	}
 }
 
-// OpenFolder は指定フォルダを走査してインメモリ DB へ展開する。
+// OpenFolder は指定フォルダの直下を走査してインメモリ DB へ展開する。
 // 走査はバックグラウンドで進み、進捗はイベントで通知する。
 func (a *App) OpenFolder(root string) error {
 	abs, err := filepath.Abs(root)
@@ -261,13 +268,16 @@ func (a *App) OpenFolder(root string) error {
 	if err := a.settings.RememberFolder(abs); err != nil {
 		log.Printf("前回開いたフォルダを記録できませんでした: %v", err)
 	}
+	// ピン留めを読めなくても一覧は出せるので、知らせるだけにする。
+	warning := a.loadPins(abs)
 
-	go a.runScan(ctx, abs, limit)
+	go a.runScan(ctx, abs, limit, warning)
 	return nil
 }
 
 // runScan は走査を実行し、完了後にウォッチャーを開始する。
-func (a *App) runScan(ctx context.Context, root string, limit int) {
+// warning は走査の前に分かっていた警告で、走査の完了と一緒に知らせる。
+func (a *App) runScan(ctx context.Context, root string, limit int, warning string) {
 	result, err := scan.Scan(ctx, scan.Options{
 		Root:  root,
 		Limit: limit,
@@ -296,7 +306,7 @@ func (a *App) runScan(ctx context.Context, root string, limit int) {
 	a.mu.Unlock()
 
 	a.startWatcher(root)
-	a.emit(EventScanDone, ScanDone{Status: a.Status(), Added: len(result.Entries)})
+	a.emit(EventScanDone, ScanDone{Status: a.Status(), Added: len(result.Entries), Warning: warning})
 }
 
 // setCursor は走査結果から、続きの読み込み位置と残り件数を覚える。
@@ -429,11 +439,6 @@ func (a *App) Search(opts store.SearchOptions) (store.Result, error) {
 	return a.store.Search(opts)
 }
 
-// Tags は検索バーのオートコンプリート候補を返す。
-func (a *App) Tags(prefix string, limit int) []store.TagSuggestion {
-	return a.store.Tags(prefix, limit)
-}
-
 // Entry は 1 件のエントリを返す。詳細プレビューを開くときに使う。
 func (a *App) Entry(path string) (*model.Entry, error) {
 	e, ok := a.store.Get(path)
@@ -443,18 +448,22 @@ func (a *App) Entry(path string) (*model.Entry, error) {
 	return e, nil
 }
 
-// RelatedPages は、そのノートがリンクしているページと、そのノートへ
-// リンクしているページ、タグが重なるノートを返す。Markdown プレビューの右側に並べる。
+// RelatedPages は、そのノートの関連ページをグループに分けて返す。プレビューの本文の下に並べる。
+//
+// まだ無いページ（LinkedPage や TagPage が返したもの）でも、そのページを指しているノートや、
+// そのページが表すタグを持つノートを返す。
 func (a *App) RelatedPages(path string) store.Related {
-	e, ok := a.store.Get(path)
-	if !ok {
+	if e, ok := a.store.Get(path); ok {
+		return a.store.Related(e)
+	}
+	if a.checkPagePath(path) != nil {
 		return store.EmptyRelated()
 	}
-	return a.store.Related(e)
+	return a.store.Related(a.pageAt(path))
 }
 
-// MarkdownSource は Markdown ファイルの本文（Front Matter を除いた部分）を返す。
-// Front Matter のタグはヘッダーにバッジとして別途表示するため、本文からは切り離す。
+// MarkdownSource は Markdown ファイルの本文を返す。先頭に「---」で囲んだブロック
+// （ほかのツールの Front Matter）があれば、本文からは外す。
 func (a *App) MarkdownSource(path string) (string, error) {
 	e, ok := a.store.Get(path)
 	if !ok {
@@ -482,12 +491,6 @@ func (a *App) LinkPreview(url string) (*linkcard.Preview, error) {
 	return a.links.Fetch(ctx, url)
 }
 
-// AppendTagToQuery は検索バーの文字列にタグを AND 条件として足したものを返す。
-// カードのタグバッジをクリックしたときに使う。
-func (a *App) AppendTagToQuery(query, tag string) string {
-	return search.AppendTag(query, tag)
-}
-
 // emit はフロントエンドへイベントを送る。起動前は何もしない。
 func (a *App) emit(name string, payload any) {
 	if a.ctx == nil {
@@ -496,7 +499,7 @@ func (a *App) emit(name string, payload any) {
 	runtime.EventsEmit(a.ctx, name, payload)
 }
 
-// startWatcher は root 配下の監視を始める。
+// startWatcher は root 直下の監視を始める。
 func (a *App) startWatcher(root string) {
 	w, err := watcher.New(root)
 	if err != nil {
@@ -520,6 +523,10 @@ func (a *App) startWatcher(root string) {
 // consumeChanges はウォッチャーの通知を DB へ反映し、フロントエンドへ転送する。
 func (a *App) consumeChanges(w *watcher.Watcher) {
 	for change := range w.Changes() {
+		if change.Config {
+			a.reloadPins()
+			continue
+		}
 		if change.Removed {
 			prev, had := a.store.Get(change.Path)
 			if !had {
@@ -563,16 +570,11 @@ func (a *App) stopWatcher() {
 	}
 }
 
-// readMarkdownBody は Front Matter を除いた本文を読む。
+// readMarkdownBody は、先頭の「---」で囲んだブロックを除いた本文を読む。
 func readMarkdownBody(path string) (string, error) {
 	raw, err := readFileLimited(path)
 	if err != nil {
 		return "", err
 	}
-	_, body, err := meta.SplitFrontMatter(raw)
-	if err != nil {
-		// Front Matter が壊れている場合は、全文をそのまま本文として見せる。
-		return string(raw), nil
-	}
-	return string(body), nil
+	return string(meta.StripFrontMatter(raw)), nil
 }

@@ -5,174 +5,241 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tidwall/buntdb"
 	"github.com/yuuxyu/taggo/internal/model"
 )
 
-// sameTagLimit は「同じタグのノート」として出す件数の上限。
-// 右の列に収まり、眺めて選べる程度の数に抑える。
-const sameTagLimit = 5
+// groupLimit は 1 つのグループに並べるノートの上限（先頭のタグのページは数えない）。
+// ノートの下に並べて眺められる程度に抑え、超えた分は件数だけを返す。
+const groupLimit = 24
 
 // RelatedPage は関連ページとして並べるカード 1 枚ぶんの情報。
 type RelatedPage struct {
-	// Target は本文に書かれているリンクの行き先。行き先のノートが見つからなかった
-	// ときに、何が書かれていたのかを示すために使う。
+	// Target は本文に書かれている Markdown のリンクの行き先。行き先のノートが
+	// 見つからなかったときに、何が書かれていたのかを示すために使う。
 	Target string `json:"target,omitempty"`
-	// Path は行き先の実体。見つからなければ空になる。
-	Path    string   `json:"path,omitempty"`
-	Title   string   `json:"title"`
-	RelPath string   `json:"relPath,omitempty"`
-	Preview string   `json:"preview,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
+	// Tag は、このカードがタグのページとしてグループの先頭に置かれたときのタグ。
+	Tag string `json:"tag,omitempty"`
+	// Path は行き先の実体。まだ無ければ空になる。
+	Path      string `json:"path,omitempty"`
+	Title     string `json:"title"`
+	RelPath   string `json:"relPath,omitempty"`
+	Preview   string `json:"preview,omitempty"`
+	Thumbnail string `json:"thumbnail,omitempty"`
 	// CloudOnly は行き先の中身がクラウド上にしか無いこと。本文を読むと
 	// ダウンロードが始まるので、画面側でそれと分かるように出すために使う。
 	CloudOnly bool `json:"cloudOnly,omitempty"`
-	// TagPage は行き先がタグページなら、そのタグ。
-	TagPage string `json:"tagPage,omitempty"`
+}
+
+// RelatedGroup は関連ページの 1 グループ。
+//
+// 最初のグループは「開いているノートを指しているノート」（このノートが表すタグを持つノートと、
+// Markdown のリンクでこのノートへリンクしているノート）、タグのグループは「そのタグのページと、
+// そのタグを持つノート」、Markdown のリンクのグループは「このノートがリンクしているノート」になる。
+type RelatedGroup struct {
+	// Tag はグループのタグ。Markdown のリンクのグループでは空になる。
+	Tag string `json:"tag,omitempty"`
+	// Page はグループの先頭に置くタグのページ。ページがまだ無ければ Path が空の
+	// 「まだ無いノート」になる。開いているノート自身がそのタグのページのとき、
+	// 前のグループで表示済みのとき、ファイル名にできないタグのときは nil。
+	Page *RelatedPage `json:"page,omitempty"`
+	// Pages はグループに並べるノート。タグのグループでは、開いているノートと
+	// 同じタグを多く持つノートほど先に来る。
+	Pages []RelatedPage `json:"pages"`
+	// More は上限を超えたため並べなかったノートの数。
+	More int `json:"more"`
 }
 
 // Related は 1 つのノートから見た関連ページ。
 type Related struct {
-	// Outgoing はそのノートがリンクしているページ。本文に出てくる順に並ぶ。
-	Outgoing []RelatedPage `json:"outgoing"`
-	// Incoming はそのノートへリンクしているページ。タイトル順に並ぶ。
-	Incoming []RelatedPage `json:"incoming"`
-	// SameTag はタグが重なっているノート。リンクで既に出ているものは除き、
-	// 重なるタグの多い順、同じなら更新日時の新しい順に、上限件数まで並ぶ。
-	SameTag []RelatedPage `json:"sameTag"`
-	// Duplicates は、同じタグをタグページとして宣言しているほかのノート。
-	// 1 つのタグにタグページは 1 つのはずなので、あれば画面で警告する。
-	Duplicates []RelatedPage `json:"duplicates"`
+	// Groups は関連ページのグループ。開いているノートを指しているノートのグループ（リンク元）、
+	// 付いているタグごとのグループ（タグの順）、Markdown のリンク先のグループの順に並ぶ。
+	// 前のグループで表示したノートは、後のグループには出さない。空のグループは含めない。
+	Groups []RelatedGroup `json:"groups"`
+	// MissingLinks は本文の Markdown のリンクのうち、行き先がまだ無いもの（書かれたまま）。
+	// 本文ではこれらのリンクの色を変える。
+	MissingLinks []string `json:"missingLinks"`
+	// MissingTags はノートのタグのうち、ページがまだ無いもの。
+	// 本文ではこれらの [[タグ]] の色を変える。
+	MissingTags []string `json:"missingTags"`
 }
 
 // EmptyRelated は関連ページが 1 件も無い状態。
 // フロントエンドでは配列として扱うので、nil ではなく空スライスで返す。
 func EmptyRelated() Related {
 	return Related{
-		Outgoing:   []RelatedPage{},
-		Incoming:   []RelatedPage{},
-		SameTag:    []RelatedPage{},
-		Duplicates: []RelatedPage{},
+		Groups:       []RelatedGroup{},
+		MissingLinks: []string{},
+		MissingTags:  []string{},
 	}
 }
 
-// Related は、そのノートが参照しているページ、そのノートを参照している
-// ページ、タグが重なるノートをまとめて返す。
+// tagGroupSource は、タグのグループを組み立てるために索引から写し取った情報。
+type tagGroupSource struct {
+	tag     string
+	page    string   // タグのページのパス。まだ無ければ空
+	named   bool     // ページのファイル名にできるタグか
+	members []string // そのタグを持つノートのパス
+}
+
+// Related は、そのノートの関連ページをグループに分けて返す。
 //
-// リンクは Markdown の記法で書かれたパスなので、行き先はリンク元のノートの
-// 位置を基準に 1 つへ定まる。名前が同じというだけで、無関係なフォルダの
-// ノートを関連に出すことはない。
+// タグは Front Matter の tags: と本文の [[タグ]] を区別しない。
+// Markdown のリンクは書かれたパスなので、行き先はリンク元のノートの位置を基準に 1 つへ定まる。
 func (s *Store) Related(entry *model.Entry) Related {
 	related := EmptyRelated()
 	if entry == nil {
 		return related
 	}
 
+	// 索引から要るものを写し取ってから、ロックを放してエントリを読む。
 	s.mu.RLock()
-	// リンク 1 件ごとの行き先。本文に出てくる順を保つため、まとめずに持つ。
+	ownKey := tagPageKey(entry)
+	// このノートを指しているノート。このノートが表すタグを持つものと、Markdown のリンクで
+	// このノートへリンクしているものは、どちらもリンク元として同じグループに入れる。
+	own := tagGroupSource{
+		tag:     s.tagSpelling[ownKey],
+		members: sortedPaths(unionPaths(s.tagged[ownKey], s.backlinks[noteKey(entry.Path)])),
+	}
+	if own.tag == "" {
+		own.tag = model.PageTag(entry.Path)
+	}
+	sources := make([]tagGroupSource, 0, len(entry.Tags))
+	for _, tag := range entry.Tags {
+		_, named := model.TagFileName(tag)
+		sources = append(sources, tagGroupSource{
+			tag:     tag,
+			page:    pickOne(s.tagPages[model.TagKey(tag)]),
+			named:   named,
+			members: sortedPaths(s.tagged[strings.ToLower(tag)]),
+		})
+	}
 	destinations := make([]string, len(entry.Links))
 	for i, link := range entry.Links {
 		destinations[i] = pickOne(s.notePaths[linkTarget(link, entry.Path, s.root)])
 	}
-	sources := pathsExcept(s.backlinks[noteKey(entry.Path)], entry.Path)
 	s.mu.RUnlock()
 
-	seen := map[string]struct{}{}
-	for i, link := range entry.Links {
-		path := destinations[i]
-		if path == entry.Path {
-			continue // 自分自身への参照は関連に出さない
+	shown := map[string]struct{}{entry.Path: {}}
+	mine := map[string]struct{}{}
+	for _, tag := range entry.Tags {
+		mine[strings.ToLower(tag)] = struct{}{}
+	}
+
+	// このノートを指しているノート（リンク元）を最初のグループにする。見出しはこのノートが
+	// 表すタグで、先頭に置くタグのページは開いているノート自身なので、先頭のカードは置かない。
+	if pages, more := s.rankByTags(own.members, mine, shown); len(pages) > 0 {
+		related.Groups = append(related.Groups, RelatedGroup{Tag: own.tag, Pages: pages, More: more})
+	}
+
+	for _, src := range sources {
+		group := RelatedGroup{Tag: src.tag}
+		switch _, done := shown[src.page]; {
+		case src.page == "" && src.named:
+			group.Page = &RelatedPage{Tag: src.tag, Title: src.tag}
+			related.MissingTags = append(related.MissingTags, src.tag)
+		case src.page != "" && !done:
+			if e, ok := s.Get(src.page); ok {
+				page := relatedPage(e)
+				page.Tag = src.tag
+				group.Page = &page
+				shown[src.page] = struct{}{}
+			}
 		}
-		if path == "" {
-			// まだ存在しないノートへのリンク。書きかけのメモでは珍しくないので、
-			// 行き先が無いことが分かる形で残す。
-			related.Outgoing = append(related.Outgoing, RelatedPage{Target: link, Title: linkLabel(link)})
-			continue
-		}
-		if _, dup := seen[path]; dup {
-			continue
-		}
-		seen[path] = struct{}{}
-		if e, ok := s.Get(path); ok {
-			related.Outgoing = append(related.Outgoing, relatedPage(link, e))
+		group.Pages, group.More = s.rankByTags(src.members, mine, shown)
+		if group.Page != nil || len(group.Pages) > 0 {
+			related.Groups = append(related.Groups, group)
 		}
 	}
 
-	for _, path := range sources {
-		seen[path] = struct{}{}
-		if e, ok := s.Get(path); ok {
-			related.Incoming = append(related.Incoming, relatedPage("", e))
-		}
+	if group := s.linkGroup(entry, destinations, shown, &related); len(group.Pages) > 0 {
+		related.Groups = append(related.Groups, group)
 	}
-	sort.Slice(related.Incoming, func(i, j int) bool {
-		if related.Incoming[i].Title != related.Incoming[j].Title {
-			return related.Incoming[i].Title < related.Incoming[j].Title
-		}
-		return related.Incoming[i].Path < related.Incoming[j].Path
-	})
-
-	seen[entry.Path] = struct{}{}
-	s.fillTagPage(entry, &related)
-	related.SameTag = s.sameTagNotes(entry.Tags, seen)
 	return related
 }
 
-// sameTagNotes は tags と 1 つ以上タグが重なるノートを返す。
-// exclude に含まれるパス（自分自身やリンクで既に出ているノート）は除く。
-//
-// タグの逆引き索引は持っていないので、全件をなめる。検索と同じく
-// 上限 2 万件の範囲なら、プレビューを開くたびに走らせても十分に速い。
-func (s *Store) sameTagNotes(tags []string, exclude map[string]struct{}) []RelatedPage {
-	pages := []RelatedPage{}
-	if len(tags) == 0 {
-		return pages
-	}
-	want := make(map[string]struct{}, len(tags))
-	for _, tag := range tags {
-		want[strings.ToLower(tag)] = struct{}{}
-	}
-
+// rankByTags は paths のノートを、tags と重なるタグの多い順（同じなら更新日時の新しい順）に
+// 並べ、shown に無いものを上限まで返す。返したノートは shown に加える。
+// 上限を超えて返さなかった数も返す。
+func (s *Store) rankByTags(paths []string, tags, shown map[string]struct{}) ([]RelatedPage, int) {
 	type candidate struct {
 		entry  *model.Entry
 		shared int
 	}
-	var found []candidate
-	// 更新日時の新しい順になめるので、重なる数が同じなら新しいノートが先に来る。
-	_ = s.db.View(func(tx *buntdb.Tx) error {
-		return tx.Descend(idxModTime, func(_, raw string) bool {
-			e := decodeEntry(raw)
-			if e == nil {
-				return true
+	found := make([]candidate, 0, len(paths))
+	for _, path := range paths {
+		if _, done := shown[path]; done {
+			continue
+		}
+		e, ok := s.Get(path)
+		if !ok {
+			continue
+		}
+		shared := 0
+		for _, tag := range e.Tags {
+			if _, ok := tags[strings.ToLower(tag)]; ok {
+				shared++
 			}
-			if _, skip := exclude[e.Path]; skip {
-				return true
-			}
-			shared := 0
-			for _, tag := range e.Tags {
-				if _, ok := want[strings.ToLower(tag)]; ok {
-					shared++
-				}
-			}
-			if shared > 0 {
-				found = append(found, candidate{entry: e, shared: shared})
-			}
-			return true
-		})
+		}
+		found = append(found, candidate{entry: e, shared: shared})
+	}
+	sort.SliceStable(found, func(i, j int) bool {
+		a, b := found[i], found[j]
+		if a.shared != b.shared {
+			return a.shared > b.shared
+		}
+		if !a.entry.ModTime.Equal(b.entry.ModTime) {
+			return a.entry.ModTime.After(b.entry.ModTime)
+		}
+		return a.entry.Path < b.entry.Path
 	})
 
-	sort.SliceStable(found, func(i, j int) bool { return found[i].shared > found[j].shared })
-	if len(found) > sameTagLimit {
-		found = found[:sameTagLimit]
+	more := max(len(found)-groupLimit, 0)
+	found = found[:len(found)-more]
+	pages := make([]RelatedPage, len(found))
+	for i, c := range found {
+		pages[i] = relatedPage(c.entry)
+		shown[c.entry.Path] = struct{}{}
 	}
-	for _, c := range found {
-		pages = append(pages, relatedPage("", c.entry))
-	}
-	return pages
+	return pages, more
 }
 
-// noteKeysOf は、そのエントリがリンク先として名指されうるキーを返す。
-func noteKeysOf(e *model.Entry) []string {
-	return []string{noteKey(e.Path)}
+// linkGroup は、このノートが Markdown のリンクでリンクしているノートのグループを組み立てる。
+// 本文でリンクしている順に行き先を並べる。リンク元は最初のグループに入れるので、ここには入れない。
+// 行き先がまだ無いリンクは「まだ無いノート」として残し、related.MissingLinks にも入れる。
+func (s *Store) linkGroup(entry *model.Entry, destinations []string, shown map[string]struct{}, related *Related) RelatedGroup {
+	group := RelatedGroup{Pages: []RelatedPage{}}
+	add := func(page RelatedPage) {
+		if len(group.Pages) >= groupLimit {
+			group.More++
+			return
+		}
+		group.Pages = append(group.Pages, page)
+	}
+
+	missing := map[string]struct{}{}
+	for i, link := range entry.Links {
+		path := destinations[i]
+		if path == "" {
+			key := strings.ToLower(link)
+			if _, dup := missing[key]; dup {
+				continue
+			}
+			missing[key] = struct{}{}
+			related.MissingLinks = append(related.MissingLinks, link)
+			add(RelatedPage{Target: link, Title: linkLabel(link)})
+			continue
+		}
+		if _, done := shown[path]; done {
+			continue
+		}
+		if e, ok := s.Get(path); ok {
+			page := relatedPage(e)
+			page.Target = link
+			add(page)
+			shown[path] = struct{}{}
+		}
+	}
+	return group
 }
 
 // linkTarget はリンク 1 件の行き先を索引のキーへ直す。
@@ -223,14 +290,23 @@ func linkLabel(link string) string {
 	return trimMarkdownExt(name)
 }
 
-// pathsExcept は集合をパス順のスライスへ直す。自分自身への参照は落とす。
+// unionPaths は 2 つのパスの集合を合わせた新しい集合を返す。
+func unionPaths(a, b map[string]struct{}) map[string]struct{} {
+	out := make(map[string]struct{}, len(a)+len(b))
+	for path := range a {
+		out[path] = struct{}{}
+	}
+	for path := range b {
+		out[path] = struct{}{}
+	}
+	return out
+}
+
+// sortedPaths は集合をパス順のスライスへ直す。
 // 呼び出し元が s.mu を握っていること。
-func pathsExcept(set map[string]struct{}, self string) []string {
+func sortedPaths(set map[string]struct{}) []string {
 	out := make([]string, 0, len(set))
 	for path := range set {
-		if path == self {
-			continue
-		}
 		out = append(out, path)
 	}
 	sort.Strings(out)
@@ -250,15 +326,13 @@ func pickOne(candidates map[string]struct{}) string {
 	return best
 }
 
-func relatedPage(target string, e *model.Entry) RelatedPage {
+func relatedPage(e *model.Entry) RelatedPage {
 	return RelatedPage{
-		Target:    target,
 		Path:      e.Path,
 		Title:     e.Title,
 		RelPath:   e.RelPath,
 		Preview:   e.Preview,
-		Tags:      e.Tags,
+		Thumbnail: e.Thumbnail,
 		CloudOnly: e.CloudOnly,
-		TagPage:   e.TagPage,
 	}
 }

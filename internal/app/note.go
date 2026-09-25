@@ -9,52 +9,102 @@ import (
 	"strings"
 
 	"github.com/yuuxyu/taggo/internal/cloudfile"
+	"github.com/yuuxyu/taggo/internal/model"
 )
 
-// prepareNote は、ノートに書かれたリンクの行き先を、エディタで開ける状態にする。
-// 行き先がまだ無ければ、見出しだけの Markdown ファイルとして作る。
-// 作ったときは created が true になる。
+// LinkedPage は、fromPath のノートに書かれた Markdown のリンク link の行き先のページを返す。
+// link は本文に書かれたパスを、フラグメントを除いてデコードしたもの。
 //
-// taggo は既存のファイルの本文を書き換えないが、まだ無いノートを新しく作るのは
-// その範囲の外にある。既にあるファイルは上書きせず、そのまま返す。
-//
-// フロントエンドから任意の場所へファイルを作らせないよう、リンク元は読み込み済みの
-// ノートに限り、行き先は開いているフォルダの中の .md / .markdown に限る。
-func (a *App) prepareNote(fromPath, link string) (path string, created bool, err error) {
+// 行き先を読み込んでいればそのエントリを、まだ無ければファイルを作らずに
+// 「まだ無いページ」（Missing）を返す。行き先は開いているフォルダの直下の
+// .md / .markdown に限る。
+func (a *App) LinkedPage(fromPath, link string) (*model.Entry, error) {
 	from, ok := a.store.Get(fromPath)
 	if !ok {
-		return "", false, fmt.Errorf("リンク元のノートが見つかりません: %s", fromPath)
+		return nil, fmt.Errorf("リンク元のノートが見つかりません: %s", fromPath)
 	}
+	path := a.store.LinkPath(link, from.Path)
+	if err := a.checkPagePath(path); err != nil {
+		return nil, fmt.Errorf("%w: %s", err, link)
+	}
+	return a.pageAt(path), nil
+}
+
+// TagPage は、タグ tag を表すページ（ファイル名がそのタグのノート）を返す。
+// 読み込んでいればそのエントリを、まだ無ければファイルを作らずに
+// 「まだ無いページ」（Missing）を返す。ファイル名にできないタグはページにできない。
+func (a *App) TagPage(tag string) (*model.Entry, error) {
 	root := a.store.Root()
 	if root == "" {
-		return "", false, errors.New("フォルダが開かれていません")
+		return nil, errors.New("フォルダが開かれていません")
 	}
+	if path := a.store.TagPagePath(tag); path != "" {
+		if e, ok := a.store.Get(path); ok {
+			return e, nil
+		}
+	}
+	name, ok := model.TagFileName(tag)
+	if !ok {
+		return nil, fmt.Errorf("「%s」はファイル名に使えない文字を含むため、ページにできません", tag)
+	}
+	return a.pageAt(filepath.Join(root, name)), nil
+}
 
-	path = a.store.LinkPath(link, from.Path)
-	ext := strings.ToLower(filepath.Ext(path))
-	if ext != ".md" && ext != ".markdown" {
-		return "", false, fmt.Errorf("Markdown ファイルではないため作りません: %s", link)
+// pageAt は path のページを返す。読み込んでいればそのエントリを、無ければ「まだ無いページ」を返す。
+// パスの大文字小文字と、.md と .markdown の違いは区別しない。
+func (a *App) pageAt(path string) *model.Entry {
+	if found := a.store.FindNote(path); found != "" {
+		if e, ok := a.store.Get(found); ok {
+			return e
+		}
+	}
+	return model.NewMissing(path)
+}
+
+// checkPagePath は、path をページのパスとして扱ってよいかを確かめる。
+//
+// フロントエンドから任意の場所のファイルを作らせないよう、開いているフォルダの
+// 直下の .md / .markdown に限る。taggo が読むのはフォルダ直下のノートだけなので、
+// サブフォルダに作っても一覧には出ない。
+func (a *App) checkPagePath(path string) error {
+	root := a.store.Root()
+	if root == "" {
+		return errors.New("フォルダが開かれていません")
+	}
+	if !model.IsMarkdown(path) {
+		return errors.New("Markdown ファイルではありません")
 	}
 	if !within(root, path) {
-		return "", false, fmt.Errorf("開いているフォルダの外にはノートを作りません: %s", link)
+		return errors.New("開いているフォルダの外のノートは扱いません")
 	}
+	if !strings.EqualFold(filepath.Dir(filepath.Clean(path)), filepath.Clean(root)) {
+		return errors.New("サブフォルダのノートは扱いません。taggo が読むのはフォルダ直下のノートだけです")
+	}
+	return nil
+}
 
+// preparePage は、まだ無いページ path の Markdown ファイルを、エディタで開ける状態にする。
+// 無ければ見出しだけのファイルとして作り、created を true にする。
+//
+// taggo は既存のファイルを書き換えないが、まだ無いノートを新しく作るのはその範囲の外にある。
+// 既にあるファイルは上書きせず、そのまま返す。
+func (a *App) preparePage(path string) (string, bool, error) {
+	if err := a.checkPagePath(path); err != nil {
+		return "", false, err
+	}
 	// 読み込みの上限で一覧に載っていないだけで、ファイル自体はあることもある。
 	info, err := cloudfile.StatLocal(path)
 	switch {
 	case errors.Is(err, cloudfile.ErrCloudOnly):
 		return "", false, fmt.Errorf("クラウド上にだけあるファイルのため開きません: %s", filepath.Base(path))
 	case err == nil && info.IsDir():
-		return "", false, fmt.Errorf("同じ名前のフォルダがあるため作れません: %s", link)
+		return "", false, fmt.Errorf("同じ名前のフォルダがあるため作れません: %s", filepath.Base(path))
 	case err == nil:
 		return path, false, nil
 	case !errors.Is(err, fs.ErrNotExist):
 		return "", false, err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", false, fmt.Errorf("フォルダを作れませんでした: %w", err)
-	}
 	// O_EXCL で、確かめてから作るまでの間に現れたファイルを上書きしない。
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if errors.Is(err, fs.ErrExist) {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/tidwall/buntdb"
@@ -11,13 +12,17 @@ import (
 // Result は 1 回の検索の結果。
 type Result struct {
 	// Entries は絞り込み後、指定された並び順に整列したエントリ。
+	// 先頭の Head 件は並び順とは別枠で、その後ろに残りが並ぶ。
 	Entries []*model.Entry `json:"entries"`
 	// Total は絞り込み後の総件数。ページングしても全体件数が分かるようにする。
-	// 見出しとして別枠に出したタグページ（TagPages）は含まない。
 	Total int `json:"total"`
-	// TagPages は、検索しているタグのタグページ。グリッドの上に見出しとして出す。
-	// 検索語のタグの順に並び、タグページの無いタグは含まない。
-	TagPages []TagPageGroup `json:"tagPages"`
+	// Head は Entries の先頭のうち、並び順とは別枠で先に並べた件数。
+	// 検索語が無いときはピン留めしたノート、あるときは検索語と同じ名前のタグのページ。
+	// 画面ではこの件数ぶんを 1 つのかたまりとして、残りと行を分けて並べる。
+	Head int `json:"head"`
+	// Pins はピン留めしているノートのうち、読み込み済みのもののパス。ピン留めした順に並ぶ。
+	// 検索で絞り込んでいても、カードにピン留めの印を出すために全件を返す。
+	Pins []string `json:"pins"`
 }
 
 // SearchOptions は検索の付帯条件。
@@ -31,12 +36,16 @@ type SearchOptions struct {
 }
 
 // Search は検索バーの入力でエントリを絞り込み、指定順に並べて返す。
+//
+// 検索語が無いときは、ピン留めしたノートをピン留めした順に先頭へ出す。
+// 検索語があるときは、入力全体と同じ名前のタグのページを先頭へ出し、
+// 残りは全文検索の結果を並び順どおりに並べる。
 func (s *Store) Search(opts SearchOptions) (Result, error) {
 	q := search.Parse(opts.Query)
+	order := s.pinOrder()
 
 	// 並び順に対応するインデックスを選ぶ。関連度順だけは絞り込み後に自前で並べる。
-	// 名前順はタイトル（見出しやタグの曲名）ではなくフォルダ込みの相対パスで
-	// 並べる。これにより同じフォルダのファイルが自然にまとまる。
+	// 名前順はタイトル（見出し）ではなくファイル名で並べる。
 	index := idxModTime
 	descending := true
 	switch opts.Sort {
@@ -46,26 +55,23 @@ func (s *Store) Search(opts SearchOptions) (Result, error) {
 		index, descending = idxModTime, true
 	}
 
-	// タグで検索しているときは、そのタグのタグページを見出しとして別枠で返し、
-	// グリッドからは外す。同じページが見出しと一覧の両方に出ないようにするため。
-	headings := s.tagPageGroups(q.Tags())
-	headed := make(map[string]struct{})
-	for _, g := range headings {
-		for _, e := range g.Pages {
-			headed[e.Path] = struct{}{}
-		}
-	}
-
 	matched := make([]*model.Entry, 0, 64)
+	var pinned, tagPages []*model.Entry
 	visit := func(_, raw string) bool {
 		e := decodeEntry(raw)
 		if e == nil {
 			return true
 		}
-		if _, skip := headed[e.Path]; skip {
-			return true
+		_, isPinned := order[strings.ToLower(e.Path)]
+		if isPinned {
+			pinned = append(pinned, e)
 		}
-		if matches(e, q) {
+		switch {
+		case q.IsEmpty() && isPinned:
+			// 先頭の別枠へ回す
+		case !q.IsEmpty() && q.TagKey != "" && tagPageKey(e) == q.TagKey:
+			tagPages = append(tagPages, e)
+		case matches(e, q):
 			matched = append(matched, e)
 		}
 		return true
@@ -84,10 +90,30 @@ func (s *Store) Search(opts SearchOptions) (Result, error) {
 	if opts.Sort == SortRelevance {
 		sortByRelevance(matched, q)
 	}
+	sort.SliceStable(pinned, func(i, j int) bool {
+		return order[strings.ToLower(pinned[i].Path)] < order[strings.ToLower(pinned[j].Path)]
+	})
+	pins := make([]string, len(pinned))
+	for i, e := range pinned {
+		pins[i] = e.Path
+	}
 
-	total := len(matched)
-	matched = applyWindow(matched, opts.Offset, opts.Limit)
-	return Result{Entries: matched, Total: total, TagPages: headings}, nil
+	head := tagPages
+	if q.IsEmpty() {
+		head = pinned
+	} else {
+		sort.Slice(head, func(i, j int) bool { return head[i].Path < head[j].Path })
+	}
+	all := append(head[:len(head):len(head)], matched...)
+
+	total := len(all)
+	window := applyWindow(all, opts.Offset, opts.Limit)
+	return Result{
+		Entries: window,
+		Total:   total,
+		Head:    min(max(len(head)-max(opts.Offset, 0), 0), len(window)),
+		Pins:    pins,
+	}, nil
 }
 
 // applyWindow は offset / limit を適用する。範囲外の指定は空結果として扱う。
@@ -105,74 +131,32 @@ func applyWindow(entries []*model.Entry, offset, limit int) []*model.Entry {
 	return entries
 }
 
-// matches は 1 エントリが問い合わせ全体（AND 結合）を満たすかを判定する。
+// matches は、検索語をすべて含むエントリかを判定する。
+// 語はタイトル・ファイル名・本文の抜粋・タグから、大文字小文字を区別せずに探す。
 func matches(e *model.Entry, q search.Query) bool {
-	for _, group := range q.Terms {
-		hit := false
-		for _, term := range group.Alternatives {
-			if matchTerm(e, term) {
-				hit = true
-				break
-			}
+	if q.IsEmpty() {
+		return true
+	}
+	title := strings.ToLower(e.Title)
+	name := strings.ToLower(e.Name)
+	preview := strings.ToLower(e.Preview)
+	for _, word := range q.Words {
+		if strings.Contains(title, word) ||
+			strings.Contains(name, word) ||
+			strings.Contains(preview, word) ||
+			containsFold(e.Tags, word) {
+			continue
 		}
-		if hit == group.Negated {
-			// 肯定条件なのに一致しない、または否定条件なのに一致した。
-			return false
-		}
+		return false
 	}
 	return true
-}
-
-// matchTerm は 1 つの検索語がエントリに一致するかを判定する。
-func matchTerm(e *model.Entry, t search.Term) bool {
-	if t.Tag != "" {
-		return hasTag(e, t.Tag)
-	}
-	if t.Text == "" {
-		return true
-	}
-	needle := strings.ToLower(t.Text)
-	if strings.Contains(strings.ToLower(e.Title), needle) ||
-		strings.Contains(strings.ToLower(e.Name), needle) ||
-		strings.Contains(strings.ToLower(e.RelPath), needle) ||
-		strings.Contains(strings.ToLower(e.Preview), needle) {
-		return true
-	}
-	// タグは本文検索でも拾えたほうが直感に合う。
-	for _, tag := range e.Tags {
-		if strings.Contains(strings.ToLower(tag), needle) {
-			return true
-		}
-	}
-	return false
-}
-
-// hasTag はタグの完全一致（大文字小文字は無視）を判定する。
-// 部分一致にすると "#go" が "#golang" を巻き込んでしまい、絞り込みとして使えなくなる。
-func hasTag(e *model.Entry, tag string) bool {
-	for _, t := range e.Tags {
-		if strings.EqualFold(t, tag) {
-			return true
-		}
-	}
-	return false
 }
 
 // sortByRelevance は関連度順に並べ替える。
 // タイトル先頭一致を最上位、次にタイトル一致、タグ一致、本文一致の順とし、
 // 同点なら更新日時の新しい順にする。
 func sortByRelevance(entries []*model.Entry, q search.Query) {
-	texts := make([]string, 0, len(q.Terms))
-	for _, g := range q.Terms {
-		if g.Negated {
-			continue
-		}
-		for _, t := range g.Alternatives {
-			if t.Text != "" {
-				texts = append(texts, strings.ToLower(t.Text))
-			}
-		}
-	}
+	texts := q.Words
 	if len(texts) == 0 {
 		return // 本文検索語が無いなら、既に整っている更新日時順のままでよい
 	}

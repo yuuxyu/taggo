@@ -1,12 +1,12 @@
-// Package watcher はフォルダ配下の変更を監視し、インメモリ DB へ反映する。
+// Package watcher はフォルダ直下の変更を監視し、インメモリ DB へ反映する。
 //
 // 要件どおり、ファイル側の変更が常に正になるよう、外部エディタや別アプリによる
-// 書き換えも検知して該当レコードを同期・削除する。
+// 書き換えも検知して該当レコードを同期・削除する。走査と同じく、サブフォルダの中は見ない。
+// フォルダの設定ファイル（.taggo.json）の書き換えも知らせる。
 package watcher
 
 import (
 	"context"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/yuuxyu/taggo/internal/cloudfile"
+	"github.com/yuuxyu/taggo/internal/folderconf"
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 )
@@ -32,6 +33,9 @@ type Change struct {
 	Entry *model.Entry
 	// Removed は、そのパスがもう存在しない（または対象外になった）ことを表す。
 	Removed bool
+	// Config は、フォルダの設定ファイル（.taggo.json）が変わったことを表す。
+	// このとき Entry と Removed は使わない。
+	Config bool
 }
 
 // Watcher はフォルダ配下の変更を監視する。
@@ -48,7 +52,7 @@ type Watcher struct {
 	ignoreTemp func(name string) bool
 }
 
-// New は root 配下の監視を開始する。返された Watcher は Close で止める。
+// New は root 直下の監視を開始する。返された Watcher は Close で止める。
 func New(root string) (*Watcher, error) {
 	fsw, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -62,7 +66,7 @@ func New(root string) (*Watcher, error) {
 		pending:    map[string]*time.Timer{},
 		ignoreTemp: isTaggoTempFile,
 	}
-	if err := w.addTree(root); err != nil {
+	if err := fsw.Add(root); err != nil {
 		fsw.Close()
 		return nil, err
 	}
@@ -108,20 +112,14 @@ func (w *Watcher) Close() error {
 // handle は 1 件の fsnotify イベントを処理する。
 func (w *Watcher) handle(event fsnotify.Event) {
 	name := event.Name
-
-	// 新しくできたディレクトリは監視対象に加える。
-	// fsnotify は再帰監視を行わないため、自分で足す必要がある。
-	if event.Has(fsnotify.Create) {
-		if info, err := os.Stat(name); err == nil && info.IsDir() {
-			_ = w.addTree(name)
-			return
-		}
+	// 監視しているのはフォルダ直下だけだが、念のため直下以外のパスは捨てる。
+	if !strings.EqualFold(filepath.Dir(filepath.Clean(name)), filepath.Clean(w.root)) {
+		return
 	}
-
 	if w.ignoreTemp(filepath.Base(name)) {
 		return
 	}
-	if !model.IsMarkdown(name) {
+	if !model.IsMarkdown(name) && !folderconf.IsConfigFile(w.root, name) {
 		return
 	}
 	w.schedule(name)
@@ -149,9 +147,12 @@ func (w *Watcher) emit(path string) {
 	change := Change{Path: path}
 
 	info, err := os.Stat(path)
-	if err != nil {
+	switch {
+	case folderconf.IsConfigFile(w.root, path):
+		change.Config = true
+	case err != nil || info.IsDir():
 		change.Removed = true
-	} else if cloudfile.IsPlaceholder(info) {
+	case cloudfile.IsPlaceholder(info):
 		// 中身はまだクラウド上にしか無い。ここで読むとダウンロードが始まるので、
 		// 一覧に出すのに要る情報だけでエントリを作り直す。
 		entry := model.NewCloudOnly(path, info.Name(), info.Size(), info.ModTime())
@@ -159,7 +160,7 @@ func (w *Watcher) emit(path string) {
 			entry.RelPath = rel
 		}
 		change.Entry = entry
-	} else {
+	default:
 		entry, err := meta.Read(path, info)
 		if err != nil {
 			change.Removed = true
@@ -178,36 +179,8 @@ func (w *Watcher) emit(path string) {
 	}
 }
 
-// addTree は path 配下のディレクトリをまとめて監視対象に加える。
-func (w *Watcher) addTree(path string) error {
-	return filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // 読めないディレクトリは飛ばす
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if p != path && skipDir(d.Name()) {
-			return filepath.SkipDir
-		}
-		return w.fsw.Add(p)
-	})
-}
-
-// skipDir は走査側と同じ基準で、監視対象から外すディレクトリを判定する。
-func skipDir(name string) bool {
-	if strings.HasPrefix(name, ".") {
-		return true
-	}
-	switch name {
-	case "node_modules", "vendor", "target", "dist", "build":
-		return true
-	}
-	return false
-}
-
 // isTaggoTempFile は、taggo 自身の書き込み用一時ファイルかを判定する。
-// meta パッケージの replaceFile は ".<元の名前>.taggo-XXXX" という名前を使う。
+// folderconf パッケージの replaceFile は ".<元の名前>.taggo-XXXX" という名前を使う。
 func isTaggoTempFile(name string) bool {
 	return strings.HasPrefix(name, ".") && strings.Contains(name, ".taggo-")
 }

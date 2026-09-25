@@ -40,7 +40,7 @@ func TestWatcherDetectsCreateAndUpdate(t *testing.T) {
 	w := startWatcher(t, root)
 
 	path := filepath.Join(root, "note.md")
-	if err := os.WriteFile(path, []byte("---\ntags: [作成]\n---\n\n# 新規\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("# 新規\n\n[[作成]]\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗: %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestWatcherDetectsCreateAndUpdate(t *testing.T) {
 		t.Fatalf("作成時のタグが読めていない: %v", c.Entry.Tags)
 	}
 
-	if err := os.WriteFile(path, []byte("---\ntags: [更新]\n---\n\n# 更新後\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("# 更新後\n\n[[更新]]\n"), 0o644); err != nil {
 		t.Fatalf("ファイル更新に失敗: %v", err)
 	}
 	c = waitChange(t, w)
@@ -79,28 +79,42 @@ func TestWatcherDetectsRemove(t *testing.T) {
 	}
 }
 
-func TestWatcherWatchesNewSubdirectories(t *testing.T) {
+// サブフォルダの中の変更は、走査と同じく対象にしないこと。
+func TestWatcherIgnoresSubdirectories(t *testing.T) {
 	root := t.TempDir()
-	w := startWatcher(t, root)
-
 	sub := filepath.Join(root, "sub")
 	if err := os.Mkdir(sub, 0o755); err != nil {
 		t.Fatalf("ディレクトリ作成に失敗: %v", err)
 	}
-	// ディレクトリが監視対象へ追加されるまで少し待つ。
-	time.Sleep(200 * time.Millisecond)
+	w := startWatcher(t, root)
 
-	path := filepath.Join(sub, "deep.md")
-	if err := os.WriteFile(path, []byte("---\ntags: [深い]\n---\n\n# 深い\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sub, "deep.md"), []byte("# 深い\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗: %v", err)
 	}
-
-	c := waitChange(t, w)
-	if c.Entry == nil || c.Path != path {
-		t.Fatalf("新規サブフォルダ内の変更が検知されていない: %+v", c)
+	if err := os.Mkdir(filepath.Join(root, "new"), 0o755); err != nil {
+		t.Fatalf("ディレクトリ作成に失敗: %v", err)
 	}
-	if rel := c.Entry.RelPath; rel != filepath.Join("sub", "deep.md") {
-		t.Fatalf("RelPath が走査ルート基準になっていない: %q", rel)
+
+	select {
+	case c := <-w.Changes():
+		t.Fatalf("サブフォルダの変更が通知された: %+v", c)
+	case <-time.After(700 * time.Millisecond):
+		// 想定どおり無通知。
+	}
+}
+
+// フォルダの設定ファイル（.taggo.json）の書き換えは、設定の変更として通知されること。
+func TestWatcherReportsConfigChanges(t *testing.T) {
+	root := t.TempDir()
+	w := startWatcher(t, root)
+
+	path := filepath.Join(root, ".taggo.json")
+	if err := os.WriteFile(path, []byte(`{"pinned":["a.md"]}`), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗: %v", err)
+	}
+	c := waitChange(t, w)
+	if !c.Config || c.Entry != nil || c.Removed {
+		t.Fatalf("設定の変更として通知されていない: %+v", c)
 	}
 }
 

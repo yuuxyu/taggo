@@ -5,6 +5,9 @@
 
 import type { Entry } from "./api/taggo";
 
+/** パスの解決に使う、ノートの置き場所。 */
+export type NoteLocation = Pick<Entry, "path" | "relPath">;
+
 /** パスを区切り文字で分解する。先頭の空要素（POSIX の "/"）は残す。 */
 function splitPath(path: string): string[] {
   return path.split(/[\\/]/);
@@ -20,7 +23,7 @@ function dirOf(path: string): string {
  * 開いているフォルダ（走査ルート）を求める。
  * 絶対パスの末尾から、表示用の相対パスを取り除いたものがルートになる。
  */
-function rootOf(entry: Entry): string {
+function rootOf(entry: NoteLocation): string {
   if (entry.relPath !== "" && entry.path.endsWith(entry.relPath)) {
     return entry.path.slice(0, entry.path.length - entry.relPath.length).replace(/[\\/]+$/, "");
   }
@@ -38,7 +41,7 @@ function rootOf(entry: Entry): string {
  * http(s): や data: などスキーム付きの URL は外部を指しているので null を返す。
  * Windows のドライブ文字（C:\… や C:/…）はスキームに見えるがパスなので通す。
  */
-export function resolveLocalPath(target: string, entry: Entry): string | null {
+export function resolveLocalPath(target: string, entry: NoteLocation): string | null {
   const driveLetter = /^[a-z]:[\\/]/i.test(target);
   if (!driveLetter && /^[a-z][a-z0-9+.-]*:/i.test(target)) return null;
 

@@ -42,21 +42,26 @@ const (
 type Store struct {
 	db *buntdb.DB
 
-	// mu は tagCounts・リンクの索引・tagPages を守る。BuntDB 自体は内部で同期しているが、
+	// mu は tagCounts・リンクとタグの索引・ピン留めを守る。BuntDB 自体は内部で同期しているが、
 	// これらの派生データとの整合を取るために別途必要になる。
 	mu sync.RWMutex
 	// tagCounts はタグごとの使用件数。オートコンプリートの候補順に使う。
 	tagCounts map[string]int
 	// tagSpelling は正規化キー（小文字）から、実際に使われている表記への対応。
 	tagSpelling map[string]string
+	// tagged はタグの逆引き。小文字のタグから、そのタグが付いているノートのパスを引く。
+	// Front Matter の tags: と本文の [[タグ]] を区別せずに載せる。
+	tagged map[string]map[string]struct{}
 	// backlinks はノート間リンクの逆引き。キーはリンクの行き先を解決したパス。
 	backlinks map[string]map[string]struct{}
 	// notePaths はリンクの順引き。Markdown の拡張子を除いた小文字のパスから、
 	// その実体のパスを引く。
 	notePaths map[string]map[string]struct{}
-	// tagPages はタグページの索引。小文字のタグから、そのタグを `tag:` で
-	// 宣言しているノートのパスを引く。同じタグを複数のノートが宣言しうるので集合で持つ。
+	// tagPages はタグのページの索引。ファイル名が表すタグ（小文字）から、そのノートの
+	// パスを引く。a.md と a.markdown のように同じタグを表すファイルが並びうるので集合で持つ。
 	tagPages map[string]map[string]struct{}
+	// pins はピン留めしたノートのパス。ピン留めした順に並ぶ。
+	pins []string
 	// root は現在展開しているフォルダ。
 	root string
 }
@@ -72,6 +77,7 @@ func Open() (*Store, error) {
 		db:          db,
 		tagCounts:   map[string]int{},
 		tagSpelling: map[string]string{},
+		tagged:      map[string]map[string]struct{}{},
 		backlinks:   map[string]map[string]struct{}{},
 		notePaths:   map[string]map[string]struct{}{},
 		tagPages:    map[string]map[string]struct{}{},
@@ -120,9 +126,11 @@ func (s *Store) Reset(root string) error {
 	defer s.mu.Unlock()
 	s.tagCounts = map[string]int{}
 	s.tagSpelling = map[string]string{}
+	s.tagged = map[string]map[string]struct{}{}
 	s.backlinks = map[string]map[string]struct{}{}
 	s.notePaths = map[string]map[string]struct{}{}
 	s.tagPages = map[string]map[string]struct{}{}
+	s.pins = nil
 	s.root = root
 	return nil
 }
@@ -268,7 +276,7 @@ func decodeEntry(raw string) *model.Entry {
 	return &e
 }
 
-// indexDerived はタグ件数とバックリンクを、エントリの内容に合わせて加算する。
+// indexDerived はタグ件数とリンク・タグの索引を、エントリの内容に合わせて加算する。
 // 呼び出し元が s.mu を握っていること。
 func (s *Store) indexDerived(e *model.Entry) {
 	for _, tag := range e.Tags {
@@ -277,25 +285,14 @@ func (s *Store) indexDerived(e *model.Entry) {
 		if _, ok := s.tagSpelling[key]; !ok {
 			s.tagSpelling[key] = tag
 		}
+		addPath(s.tagged, key, e.Path)
 	}
 	for _, link := range e.Links {
-		key := linkTarget(link, e.Path, s.root)
-		if s.backlinks[key] == nil {
-			s.backlinks[key] = map[string]struct{}{}
-		}
-		s.backlinks[key][e.Path] = struct{}{}
+		addPath(s.backlinks, linkTarget(link, e.Path, s.root), e.Path)
 	}
-	for _, key := range noteKeysOf(e) {
-		if s.notePaths[key] == nil {
-			s.notePaths[key] = map[string]struct{}{}
-		}
-		s.notePaths[key][e.Path] = struct{}{}
-	}
+	addPath(s.notePaths, noteKey(e.Path), e.Path)
 	if key := tagPageKey(e); key != "" {
-		if s.tagPages[key] == nil {
-			s.tagPages[key] = map[string]struct{}{}
-		}
-		s.tagPages[key][e.Path] = struct{}{}
+		addPath(s.tagPages, key, e.Path)
 	}
 }
 
@@ -304,6 +301,7 @@ func (s *Store) indexDerived(e *model.Entry) {
 func (s *Store) unindexDerived(e *model.Entry) {
 	for _, tag := range e.Tags {
 		key := strings.ToLower(tag)
+		removePath(s.tagged, key, e.Path)
 		if s.tagCounts[key] <= 1 {
 			delete(s.tagCounts, key)
 			delete(s.tagSpelling, key)
@@ -312,22 +310,26 @@ func (s *Store) unindexDerived(e *model.Entry) {
 		s.tagCounts[key]--
 	}
 	for _, link := range e.Links {
-		key := linkTarget(link, e.Path, s.root)
-		delete(s.backlinks[key], e.Path)
-		if len(s.backlinks[key]) == 0 {
-			delete(s.backlinks, key)
-		}
+		removePath(s.backlinks, linkTarget(link, e.Path, s.root), e.Path)
 	}
-	for _, key := range noteKeysOf(e) {
-		delete(s.notePaths[key], e.Path)
-		if len(s.notePaths[key]) == 0 {
-			delete(s.notePaths, key)
-		}
-	}
+	removePath(s.notePaths, noteKey(e.Path), e.Path)
 	if key := tagPageKey(e); key != "" {
-		delete(s.tagPages[key], e.Path)
-		if len(s.tagPages[key]) == 0 {
-			delete(s.tagPages, key)
-		}
+		removePath(s.tagPages, key, e.Path)
+	}
+}
+
+// addPath は索引 index のキー key の集合へ path を加える。
+func addPath(index map[string]map[string]struct{}, key, path string) {
+	if index[key] == nil {
+		index[key] = map[string]struct{}{}
+	}
+	index[key][path] = struct{}{}
+}
+
+// removePath は索引 index のキー key の集合から path を除く。空になった集合はキーごと消す。
+func removePath(index map[string]map[string]struct{}, key, path string) {
+	delete(index[key], path)
+	if len(index[key]) == 0 {
+		delete(index, key)
 	}
 }

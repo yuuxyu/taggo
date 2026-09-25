@@ -1,8 +1,8 @@
 package store
 
 import (
+	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -54,47 +54,41 @@ func paths(r Result) []string {
 	return out
 }
 
-func TestSearchTagAnd(t *testing.T) {
+// 空白で区切った語は、すべて含むものだけに絞り込むこと。
+func TestSearchWordsAnd(t *testing.T) {
 	s := newTestStore(t)
 	seed(t, s)
 
-	r, err := s.Search(SearchOptions{Query: "#golang #設計"})
+	r, err := s.Search(SearchOptions{Query: "golang 設計"})
 	if err != nil {
 		t.Fatalf("検索に失敗: %v", err)
 	}
 	if got := paths(r); len(got) != 1 || got[0] != "a.md" {
-		t.Fatalf("AND 検索の結果が想定外: %v", got)
+		t.Fatalf("すべての語を含むものだけになっていない: %v", got)
 	}
 }
 
-func TestSearchTagOr(t *testing.T) {
+// "#" や "OR" や "-" は特別な意味を持たず、ただの文字として探すこと。
+func TestSearchHasNoOperators(t *testing.T) {
 	s := newTestStore(t)
 	seed(t, s)
 
-	r, _ := s.Search(SearchOptions{Query: "#rust OR #下書き"})
+	for _, q := range []string{"#golang", "golang OR rust", "-下書き"} {
+		r, _ := s.Search(SearchOptions{Query: q})
+		if r.Total != 0 {
+			t.Fatalf("%q が演算子として解釈されている: %v", q, paths(r))
+		}
+	}
+}
+
+// タグは部分一致でも拾うこと。
+func TestSearchMatchesTagsPartially(t *testing.T) {
+	s := newTestStore(t)
+	seed(t, s)
+
+	r, _ := s.Search(SearchOptions{Query: "lang"})
 	if r.Total != 2 {
-		t.Fatalf("OR 検索の件数が想定外: %v", paths(r))
-	}
-}
-
-func TestSearchTagNot(t *testing.T) {
-	s := newTestStore(t)
-	seed(t, s)
-
-	r, _ := s.Search(SearchOptions{Query: "#golang -#下書き"})
-	if got := paths(r); len(got) != 1 || got[0] != "a.md" {
-		t.Fatalf("NOT 検索の結果が想定外: %v", got)
-	}
-}
-
-func TestSearchTagIsExactNotPrefix(t *testing.T) {
-	s := newTestStore(t)
-	seed(t, s)
-
-	// "#go" は "golang" を巻き込んではいけない。
-	r, _ := s.Search(SearchOptions{Query: "#go"})
-	if r.Total != 0 {
-		t.Fatalf("タグ検索が前方一致になっている: %v", paths(r))
+		t.Fatalf("タグへの部分一致が効いていない: %v", paths(r))
 	}
 }
 
@@ -162,28 +156,19 @@ func TestSearchWindow(t *testing.T) {
 	}
 }
 
-func TestTagsSuggestion(t *testing.T) {
-	s := newTestStore(t)
-	seed(t, s)
-
-	all := s.Tags("", 0)
-	if len(all) != 4 {
-		t.Fatalf("タグ種類数が想定外: %+v", all)
-	}
-	// golang と 設計 が 2 件ずつで先頭に来る。
-	if all[0].Count != 2 || all[1].Count != 2 {
-		t.Fatalf("使用件数の多い順になっていない: %+v", all)
-	}
-
-	got := s.Tags("go", 0)
-	if len(got) != 1 || got[0].Tag != "golang" {
-		t.Fatalf("前方一致の絞り込みが効いていない: %+v", got)
-	}
+// tagCount は、そのタグの使用件数を索引から読む。
+func tagCount(s *Store, tag string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tagCounts[strings.ToLower(tag)]
 }
 
 func TestDeleteUpdatesTagCounts(t *testing.T) {
 	s := newTestStore(t)
 	seed(t, s)
+	if s.TagCount() != 4 {
+		t.Fatalf("タグの種類数が想定外: %d", s.TagCount())
+	}
 
 	if err := s.Delete("c.md"); err != nil {
 		t.Fatalf("削除に失敗: %v", err)
@@ -191,13 +176,11 @@ func TestDeleteUpdatesTagCounts(t *testing.T) {
 	if s.Count() != 2 {
 		t.Fatalf("削除後の件数が想定外: %d", s.Count())
 	}
-	for _, tag := range s.Tags("", 0) {
-		if tag.Tag == "下書き" {
-			t.Fatalf("使われなくなったタグが候補に残っている: %+v", s.Tags("", 0))
-		}
-		if tag.Tag == "golang" && tag.Count != 1 {
-			t.Fatalf("タグ件数が減っていない: %+v", tag)
-		}
+	if s.TagCount() != 3 || tagCount(s, "下書き") != 0 {
+		t.Fatalf("使われなくなったタグが残っている: %d 種類", s.TagCount())
+	}
+	if tagCount(s, "golang") != 1 {
+		t.Fatalf("タグ件数が減っていない: %d", tagCount(s, "golang"))
 	}
 }
 
@@ -212,50 +195,8 @@ func TestPutReplacesDerivedData(t *testing.T) {
 	if s.Count() != 3 {
 		t.Fatalf("更新でエントリ数が変わった: %d", s.Count())
 	}
-	for _, tag := range s.Tags("", 0) {
-		if tag.Tag == "設計" && tag.Count != 1 {
-			t.Fatalf("外したタグの件数が減っていない: %+v", tag)
-		}
-	}
-}
-
-func TestRelated(t *testing.T) {
-	s := newTestStore(t)
-
-	target := newEntry("目次.md", "目次", 1, nil)
-	source := newEntry("memo.md", "メモ", 1, nil)
-	source.Links = []string{"./目次.md", "./まだ無いノート.md"}
-	if err := s.PutAll([]*model.Entry{target, source}); err != nil {
-		t.Fatalf("投入に失敗: %v", err)
-	}
-
-	got := s.Related(target)
-	if len(got.Incoming) != 1 || got.Incoming[0].Path != "memo.md" {
-		t.Fatalf("バックリンクが取れていない: %+v", got.Incoming)
-	}
-	if len(got.Outgoing) != 0 {
-		t.Fatalf("リンクしていないのに関連が出ている: %+v", got.Outgoing)
-	}
-
-	// リンク元から見ると、行き先のあるリンクと無いリンクが順番どおりに並ぶ。
-	from := s.Related(source)
-	if len(from.Outgoing) != 2 {
-		t.Fatalf("リンク先の数が合わない: %+v", from.Outgoing)
-	}
-	if from.Outgoing[0].Path != "目次.md" {
-		t.Fatalf("リンク先が引けていない: %+v", from.Outgoing[0])
-	}
-	if from.Outgoing[1].Path != "" || from.Outgoing[1].Title != "まだ無いノート" {
-		t.Fatalf("行き先の無いリンクの扱いが違う: %+v", from.Outgoing[1])
-	}
-
-	// リンクを外したら、関連も消えること。
-	source.Links = nil
-	if err := s.Put(source); err != nil {
-		t.Fatalf("更新に失敗: %v", err)
-	}
-	if got := s.Related(target); len(got.Incoming) != 0 {
-		t.Fatalf("外したリンクが残っている: %+v", got.Incoming)
+	if tagCount(s, "設計") != 1 {
+		t.Fatalf("外したタグの件数が減っていない: %d", tagCount(s, "設計"))
 	}
 }
 
@@ -305,7 +246,7 @@ func TestRelatedResolvesLinkPaths(t *testing.T) {
 
 	here := filepath.Join("root", "a", "README.md")
 	elsewhere := filepath.Join("root", "b", "README.md")
-	source := mdEntry(filepath.Join("root", "a", "note.md"), "フォルダ A のメモ", "./README.md")
+	source := mdEntry(filepath.Join("root", "a", "note.md"), "フォルダ A のメモ", "./README.md", "../a/README.md")
 	if err := s.PutAll([]*model.Entry{
 		mdEntry(here, "A の説明"),
 		mdEntry(elsewhere, "B の説明"),
@@ -314,179 +255,233 @@ func TestRelatedResolvesLinkPaths(t *testing.T) {
 		t.Fatalf("投入に失敗: %v", err)
 	}
 
-	if got := s.Related(source).Outgoing; len(got) != 1 || got[0].Path != here {
-		t.Fatalf("リンク先が同じフォルダの README になっていない: %+v", got)
+	// 2 通りの書き方で同じノートを指しているので、カードは 1 枚にまとまる。
+	if got := groupSummary(s.Related(source)); len(got) != 1 || got[0] != "リンク先 README.md" {
+		t.Fatalf("リンク先が同じフォルダの README になっていない: %v", got)
 	}
-
-	if got := s.Related(mdEntry(here, "A の説明")).Incoming; len(got) != 1 {
+	if got := s.Related(mdEntry(here, "A の説明")).Groups; len(got) != 1 || got[0].Pages[0].Path != source.Path {
 		t.Fatalf("同じフォルダの README にリンク元が集まっていない: %+v", got)
 	}
-	if got := s.Related(mdEntry(elsewhere, "B の説明")).Incoming; len(got) != 0 {
+	if got := s.Related(mdEntry(elsewhere, "B の説明")).Groups; len(got) != 0 {
 		t.Fatalf("無関係なフォルダの README に関連が出ている: %+v", got)
 	}
 }
 
-// 上の階層や別フォルダを指すパスも、書かれたとおりにたどれること。
-func TestRelatedFollowsRelativePaths(t *testing.T) {
-	s := newTestStore(t)
-
-	target := filepath.Join("root", "b", "手順.md")
-	source := mdEntry(filepath.Join("root", "a", "note.md"), "メモ", "../b/手順.md", "/b/手順.md")
-	if err := s.Reset("root"); err != nil {
-		t.Fatalf("リセットに失敗: %v", err)
-	}
-	if err := s.PutAll([]*model.Entry{mdEntry(target, "手順"), source}); err != nil {
-		t.Fatalf("投入に失敗: %v", err)
-	}
-
-	// 2 通りの書き方で同じノートを指しているので、カードは 1 枚にまとまる。
-	got := s.Related(source).Outgoing
-	if len(got) != 1 || got[0].Path != target {
-		t.Fatalf("相対パスのリンクをたどれていない: %+v", got)
-	}
-}
-
-// 同じタグのノートは、重なるタグの多い順に並び、自分自身とリンクで出ているものは除くこと。
-func TestRelatedSameTag(t *testing.T) {
-	s := newTestStore(t)
-
-	self := newEntry("self.md", "自分", 0, []string{"go", "設計"})
-	self.Links = []string{"./linked.md"}
-	both := newEntry("both.md", "両方", 3, []string{"Go", "設計"})
-	older := newEntry("older.md", "古い", 2, []string{"go"})
-	newer := newEntry("newer.md", "新しい", 1, []string{"go"})
-	linked := newEntry("linked.md", "リンク先", 1, []string{"go"})
-	other := newEntry("other.md", "無関係", 1, []string{"料理"})
-	if err := s.PutAll([]*model.Entry{self, both, older, newer, linked, other}); err != nil {
-		t.Fatalf("投入に失敗: %v", err)
-	}
-
-	got := s.Related(self).SameTag
-	var paths []string
-	for _, p := range got {
-		paths = append(paths, p.Path)
-	}
-	want := []string{"both.md", "newer.md", "older.md"}
-	if strings.Join(paths, ",") != strings.Join(want, ",") {
-		t.Fatalf("同じタグのノートが違う: got %v, want %v", paths, want)
-	}
-
-	// タグの無いノートでは何も出さない。空でも nil ではなく空スライスで返す。
-	if got := s.Related(newEntry("none.md", "タグなし", 0, nil)).SameTag; got == nil || len(got) != 0 {
-		t.Fatalf("タグが無いのに同じタグのノートが出ている: %+v", got)
-	}
-}
-
-// newTagPage はタグページのエントリを組み立てる。
-func newTagPage(path, tag string, tags []string) *model.Entry {
-	e := newEntry(path, tag+" のページ", 5, tags)
-	e.TagPage = tag
+// rootEntry は開いたフォルダ "root" の直下にあるテスト用のエントリを組み立てる。
+func rootEntry(name string, daysAgo int, tags []string, links ...string) *model.Entry {
+	e := newEntry(filepath.Join("root", name), strings.TrimSuffix(name, ".md"), daysAgo, tags)
+	e.Name = name
+	e.RelPath = name
+	e.Links = links
 	return e
 }
 
-// タグで検索すると、そのタグのタグページが見出しとして別枠で返り、一覧からは外れること。
-func TestSearchTagPageHeading(t *testing.T) {
+// groupSummary は関連ページのグループを、比べやすい 1 行ずつの文字列にする。
+// 「タグ [先頭のカード] ノート, ノート (+あふれた数)」の形で、まだ無いものは ? を付ける。
+func groupSummary(r Related) []string {
+	name := func(p RelatedPage) string {
+		if p.Path == "" {
+			return "?" + p.Title
+		}
+		return filepath.Base(p.Path)
+	}
+	out := make([]string, 0, len(r.Groups))
+	for _, g := range r.Groups {
+		line := "#" + g.Tag
+		if g.Tag == "" {
+			line = "リンク先"
+		}
+		if g.Page != nil {
+			line += " [" + name(*g.Page) + "]"
+		}
+		names := make([]string, len(g.Pages))
+		for i, p := range g.Pages {
+			names[i] = name(p)
+		}
+		line += " " + strings.Join(names, ",")
+		if g.More > 0 {
+			line += fmt.Sprintf(" (+%d)", g.More)
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// 関連ページは「タグのページと、そのタグを持つノート」をタグごとにまとめ、
+// 最後に Markdown のリンクでつながるノートをまとめること。
+// 同じタグを多く持つノートほど先に来て、前のグループに出したノートは後に出さないこと。
+func TestRelatedGroupsByTag(t *testing.T) {
 	s := newTestStore(t)
-	seed(t, s)
-	// タグページ自身にも同じタグが付いている場合と、付いていない場合の両方を用意する。
-	golang := newTagPage("tags/golang.md", "Golang", []string{"golang"})
-	rust := newTagPage("tags/rust.md", "rust", nil)
-	if err := s.PutAll([]*model.Entry{golang, rust}); err != nil {
+	if err := s.Reset("root"); err != nil {
+		t.Fatal(err)
+	}
+	self := rootEntry("self.md", 0, []string{"go", "設計", "a/b"}, "./linked.md", "./まだ無い.md", "./both.md")
+	entries := []*model.Entry{
+		self,
+		rootEntry("go.md", 9, nil), // go のページ
+		rootEntry("both.md", 5, []string{"go", "設計"}),           // 2 つ重なる
+		rootEntry("newer.md", 1, []string{"go"}),                // 1 つ重なる・新しい
+		rootEntry("older.md", 3, []string{"Go"}),                // 1 つ重なる・古い
+		rootEntry("linked.md", 2, []string{"go"}),               // リンクもしているが、go のグループが先
+		rootEntry("design.md", 1, []string{"設計"}),               // 設計のページはまだ無い
+		rootEntry("slash.md", 1, []string{"a/b"}),               // ファイル名にできないタグ
+		rootEntry("backlink.md", 1, nil, "./self.md"),           // リンク元
+		rootEntry("other.md", 1, []string{"料理"}, "./design.md"), // 無関係
+	}
+	if err := s.PutAll(entries); err != nil {
 		t.Fatalf("投入に失敗: %v", err)
 	}
 
-	r, err := s.Search(SearchOptions{Query: "#golang", Sort: SortNameAsc})
-	if err != nil {
-		t.Fatal(err)
+	got := s.Related(self)
+	// 最初はこのノートを指しているノート（リンク元）。見出しはこのノートが表すタグ。
+	// タグのグループはタグの名前順。ファイル名にできないタグ（a/b）は先頭のカードを持たない。
+	// 最後のリンクのグループには、このノートからのリンク先だけが残る。
+	want := []string{
+		"#self backlink.md",
+		"#a/b slash.md",
+		"#go [go.md] both.md,newer.md,linked.md,older.md",
+		"#設計 [?設計] design.md",
+		"リンク先 ?まだ無い",
 	}
-	if got := strings.Join(paths(r), ","); got != "a.md,c.md" {
-		t.Fatalf("タグページが一覧から外れていない: %s", got)
+	if strings.Join(groupSummary(got), "\n") != strings.Join(want, "\n") {
+		t.Fatalf("グループが違う:\ngot:\n%s\nwant:\n%s", strings.Join(groupSummary(got), "\n"), strings.Join(want, "\n"))
 	}
-	if r.Total != 2 {
-		t.Fatalf("件数にタグページが含まれている: %d", r.Total)
+	if strings.Join(got.MissingTags, ",") != "設計" {
+		t.Fatalf("ページの無いタグが違う: %v", got.MissingTags)
 	}
-	if len(r.TagPages) != 1 || r.TagPages[0].Tag != "golang" || len(r.TagPages[0].Pages) != 1 ||
-		r.TagPages[0].Pages[0].Path != "tags/golang.md" {
-		t.Fatalf("見出しのタグページが違う: %+v", r.TagPages)
-	}
-
-	// OR でも検索語の順に並ぶ。タグページ自身にタグが無くても見出しには出る。
-	r, _ = s.Search(SearchOptions{Query: "#rust OR #golang", Sort: SortNameAsc})
-	if len(r.TagPages) != 2 || r.TagPages[0].Tag != "rust" || r.TagPages[1].Tag != "golang" {
-		t.Fatalf("OR の見出しが違う: %+v", r.TagPages)
-	}
-
-	// 否定やタグ以外の検索では見出しを出さず、タグページも普通に一覧へ出る。
-	for _, q := range []string{"-#golang", "のページ", ""} {
-		r, _ = s.Search(SearchOptions{Query: q, Sort: SortNameAsc})
-		if len(r.TagPages) != 0 {
-			t.Fatalf("%q で見出しが出ている: %+v", q, r.TagPages)
-		}
-	}
-	r, _ = s.Search(SearchOptions{Query: "のページ", Sort: SortNameAsc})
-	if got := strings.Join(paths(r), ","); got != "tags/golang.md,tags/rust.md" {
-		t.Fatalf("タグページが一覧に出ていない: %s", got)
+	if strings.Join(got.MissingLinks, ",") != "./まだ無い.md" {
+		t.Fatalf("行き先の無いリンクが違う: %v", got.MissingLinks)
 	}
 }
 
-// 同じタグを複数のノートが宣言していたら、見出しには両方を出すこと。
-// 片方を消したり宣言を外したりすれば、索引からも外れること。
-func TestSearchTagPageDuplicates(t *testing.T) {
+// タグのページでは、そのタグを持つノートと、Markdown のリンクでリンクしているノートが、
+// どちらもリンク元として最初のグループに並ぶこと。先頭のカードは自分なので置かない。
+func TestRelatedOwnTagGroup(t *testing.T) {
 	s := newTestStore(t)
-	seed(t, s)
-	one := newTagPage("one.md", "golang", nil)
-	two := newTagPage("two.md", "GoLang", nil)
-	if err := s.PutAll([]*model.Entry{one, two}); err != nil {
-		t.Fatalf("投入に失敗: %v", err)
-	}
-
-	r, _ := s.Search(SearchOptions{Query: "#golang"})
-	if len(r.TagPages) != 1 || len(r.TagPages[0].Pages) != 2 {
-		t.Fatalf("重複したタグページが両方出ていない: %+v", r.TagPages)
-	}
-
-	if err := s.Delete("one.md"); err != nil {
+	if err := s.Reset("root"); err != nil {
 		t.Fatal(err)
 	}
-	two.TagPage = ""
-	if err := s.Put(two); err != nil {
+	page := rootEntry("Golang.md", 9, []string{"言語"})
+	if err := s.PutAll([]*model.Entry{
+		page,
+		rootEntry("a.md", 2, []string{"golang"}),
+		rootEntry("b.md", 1, []string{"golang", "言語"}),
+		rootEntry("言語.md", 1, nil),
+		rootEntry("c.md", 1, []string{"言語"}),
+		rootEntry("linking.md", 0, []string{"言語"}, "./Golang.md"), // Markdown のリンクで指している
+	}); err != nil {
 		t.Fatal(err)
 	}
-	r, _ = s.Search(SearchOptions{Query: "#golang"})
-	if len(r.TagPages) != 0 {
-		t.Fatalf("消したタグページが残っている: %+v", r.TagPages)
+
+	// linking.md はタグ「言語」も持つが、リンク元として最初のグループに出たので、後には出さない。
+	want := []string{
+		"#golang linking.md,b.md,a.md",
+		"#言語 [言語.md] c.md",
+	}
+	if got := groupSummary(s.Related(page)); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("グループが違う:\ngot:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
 
-// タグページの関連ページは通常のノートと同じ欄だけを返し、
-// 同じタグを宣言しているほかのノートは重複として別に返すこと。
-func TestRelatedTagPage(t *testing.T) {
+// 1 つのグループに並べるノートには上限があり、超えた分は数だけを返すこと。
+func TestRelatedGroupLimit(t *testing.T) {
+	s := newTestStore(t)
+	self := rootEntry("self.md", 0, []string{"多い"})
+	entries := []*model.Entry{self}
+	for i := range groupLimit + 6 {
+		entries = append(entries, rootEntry(fmt.Sprintf("n%02d.md", i), 1, []string{"多い"}))
+	}
+	if err := s.PutAll(entries); err != nil {
+		t.Fatal(err)
+	}
+	g := s.Related(self).Groups[0]
+	if len(g.Pages) != groupLimit || g.More != 6 {
+		t.Fatalf("上限が効いていない: %d 件 (+%d)", len(g.Pages), g.More)
+	}
+
+	// 関連の無いノートでは、グループは空（nil ではなく空スライス）。
+	lonely := rootEntry("lonely.md", 0, nil)
+	if got := s.Related(lonely).Groups; got == nil || len(got) != 0 {
+		t.Fatalf("関連が無いのにグループがある: %+v", got)
+	}
+}
+
+// 検索語がタグの名前と一致するときは、そのタグのページ（同じ名前のノート）が
+// 並び順にかかわらず先頭に別枠で出ること。
+func TestSearchPutsTagPageFirst(t *testing.T) {
 	s := newTestStore(t)
 	seed(t, s)
-	page := newTagPage("tags/golang.md", "golang", []string{"golang"})
-	dup := newTagPage("dup.md", "golang", []string{"golang"})
-	if err := s.PutAll([]*model.Entry{page, dup}); err != nil {
+	// 古いうえに名前順でも後ろに来るページにして、並び順では先頭にならないようにする。
+	page := newEntry("Golang.md", "Go 言語", 30, nil)
+	if err := s.Put(page); err != nil {
 		t.Fatalf("投入に失敗: %v", err)
 	}
 
-	got := s.Related(page)
-	if len(got.Duplicates) != 1 || got.Duplicates[0].Path != "dup.md" {
-		t.Fatalf("重複しているタグページが違う: %+v", got.Duplicates)
-	}
-	// タグの付いたノートは、通常のノートと同じく同じタグのノートの欄に出る。
-	var sameTag []string
-	for _, p := range got.SameTag {
-		sameTag = append(sameTag, p.Path)
-	}
-	for _, want := range []string{"a.md", "c.md"} {
-		if !slices.Contains(sameTag, want) {
-			t.Fatalf("同じタグのノートに %s が無い: %v", want, sameTag)
+	for _, sort := range []SortOrder{SortModifiedDesc, SortNameAsc, SortRelevance} {
+		r, err := s.Search(SearchOptions{Query: " golang ", Sort: sort})
+		if err != nil {
+			t.Fatalf("検索に失敗: %v", err)
+		}
+		got := paths(r)
+		if len(got) != 3 || got[0] != "Golang.md" || r.Head != 1 {
+			t.Fatalf("%s: タグのページが先頭に来ていない: %v (head=%d)", sort, got, r.Head)
 		}
 	}
 
-	// タグページでないノートでは重複を返さない。
-	plain := s.Related(newEntry("a.md", "Go の設計メモ", 1, []string{"golang"}))
-	if len(plain.Duplicates) != 0 {
-		t.Fatalf("タグページでないのに重複が出ている: %+v", plain.Duplicates)
+	// 一部だけ一致しても先頭には出さない。
+	r, _ := s.Search(SearchOptions{Query: "gola"})
+	if r.Head != 0 {
+		t.Fatalf("部分一致でタグのページが先頭に出ている: %v", paths(r))
+	}
+}
+
+// 検索語が無いときは、ピン留めしたノートがピン留めした順に先頭へ並ぶこと。
+// 読み込んでいないノートのピン留めは無視し、検索中はピン留めを先頭にしない。
+func TestSearchPins(t *testing.T) {
+	s := newTestStore(t)
+	seed(t, s)
+	s.SetPins([]string{"C.md", "missing.md", "b.md"})
+
+	r, _ := s.Search(SearchOptions{Sort: SortModifiedDesc})
+	if got := paths(r); strings.Join(got, ",") != "c.md,b.md,a.md" || r.Head != 2 {
+		t.Fatalf("ピン留めが先頭に並んでいない: %v (head=%d)", got, r.Head)
+	}
+	if strings.Join(r.Pins, ",") != "c.md,b.md" {
+		t.Fatalf("ピン留めの一覧が違う: %v", r.Pins)
+	}
+
+	r, _ = s.Search(SearchOptions{Query: "設計", Sort: SortModifiedDesc})
+	if got := paths(r); strings.Join(got, ",") != "a.md,b.md" || r.Head != 0 {
+		t.Fatalf("検索中にピン留めが先頭へ来ている: %v (head=%d)", got, r.Head)
+	}
+	if strings.Join(r.Pins, ",") != "c.md,b.md" {
+		t.Fatalf("検索中もピン留めの一覧は全部返すはず: %v", r.Pins)
+	}
+
+	// ページングしたときの別枠の件数は、その範囲に入っている分だけ。
+	r, _ = s.Search(SearchOptions{Sort: SortModifiedDesc, Offset: 1, Limit: 1})
+	if got := paths(r); len(got) != 1 || got[0] != "b.md" || r.Head != 1 {
+		t.Fatalf("ページングしたときの別枠が違う: %v (head=%d)", got, r.Head)
+	}
+}
+
+// タグのページのパスを、タグの大文字小文字や空白の揺れを無視して引けること。
+func TestTagPagePath(t *testing.T) {
+	s := newTestStore(t)
+	page := mdEntry(filepath.Join("root", "開発 メモ.md"), "開発メモ")
+	if err := s.Put(page); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.TagPagePath("  開発   メモ "); got != page.Path {
+		t.Fatalf("タグのページが引けない: %q", got)
+	}
+	if got := s.TagPagePath("開発"); got != "" {
+		t.Fatalf("別のタグでページが引けてしまう: %q", got)
+	}
+	if err := s.Delete(page.Path); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.TagPagePath("開発 メモ"); got != "" {
+		t.Fatalf("消したページが残っている: %q", got)
 	}
 }

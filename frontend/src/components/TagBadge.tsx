@@ -1,5 +1,5 @@
 /**
- * "#タグ" のバッジ。クリックするとそのタグが検索バーへ挿入される。
+ * "#タグ" のバッジ。クリックするとそのタグで検索する（そのタグのページが先頭に出る）。
  */
 
 import { XMarkIcon } from "@heroicons/react/16/solid";
@@ -23,7 +23,7 @@ export function TagBadge({ tag, onClick, onRemove, size = "sm" }: Props) {
       <button
         type="button"
         className={`max-w-full truncate text-accent-ink hover:underline ${LABEL_SIZE[size]}`}
-        title={`#${tag} で絞り込む`}
+        title={`「${tag}」で検索`}
         onClick={(e) => {
           e.stopPropagation();
           onClick?.(tag);

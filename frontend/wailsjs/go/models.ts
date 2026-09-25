@@ -24,42 +24,6 @@ export namespace app {
 	        this.cloudOnly = source["cloudOnly"];
 	    }
 	}
-	export class TagEditResult {
-	    path: string;
-	    ok: boolean;
-	    error?: string;
-	    entry?: model.Entry;
-	
-	    static createFrom(source: any = {}) {
-	        return new TagEditResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.path = source["path"];
-	        this.ok = source["ok"];
-	        this.error = source["error"];
-	        this.entry = this.convertValues(source["entry"], model.Entry);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 
 }
 
@@ -107,10 +71,9 @@ export namespace model {
 	    preview?: string;
 	    thumbnail?: string;
 	    links?: string[];
-	    tagPage?: string;
-	    writable: boolean;
 	    err?: string;
 	    cloudOnly?: boolean;
+	    missing?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Entry(source);
@@ -129,10 +92,9 @@ export namespace model {
 	        this.preview = source["preview"];
 	        this.thumbnail = source["thumbnail"];
 	        this.links = source["links"];
-	        this.tagPage = source["tagPage"];
-	        this.writable = source["writable"];
 	        this.err = source["err"];
 	        this.cloudOnly = source["cloudOnly"];
+	        this.missing = source["missing"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -189,13 +151,13 @@ export namespace store {
 	
 	export class RelatedPage {
 	    target?: string;
+	    tag?: string;
 	    path?: string;
 	    title: string;
 	    relPath?: string;
 	    preview?: string;
-	    tags?: string[];
+	    thumbnail?: string;
 	    cloudOnly?: boolean;
-	    tagPage?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RelatedPage(source);
@@ -204,20 +166,55 @@ export namespace store {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.target = source["target"];
+	        this.tag = source["tag"];
 	        this.path = source["path"];
 	        this.title = source["title"];
 	        this.relPath = source["relPath"];
 	        this.preview = source["preview"];
-	        this.tags = source["tags"];
+	        this.thumbnail = source["thumbnail"];
 	        this.cloudOnly = source["cloudOnly"];
-	        this.tagPage = source["tagPage"];
 	    }
 	}
+	export class RelatedGroup {
+	    tag?: string;
+	    page?: RelatedPage;
+	    pages: RelatedPage[];
+	    more: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RelatedGroup(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tag = source["tag"];
+	        this.page = this.convertValues(source["page"], RelatedPage);
+	        this.pages = this.convertValues(source["pages"], RelatedPage);
+	        this.more = source["more"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Related {
-	    outgoing: RelatedPage[];
-	    incoming: RelatedPage[];
-	    sameTag: RelatedPage[];
-	    duplicates: RelatedPage[];
+	    groups: RelatedGroup[];
+	    missingLinks: string[];
+	    missingTags: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Related(source);
@@ -225,10 +222,9 @@ export namespace store {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.outgoing = this.convertValues(source["outgoing"], RelatedPage);
-	        this.incoming = this.convertValues(source["incoming"], RelatedPage);
-	        this.sameTag = this.convertValues(source["sameTag"], RelatedPage);
-	        this.duplicates = this.convertValues(source["duplicates"], RelatedPage);
+	        this.groups = this.convertValues(source["groups"], RelatedGroup);
+	        this.missingLinks = source["missingLinks"];
+	        this.missingTags = source["missingTags"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -250,42 +246,12 @@ export namespace store {
 		}
 	}
 	
-	export class TagPageGroup {
-	    tag: string;
-	    pages: model.Entry[];
 	
-	    static createFrom(source: any = {}) {
-	        return new TagPageGroup(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.tag = source["tag"];
-	        this.pages = this.convertValues(source["pages"], model.Entry);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class Result {
 	    entries: model.Entry[];
 	    total: number;
-	    tagPages: TagPageGroup[];
+	    head: number;
+	    pins: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Result(source);
@@ -295,7 +261,8 @@ export namespace store {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.entries = this.convertValues(source["entries"], model.Entry);
 	        this.total = source["total"];
-	        this.tagPages = this.convertValues(source["tagPages"], TagPageGroup);
+	        this.head = source["head"];
+	        this.pins = source["pins"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -332,21 +299,6 @@ export namespace store {
 	        this.sort = source["sort"];
 	        this.offset = source["offset"];
 	        this.limit = source["limit"];
-	    }
-	}
-	
-	export class TagSuggestion {
-	    tag: string;
-	    count: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new TagSuggestion(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.tag = source["tag"];
-	        this.count = source["count"];
 	    }
 	}
 

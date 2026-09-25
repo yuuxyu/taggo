@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -40,9 +41,10 @@ func newTestApp(t *testing.T, files map[string]string) (*App, string) {
 	if err := a.OpenFolder(root); err != nil {
 		t.Fatalf("フォルダの読み込みに失敗: %v", err)
 	}
+	// 読み込むのはフォルダ直下のノートだけ。
 	notes := 0
 	for rel := range files {
-		if model.IsMarkdown(rel) {
+		if model.IsMarkdown(rel) && filepath.Dir(rel) == "." {
 			notes++
 		}
 	}
@@ -65,8 +67,8 @@ func waitForScan(t *testing.T, a *App, want int) {
 
 func TestOpenFolderAndSearch(t *testing.T) {
 	a, _ := newTestApp(t, map[string]string{
-		"a.md": "---\ntags: [golang, 設計]\n---\n\n# Go の設計\n",
-		"b.md": "---\ntags: [rust]\n---\n\n# Rust\n",
+		"a.md": "# Go の設計\n\n[[golang]] と [[設計]]\n",
+		"b.md": "# Rust\n\n[[rust]]\n",
 	})
 
 	st := a.Status()
@@ -74,126 +76,16 @@ func TestOpenFolderAndSearch(t *testing.T) {
 		t.Fatalf("読み込み結果が想定外: %+v", st)
 	}
 
-	r, err := a.Search(store.SearchOptions{Query: "#golang"})
+	r, err := a.Search(store.SearchOptions{Query: "golang"})
 	if err != nil {
 		t.Fatalf("検索に失敗: %v", err)
 	}
 	if r.Total != 1 {
-		t.Fatalf("タグ検索の結果が想定外: %d 件", r.Total)
+		t.Fatalf("タグでの検索結果が想定外: %d 件", r.Total)
 	}
 }
 
-func TestTagsAutocomplete(t *testing.T) {
-	a, _ := newTestApp(t, map[string]string{
-		"a.md": "---\ntags: [golang, go-routine]\n---\n\n# A\n",
-		"b.md": "---\ntags: [golang]\n---\n\n# B\n",
-	})
-
-	got := a.Tags("go", 0)
-	if len(got) != 2 {
-		t.Fatalf("前方一致の候補が想定外: %+v", got)
-	}
-	if got[0].Tag != "golang" || got[0].Count != 2 {
-		t.Fatalf("使用件数の多い順になっていない: %+v", got)
-	}
-}
-
-func TestSetTagsWritesThroughToFile(t *testing.T) {
-	a, root := newTestApp(t, map[string]string{
-		"a.md": "---\ntags: [old]\ntitle: 保持されるべき\n---\n\n# A\n",
-	})
-	path := filepath.Join(root, "a.md")
-
-	res := a.SetTags(path, []string{"新しい", "tag"})
-	if !res.OK {
-		t.Fatalf("タグ書き込みに失敗: %s", res.Error)
-	}
-	if len(res.Entry.Tags) != 2 {
-		t.Fatalf("書き戻したタグが想定外: %v", res.Entry.Tags)
-	}
-
-	// 実ファイルにも反映され、他のフィールドは残っていること。
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ファイル読み込みに失敗: %v", err)
-	}
-	content := string(raw)
-	for _, want := range []string{"新しい", "tag", "保持されるべき", "# A"} {
-		if !contains(content, want) {
-			t.Fatalf("ファイルに %q が無い:\n%s", want, content)
-		}
-	}
-
-	// インメモリ DB も同期していること。
-	r, _ := a.Search(store.SearchOptions{Query: "#新しい"})
-	if r.Total != 1 {
-		t.Fatalf("書き込み後の検索に反映されていない: %d 件", r.Total)
-	}
-}
-
-func TestBulkAddAndRemoveTags(t *testing.T) {
-	a, root := newTestApp(t, map[string]string{
-		"a.md": "---\ntags: [共通]\n---\n\n# A\n",
-		"b.md": "---\ntags: [共通]\n---\n\n# B\n",
-	})
-	paths := []string{filepath.Join(root, "a.md"), filepath.Join(root, "b.md")}
-
-	for _, res := range a.AddTags(paths, []string{"一括"}) {
-		if !res.OK {
-			t.Fatalf("一括追加に失敗: %s", res.Error)
-		}
-	}
-	r, _ := a.Search(store.SearchOptions{Query: "#一括"})
-	if r.Total != 2 {
-		t.Fatalf("一括追加が反映されていない: %d 件", r.Total)
-	}
-
-	for _, res := range a.RemoveTags(paths, []string{"共通"}) {
-		if !res.OK {
-			t.Fatalf("一括削除に失敗: %s", res.Error)
-		}
-	}
-	r, _ = a.Search(store.SearchOptions{Query: "#共通"})
-	if r.Total != 0 {
-		t.Fatalf("一括削除が反映されていない: %d 件", r.Total)
-	}
-	// 追加したタグのほうは残っていること。
-	r, _ = a.Search(store.SearchOptions{Query: "#一括"})
-	if r.Total != 2 {
-		t.Fatalf("一括削除で無関係なタグまで消えた: %d 件", r.Total)
-	}
-}
-
-func TestSetTagsRejectsReadOnlyFile(t *testing.T) {
-	a, root := newTestApp(t, map[string]string{
-		"ro.md": "---\ntags: [x]\n---\n\n# 読み取り専用\n",
-	})
-	path := filepath.Join(root, "ro.md")
-
-	if err := os.Chmod(path, 0o444); err != nil {
-		t.Fatalf("パーミッション変更に失敗: %v", err)
-	}
-	// 走査時点の Writable を更新するため、読み込み直す。
-	if err := a.OpenFolder(root); err != nil {
-		t.Fatalf("再読み込みに失敗: %v", err)
-	}
-	waitForScan(t, a, 1)
-
-	res := a.SetTags(path, []string{"編集"})
-	if res.OK {
-		t.Fatal("読み取り専用ファイルへの書き込みが通ってしまった")
-	}
-	if res.Error == "" {
-		t.Fatal("エラー理由が入っていない")
-	}
-
-	// 失敗時にメモリ上だけ更新されていないこと。
-	r, _ := a.Search(store.SearchOptions{Query: "#編集"})
-	if r.Total != 0 {
-		t.Fatalf("書き込み失敗なのにメモリ上へ反映された: %d 件", r.Total)
-	}
-}
-
+// 先頭の「---」で囲んだブロック（ほかのツールの Front Matter）は、本文として見せないこと。
 func TestMarkdownSourceStripsFrontMatter(t *testing.T) {
 	a, root := newTestApp(t, map[string]string{
 		"a.md": "---\ntags: [x]\n---\n\n# 本文の見出し\n\n本文。\n",
@@ -217,13 +109,11 @@ func TestRelatedPages(t *testing.T) {
 		"memo.md": "# メモ\n\n[目次](目次.md) を参照。\n",
 	})
 
-	got := a.RelatedPages(filepath.Join(root, "目次.md"))
-	if len(got.Incoming) != 1 || got.Incoming[0].Title != "メモ" {
-		t.Fatalf("バックリンクが取れていない: %+v", got.Incoming)
-	}
-	// 通常の Markdown リンクも関連ページとして扱う。
-	if len(got.Outgoing) != 1 || got.Outgoing[0].Title != "メモ" {
-		t.Fatalf("リンク先が取れていない: %+v", got.Outgoing)
+	// リンク先とリンク元が同じノートなので、最初のリンク元のグループにカードが 1 枚だけ出て、
+	// リンク先のグループには重ねて出さない。
+	got := a.RelatedPages(filepath.Join(root, "目次.md")).Groups
+	if len(got) != 1 || got[0].Tag != "目次" || len(got[0].Pages) != 1 || got[0].Pages[0].Title != "メモ" {
+		t.Fatalf("リンクでつながるノートが取れていない: %+v", got)
 	}
 }
 
@@ -271,7 +161,7 @@ func TestAssetHandlerServesEmbeddedImages(t *testing.T) {
 // 画像でないファイルや、フォルダの外のファイルは配信しないこと。
 func TestAssetHandlerRejectsOthers(t *testing.T) {
 	a, root := newTestApp(t, map[string]string{
-		"a.md":      "---\ntags: [x]\n---\n\n# A\n",
+		"a.md":      "# A\n",
 		"notes.txt": "対象外",
 		"偽物.png":    "画像ではない",
 	})
@@ -303,18 +193,18 @@ func TestAssetHandlerRejectsOthers(t *testing.T) {
 
 func TestWatcherSyncsExternalEdits(t *testing.T) {
 	a, root := newTestApp(t, map[string]string{
-		"a.md": "---\ntags: [初期]\n---\n\n# A\n",
+		"a.md": "# A\n\n[[初期]]\n",
 	})
 	path := filepath.Join(root, "a.md")
 
 	// taggo を介さない外部からの書き換えが、インメモリ DB へ反映されること。
-	if err := os.WriteFile(path, []byte("---\ntags: [外部編集]\n---\n\n# A\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("# A\n\n[[外部編集]]\n"), 0o644); err != nil {
 		t.Fatalf("外部編集の書き込みに失敗: %v", err)
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		r, _ := a.Search(store.SearchOptions{Query: "#外部編集"})
+		r, _ := a.Search(store.SearchOptions{Query: "外部編集"})
 		if r.Total == 1 {
 			return
 		}
@@ -352,27 +242,188 @@ func TestAssetHandlerContentTypeFollowsContent(t *testing.T) {
 	}
 }
 
-// 同じ名前のノートが別のフォルダにあるとき、関連ページが混ざらないこと。
-// README.md のようにありふれた名前で起きやすい。
-func TestRelatedPagesDoNotMixSameNameNotes(t *testing.T) {
+// サブフォルダのノートは読み込まないこと。
+func TestSubfoldersAreIgnored(t *testing.T) {
 	a, root := newTestApp(t, map[string]string{
-		filepath.Join("a", "note.md"):   "# メモ\n\n[README](./README.md) を見てください。\n",
-		filepath.Join("a", "README.md"): "# A の説明\n",
-		filepath.Join("b", "README.md"): "# B の説明\n",
+		"a.md":                        "# A\n",
+		filepath.Join("sub", "b.md"):  "# B\n",
+		filepath.Join(".git", "c.md"): "# C\n",
+	})
+	waitForIdle(t, a)
+	if st := a.Status(); st.EntryCount != 1 {
+		t.Fatalf("サブフォルダのノートまで読み込んでいる: %+v", st)
+	}
+	if _, err := a.Entry(filepath.Join(root, "sub", "b.md")); err == nil {
+		t.Fatal("サブフォルダのノートが一覧に載っている")
+	}
+}
+
+// 本文の [[タグ]] がタグとして検索・関連ページに出ること。
+// Front Matter の tags: はタグにならないこと。
+func TestBodyTags(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{
+		"golang.md": "# Go 言語\n",
+		"body.md":   "# 本文で付けた\n\n[[golang]] の話。\n",
+		"front.md":  "---\ntags: [golang]\n---\n\n# Front Matter で付けた\n",
 	})
 
-	here := a.RelatedPages(filepath.Join(root, "a", "README.md"))
-	if len(here.Incoming) != 1 || here.Incoming[0].Title != "メモ" {
-		t.Fatalf("同じフォルダの README にリンク元が付いていない: %+v", here.Incoming)
+	// 検索語がタグの名前と一致するので、そのタグのページが先頭に来る。
+	r, err := a.Search(store.SearchOptions{Query: "golang", Sort: store.SortNameAsc})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := a.RelatedPages(filepath.Join(root, "b", "README.md")); len(got.Incoming) != 0 {
-		t.Fatalf("無関係なフォルダの README に関連が出ている: %+v", got.Incoming)
+	if r.Total != 2 || r.Head != 1 || r.Entries[0].Path != filepath.Join(root, "golang.md") ||
+		r.Entries[1].Name != "body.md" {
+		t.Fatalf("検索結果が違う: head=%d %v", r.Head, names(r))
 	}
 
-	from := a.RelatedPages(filepath.Join(root, "a", "note.md"))
-	if len(from.Outgoing) != 1 || from.Outgoing[0].Path != filepath.Join(root, "a", "README.md") {
-		t.Fatalf("リンク先が同じフォルダの README になっていない: %+v", from.Outgoing)
+	// タグのページから見ると、本文で [[golang]] と書いたノートだけがリンク元になる。
+	groups := a.RelatedPages(filepath.Join(root, "golang.md")).Groups
+	if len(groups) != 1 || groups[0].Tag != "golang" || len(groups[0].Pages) != 1 ||
+		groups[0].Pages[0].Path != filepath.Join(root, "body.md") {
+		t.Fatalf("リンク元が違う: %+v", groups)
 	}
+}
+
+// まだ無いページは、ファイルを作らずに開けること。そのページを指しているノートは関連ページに出ること。
+func TestMissingPages(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{
+		"a.md": "# A\n\n[[まだ無い]] と [リンク](./書きかけ.md)\n",
+		"b.md": "# B\n\n[[まだ無い]]\n",
+	})
+	from := filepath.Join(root, "a.md")
+
+	page, err := a.TagPage(" まだ無い ")
+	if err != nil {
+		t.Fatalf("タグのページを開けない: %v", err)
+	}
+	want := filepath.Join(root, "まだ無い.md")
+	if !page.Missing || page.Path != want || page.Title != "まだ無い" {
+		t.Fatalf("まだ無いタグのページが違う: %+v", page)
+	}
+	if _, err := os.Stat(want); err == nil {
+		t.Fatal("開いただけでファイルを作った")
+	}
+	groups := a.RelatedPages(want).Groups
+	if len(groups) != 1 || groups[0].Tag != "まだ無い" || len(groups[0].Pages) != 2 {
+		t.Fatalf("まだ無いページのリンク元が違う: %+v", groups)
+	}
+
+	linked, err := a.LinkedPage(from, "./書きかけ.md")
+	if err != nil || !linked.Missing || linked.Path != filepath.Join(root, "書きかけ.md") {
+		t.Fatalf("まだ無いリンク先が違う: %+v %v", linked, err)
+	}
+	if groups := a.RelatedPages(linked.Path).Groups; len(groups) != 1 || groups[0].Pages[0].Path != from {
+		t.Fatalf("リンク先のページのリンク元が違う: %+v", groups)
+	}
+
+	// 読み込み済みのページは、そのエントリが返る。大文字小文字と拡張子の違いは区別しない。
+	if got, err := a.LinkedPage(from, "./B.markdown"); err != nil || got.Missing || got.Name != "b.md" {
+		t.Fatalf("既にあるページが返らない: %+v %v", got, err)
+	}
+	if got, err := a.TagPage("A"); err != nil || got.Missing || got.Name != "a.md" {
+		t.Fatalf("既にあるタグのページが返らない: %+v %v", got, err)
+	}
+
+	for name, open := range map[string]func() error{
+		"フォルダの外":      func() error { _, err := a.LinkedPage(from, "../outside.md"); return err },
+		"サブフォルダ":      func() error { _, err := a.LinkedPage(from, "./sub/x.md"); return err },
+		"Markdown 以外": func() error { _, err := a.LinkedPage(from, "./script.bat"); return err },
+		"未登録のリンク元":    func() error { _, err := a.LinkedPage(filepath.Join(root, "none.md"), "./x.md"); return err },
+		"ファイル名にできない":  func() error { _, err := a.TagPage("a/b"); return err },
+	} {
+		if open() == nil {
+			t.Errorf("%s: エラーにならない", name)
+		}
+	}
+	if groups := a.RelatedPages(filepath.Join(root, "sub", "x.md")).Groups; len(groups) != 0 {
+		t.Fatalf("扱わない場所のページに関連ページが出ている: %+v", groups)
+	}
+}
+
+// ピン留めはフォルダ直下の .taggo.json に書き込み、検索語が無いときの一覧の先頭に並ぶこと。
+// 設定ファイルにある taggo の知らない項目は残すこと。
+func TestSetPinnedWritesFolderConfig(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{
+		"a.md":        "# A\n",
+		"b.md":        "# B\n",
+		"c.md":        "# C\n",
+		".taggo.json": `{"memo": "残す"}`,
+	})
+	for _, name := range []string{"c.md", "a.md", "c.md"} {
+		if err := a.SetPinned(filepath.Join(root, name), true); err != nil {
+			t.Fatalf("ピン留めに失敗: %v", err)
+		}
+	}
+
+	r, _ := a.Search(store.SearchOptions{Sort: store.SortNameAsc})
+	if r.Head != 2 || r.Entries[0].Name != "c.md" || r.Entries[1].Name != "a.md" || r.Entries[2].Name != "b.md" {
+		t.Fatalf("ピン留めした順に先頭へ並んでいない: head=%d %v", r.Head, names(r))
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, ".taggo.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Memo   string   `json:"memo"`
+		Pinned []string `json:"pinned"`
+	}
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatalf("設定ファイルが JSON でない: %v\n%s", err, raw)
+	}
+	if saved.Memo != "残す" || len(saved.Pinned) != 2 || saved.Pinned[0] != "c.md" || saved.Pinned[1] != "a.md" {
+		t.Fatalf("設定ファイルの中身が違う: %s", raw)
+	}
+
+	if err := a.SetPinned(filepath.Join(root, "c.md"), false); err != nil {
+		t.Fatalf("ピン留めの解除に失敗: %v", err)
+	}
+	r, _ = a.Search(store.SearchOptions{Sort: store.SortNameAsc})
+	if r.Head != 1 || r.Entries[0].Name != "a.md" {
+		t.Fatalf("ピン留めを外せていない: head=%d %v", r.Head, names(r))
+	}
+}
+
+// 設定ファイルが外で書き換えられたら、ピン留めを読み直すこと。
+// 壊れた設定ファイルは書き換えないこと。
+func TestPinsFollowConfigFile(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{"a.md": "# A\n", "b.md": "# B\n"})
+	config := filepath.Join(root, ".taggo.json")
+
+	if err := os.WriteFile(config, []byte(`{"pinned": ["B.md"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		r, _ := a.Search(store.SearchOptions{Sort: store.SortNameAsc})
+		if r.Head == 1 && r.Entries[0].Name == "b.md" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("外で書き換えたピン留めが反映されない: head=%d %v", r.Head, names(r))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	broken := []byte(`{"pinned": [`)
+	if err := os.WriteFile(config, broken, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetPinned(filepath.Join(root, "a.md"), true); err == nil {
+		t.Fatal("壊れた設定ファイルへの書き込みが通ってしまった")
+	}
+	if got, _ := os.ReadFile(config); string(got) != string(broken) {
+		t.Fatalf("壊れた設定ファイルを書き換えた: %s", got)
+	}
+}
+
+func names(r store.Result) []string {
+	out := make([]string, len(r.Entries))
+	for i, e := range r.Entries {
+		out[i] = e.Name
+	}
+	return out
 }
 
 // newLimitedApp は上限を小さくしたアプリで、フォルダを 1 つ読み込む。
@@ -385,7 +436,7 @@ func newLimitedApp(t *testing.T, maxEntries int, files []string) (*App, string) 
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("ディレクトリ作成に失敗: %v", err)
 		}
-		if err := os.WriteFile(path, []byte("---\ntags: [共通]\n---\n\n# "+rel+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("# "+rel+"\n\n[[共通]]\n"), 0o644); err != nil {
 			t.Fatalf("ファイル作成に失敗: %v", err)
 		}
 	}
@@ -442,7 +493,7 @@ func TestLoadMoreReadsTheRest(t *testing.T) {
 	if st := a.Status(); st.EntryCount != 5 || st.Remaining != 0 {
 		t.Fatalf("残りの読み込み結果が想定外: %+v", st)
 	}
-	r, _ := a.Search(store.SearchOptions{Query: "#共通"})
+	r, _ := a.Search(store.SearchOptions{Query: "共通"})
 	if r.Total != 5 {
 		t.Fatalf("読み込んだ分が検索に出ない: %d 件", r.Total)
 	}

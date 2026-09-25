@@ -18,7 +18,7 @@ func TestScanDoesNotReadCloudOnlyFiles(t *testing.T) {
 
 	// 中身にタグを書いておく。読んでしまえばタグが付くので、
 	// 「タグが空のまま」であることが「開いていない」ことの証拠になる。
-	body := []byte("---\ntags:\n  - よんだら付くタグ\n---\n\n# 本文\n")
+	body := []byte("# 本文\n\n[[よんだら付くタグ]]\n")
 	local := filepath.Join(root, "local.md")
 	if err := os.WriteFile(local, body, 0o644); err != nil {
 		t.Fatal(err)
@@ -62,9 +62,6 @@ func TestScanDoesNotReadCloudOnlyFiles(t *testing.T) {
 			}
 			if len(e.Tags) != 0 {
 				t.Fatalf("中身を読んでしまっている: %v", e.Tags)
-			}
-			if e.Writable {
-				t.Fatal("取り込むまでは書き込み不可であるべき")
 			}
 			// 一覧に出すのに要る情報は、ファイルを開かずとも埋まっていること。
 			if e.Size != int64(len(body)) {
