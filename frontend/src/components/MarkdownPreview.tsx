@@ -216,8 +216,25 @@ function noteLink(href: string): string {
   }
 }
 
-/** 行き先がまだ無いノートへのリンクの色。prose がリンクに使う変数を差し替える。 */
-const MISSING_LINK = "[--tw-prose-links:var(--color-danger)] decoration-dashed";
+/**
+ * アプリの中でたどるリンク（`[[タグ]]` とノートへのリンク）の見た目。
+ * 外部リンクと見分けられるよう、下線はホバーしたときだけ出す。
+ */
+const INTERNAL_LINK = "no-underline hover:underline";
+
+/**
+ * 行き先がまだ無いノートへのリンクの見た目。prose がリンクに使う色の変数を差し替え、
+ * 点線の下線を常に出す。
+ */
+const MISSING_LINK = "[--tw-prose-links:var(--color-danger)] underline decoration-dashed";
+
+/**
+ * 既定のブラウザで開く外部リンクの見た目。末尾に「↗」を添えて、アプリの外へ出ることを示す。
+ * inline-block にするのは、リンクの下線が記号にまで伸びないようにするため。
+ * 画像を囲んだリンクには記号を付けない。
+ */
+const EXTERNAL_LINK =
+  "after:ml-0.5 after:inline-block after:text-[0.8em] after:content-['↗'] has-[img]:after:content-none";
 
 /**
  * React の子要素を、そこに含まれる文字列だけに畳み込む。
@@ -315,7 +332,7 @@ export function MarkdownPreview({
               return (
                 <a
                   href="#"
-                  className={missing ? MISSING_LINK : undefined}
+                  className={missing ? MISSING_LINK : INTERNAL_LINK}
                   title={
                     missing
                       ? `「${tag}」のページはまだありません。クリックで開くと、md ファイルを作成できます`
@@ -339,7 +356,7 @@ export function MarkdownPreview({
               return (
                 <a
                   href={href}
-                  className={missing ? MISSING_LINK : undefined}
+                  className={missing ? MISSING_LINK : INTERNAL_LINK}
                   title={missing ? `${notePath}（まだありません。クリックで開くと、md ファイルを作成できます）` : notePath}
                   onClick={(e) => {
                     e.preventDefault();
@@ -352,14 +369,18 @@ export function MarkdownPreview({
             }
             // 外部リンクは OS の既定のブラウザ（起動中ならその新しいタブ）で開く。
             // target="_blank" に任せると WebView2 が自前のウィンドウを開いてしまう。
+            const external = href !== undefined && EXTERNAL_LINK_RE.test(href);
             return (
               <a
                 href={href}
                 rel="noreferrer"
                 {...rest}
+                className={external ? `${rest.className ?? ""} ${EXTERNAL_LINK}` : rest.className}
+                // WebView にはステータスバーが無いので、行き先の URL はツールチップで見せる。
+                title={rest.title ?? (external ? href : undefined)}
                 onClick={(e) => {
                   e.preventDefault();
-                  if (href !== undefined && EXTERNAL_LINK_RE.test(href)) BrowserOpenURL(href);
+                  if (external) BrowserOpenURL(href);
                 }}
               >
                 {children}
