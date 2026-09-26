@@ -49,6 +49,11 @@ export interface Library {
   /** ピン留めしているノートのパス。ピン留めした順。 */
   pins: ReadonlySet<string>;
   query: string;
+  /**
+   * 今の entries を引いた検索語。検索は入力から少し遅れて走るので、
+   * 入力中は query と食い違う。結果に添える表示は、こちらに合わせる。
+   */
+  resultQuery: string;
   sort: SortOrder;
   loading: boolean;
   notices: Notice[];
@@ -80,6 +85,7 @@ export function useLibrary(initialSort: SortOrder): Library {
   const [headPaths, setHeadPaths] = useState<ReadonlySet<string>>(new Set());
   const [pins, setPins] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState("");
+  const [resultQuery, setResultQuery] = useState("");
   const [sort, setSort] = useState<SortOrder>(initialSort);
   const [loading, setLoading] = useState(false);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -115,6 +121,7 @@ export function useLibrary(initialSort: SortOrder): Library {
         setTotal(result.total ?? 0);
         setHeadPaths(new Set((result.entries ?? []).slice(0, result.head ?? 0).map((e) => e.path)));
         setPins(new Set(result.pins ?? []));
+        setResultQuery(q);
       } catch (err) {
         notify("error", `検索に失敗しました: ${String(err)}`);
       }
@@ -313,6 +320,7 @@ export function useLibrary(initialSort: SortOrder): Library {
       head,
       pins,
       query,
+      resultQuery,
       sort,
       loading,
       notices,
@@ -336,6 +344,7 @@ export function useLibrary(initialSort: SortOrder): Library {
       head,
       pins,
       query,
+      resultQuery,
       sort,
       loading,
       notices,

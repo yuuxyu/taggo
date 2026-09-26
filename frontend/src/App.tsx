@@ -30,6 +30,7 @@ import { CardGrid } from "./components/CardGrid";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DetailPanel } from "./components/DetailPanel";
 import { LoadMoreBanner, NotLoadedHint } from "./components/LoadMore";
+import { NewTagPageBar } from "./components/NewTagPageBar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Toolbar } from "./components/Toolbar";
@@ -264,6 +265,31 @@ export default function App({ initialSettings }: Props) {
   );
 
   const hasFolder = (library.status?.root ?? "") !== "";
+
+  // 検索語と同じ名前のタグのページが結果の先頭に無ければ、まだ無いページとして取り寄せ、
+  // 作成を促す帯を出す。ファイル名にできない検索語では取り寄せに失敗するので、何も出さない。
+  // 取り寄せは検索語が変わるたびに走るので、どの検索語に対するものかも一緒に持つ。
+  const { resultQuery, head } = library;
+  const lacksTagPage = hasFolder && resultQuery.trim() !== "" && head === 0;
+  const [newTagPage, setNewTagPage] = useState<{ query: string; page: Entry } | null>(null);
+  useEffect(() => {
+    if (!lacksTagPage) return;
+    let stale = false;
+    tagPage(resultQuery).then(
+      (page) => {
+        if (!stale) setNewTagPage(page.missing ? { query: resultQuery, page } : null);
+      },
+      () => {
+        if (!stale) setNewTagPage(null);
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  }, [lacksTagPage, resultQuery]);
+  const shownNewTagPage =
+    lacksTagPage && newTagPage?.query === resultQuery ? newTagPage.page : null;
+
   const remaining = library.status?.remaining ?? 0;
   // 読み込み中は重ねて始められないので、続きを読む操作は出さないか押せなくする。
   const busy = library.progress !== null;
@@ -342,6 +368,8 @@ export default function App({ initialSettings }: Props) {
           onDismiss={() => setLoadMoreBannerOpen(false)}
         />
       )}
+
+      {shownNewTagPage && <NewTagPageBar page={shownNewTagPage} onCreate={handleCreatePage} />}
 
       <main className="flex min-h-0 flex-1 flex-col bg-canvas">
         {!hasFolder ? (
