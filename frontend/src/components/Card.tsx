@@ -1,12 +1,12 @@
 /**
  * グリッドに並ぶノートのカード 1 枚。
- * 上部に本文の抜粋を、下部にタグ（本文の [[タグ]]）をバッジで並べる。
+ * 上部に本文の抜粋を、その下にタイトルとタグ（本文の [[タグ]]）のバッジを並べる。
  * タグ欄に収まらなかったタグは「+N」で数を示し、タグ欄に乗ると全部を重ねて見せる。
  * 右上のピンで、一覧の先頭にピン留めする。
  */
 
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { CloudIcon, MapPinIcon } from "@heroicons/react/16/solid";
+import { MapPinIcon } from "@heroicons/react/16/solid";
 import type { Entry } from "../api/taggo";
 import { NotePreview } from "./NotePreview";
 import { TagBadge } from "./TagBadge";
@@ -21,7 +21,7 @@ interface Props {
 }
 
 /**
- * カード下部のタグ欄。高さは 2 行ぶんに決めてあり、収まるだけのタグを並べる。
+ * カード下部のタグ欄。高さは 4 行ぶんに決めてあり、収まるだけのタグを並べる。
  *
  * 何個収まるかはタグの長さとカードの幅で変わるので、描画してから実際にあふれているかを
  * 測り、あふれていれば 1 個ずつ減らして「+N」を添える。useLayoutEffect の中で
@@ -72,7 +72,7 @@ function CardTags({ tags, onTagClick }: { tags: string[]; onTagClick: (tag: stri
     <>
       <div
         ref={listRef}
-        className="mt-auto flex max-h-11 flex-wrap content-start gap-1 overflow-hidden"
+        className="mt-auto flex max-h-21 flex-wrap content-start gap-1 overflow-hidden"
         onMouseEnter={() => setExpanded(true)}
       >
         {tags.slice(0, limit).map((tag) => (
@@ -113,19 +113,6 @@ function CardTags({ tags, onTagClick }: { tags: string[]; onTagClick: (tag: stri
       )}
     </>
   );
-}
-
-/** ファイルサイズを読みやすい単位へ変換する。 */
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
 export const Card = memo(function Card({
@@ -178,19 +165,6 @@ export const Card = memo(function Card({
         <h3 className="m-0 line-clamp-2 text-sm leading-snug font-semibold" title={entry.relPath}>
           {entry.title}
         </h3>
-        <div className="flex items-center gap-2 text-xs text-ink-faint">
-          <span className="rounded-sm bg-sunken px-1.5 uppercase">{entry.ext.replace(".", "")}</span>
-          <span className="tabular-nums">{formatSize(entry.size)}</span>
-          {entry.cloudOnly && (
-            <span
-              className="inline-flex items-center gap-0.5 text-ink-muted"
-              title="中身はまだダウンロードされていません"
-            >
-              <CloudIcon className="size-3" aria-hidden="true" />
-              未ダウンロード
-            </span>
-          )}
-        </div>
 
         {entry.err && <p className="m-0 line-clamp-2 text-xs text-danger">{entry.err}</p>}
 

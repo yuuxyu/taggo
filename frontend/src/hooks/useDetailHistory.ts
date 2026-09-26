@@ -5,13 +5,6 @@
  * 見たノートを順に覚えておく。一覧のカードから開くと履歴は新しく始まり、
  * プレビューを閉じると捨てる。本文中の画像はノートではないので履歴には積まない。
  *
- * 履歴の積み方は移動の種類で変える。
- *  - リンク・関連ページをたどる移動 … 積む（push）
- *  - 「前へ／次へ」でのページ送り   … 今の項目を置き換える（replace）
- * ページ送りまで積むと、何十件もめくったあとに元のノートへ戻るのに
- * 同じ回数だけ「戻る」を押すことになる。めくった先は「前へ／次へ」で
- * いつでも行き来できるので、履歴には「どこから来たか」だけを残す。
- *
  * 戻ったときに読んでいた位置へ戻れるよう、各項目はスクロール位置も持つ。
  */
 
@@ -51,8 +44,6 @@ export interface DetailHistory {
   start: (path: string, title: string) => void;
   /** リンクなどをたどる。今より先の履歴は捨てて積む。 */
   push: (path: string, title: string) => void;
-  /** ページ送り。今の項目を置き換える。 */
-  replace: (path: string, title: string) => void;
   /** 履歴の中の位置へ移る。戻る・進むもこれで表す。 */
   go: (index: number) => void;
   /** プレビューを閉じる。履歴も捨てる。 */
@@ -88,15 +79,6 @@ export function useDetailHistory(): DetailHistory {
     });
   }, []);
 
-  const replace = useCallback((path: string, title: string) => {
-    setState((s) => {
-      if (s.index < 0) return s;
-      const items = s.items.slice();
-      items[s.index] = { path, title, scrollTop: 0 };
-      return { ...s, items, navId: s.navId + 1 };
-    });
-  }, []);
-
   const go = useCallback((index: number) => {
     const top = scrollTop.current;
     setState((s) => {
@@ -122,7 +104,6 @@ export function useDetailHistory(): DetailHistory {
     canForward: state.index >= 0 && state.index < state.items.length - 1,
     start,
     push,
-    replace,
     go,
     clear,
     reportScroll,

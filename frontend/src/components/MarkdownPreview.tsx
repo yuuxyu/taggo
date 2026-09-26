@@ -39,10 +39,10 @@ interface Props {
   /** 本文中の画像をクリックしたときに、その画像のパスと代替テキストを渡して呼ぶ。 */
   onOpenImage: (path: string, alt?: string) => void;
   /**
-   * 本文を読み込んで描画し終えたときに呼ぶ。
+   * 本文を読み込んで描画し終えたときに、読み込んだ本文を渡して呼ぶ。
    * 戻ってきたときのスクロール位置の復元は、本文の高さが決まってからでないとできない。
    */
-  onLoaded?: () => void;
+  onLoaded?: (source: string) => void;
 }
 
 /**
@@ -278,7 +278,7 @@ export function MarkdownPreview({
 
   // 描画し終えてから知らせる。effect はコミット後に走るので、本文の高さは決まっている。
   useEffect(() => {
-    if (source !== null) onLoaded?.();
+    if (source !== null) onLoaded?.(source);
     // 本文が変わったときだけ知らせればよい。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source]);

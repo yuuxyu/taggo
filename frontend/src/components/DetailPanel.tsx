@@ -16,6 +16,8 @@
  * ヘッダー左端の「戻る／進む」で、リンクをたどる前のノートへ戻れる。
  * 履歴そのものは App が持ち、ここは操作と表示だけを受け持つ。
  *
+ * フッターには本文の文字数を表示する。
+ *
  * 本文は編集しない方針なので、ヘッダーの「エディタで開く」から、拡張子に紐づいた
  * アプリ（既定のテキストエディタ）へファイルを渡す。保存された変更はウォッチャーが拾う。
  *
@@ -32,7 +34,6 @@ import { CloudOnlyNotice } from "./CloudOnlyNotice";
 import { HistoryNav } from "./HistoryNav";
 import { ImagePreview } from "./ImagePreview";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { Pager } from "./Pager";
 import { missingLinksOf, missingTagsOf, RelatedPages, useRelatedPages } from "./RelatedPages";
 import { TagBadge } from "./TagBadge";
 
@@ -55,11 +56,6 @@ interface Props {
   /** クラウド上にだけあったファイルを取り込んだあとの最新状態を一覧へ返す。 */
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
-  /** 前後のノートへの移動。一覧の並び順で動く。 */
-  onNavigate: (direction: 1 | -1) => void;
-  /** 一覧における現在位置（0 始まり）。 */
-  index: number;
-  total: number;
   /** 移動の履歴。戻る／進むと、戻ったときのスクロール位置の復元に使う。 */
   history: DetailHistory;
 }
@@ -84,9 +80,6 @@ export function DetailPanel({
   onTogglePin,
   onEntryUpdated,
   onError,
-  onNavigate,
-  index,
-  total,
   history,
 }: Props) {
   const { go: goHistory, reportScroll, navId } = history;
@@ -100,8 +93,14 @@ export function DetailPanel({
   const missingLinks = useMemo(() => missingLinksOf(related), [related]);
   const missingTags = useMemo(() => missingTagsOf(related), [related]);
 
-  // 別のノートへ移ったら、前のノートの画像は閉じる。
-  useEffect(() => setImage(null), [entry.path]);
+  // 本文の文字数。本文を読み込むまでと、本文の無いページでは null。
+  const [charCount, setCharCount] = useState<number | null>(null);
+
+  // 別のノートへ移ったら、前のノートの画像は閉じ、文字数も数え直す。
+  useEffect(() => {
+    setImage(null);
+    setCharCount(null);
+  }, [entry.path]);
   const closeImage = useCallback(() => setImage(null), []);
 
   // マウスが動いた直後だけヘッダー／タグ UI を出し、止まればしばらくして隠す。
@@ -145,7 +144,7 @@ export function DetailPanel({
     return () => observer.disconnect();
   }, []);
 
-  // Esc でプレビューを閉じ、左右キーで前後のノートへ移動する。
+  // Esc でプレビューを閉じ、Alt + 左右で履歴を移動する。
   // 画像ビューアを開いている間は、これらのキーはビューアが先に受けて止める。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -157,24 +156,11 @@ export function DetailPanel({
       if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
         e.preventDefault();
         goHistory(historyIndex + (e.key === "ArrowLeft" ? -1 : 1));
-        return;
-      }
-      // 入力欄の中の左右キーはキャレット移動に使うので奪わない。
-      const active = document.activeElement;
-      const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
-      if (typing) return;
-
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        onNavigate(-1);
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        onNavigate(1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, onNavigate, goHistory, historyIndex]);
+  }, [onClose, goHistory, historyIndex]);
 
   // マウスの戻る／進むボタン（ボタン 3 / 4）でも履歴を移動する。
   // WebView 自体のページ遷移に使われないよう、押した時点で既定の動作を止める。
@@ -287,7 +273,10 @@ export function DetailPanel({
                   onFollowTag={onFollowTag}
                   missingTags={missingTags}
                   onOpenImage={(path, alt) => setImage({ path, alt })}
-                  onLoaded={applyPendingScroll}
+                  onLoaded={(source) => {
+                    setCharCount(countChars(source));
+                    applyPendingScroll();
+                  }}
                 />
                 )}
               </div>
@@ -377,21 +366,34 @@ export function DetailPanel({
           )}
         </div>
 
-        {/* ---- 前後のノートへの移動 ---- */}
-        <div
-          className={`absolute inset-x-0 bottom-0 z-10 flex justify-end border-t ${glassBar} px-5 pt-3 pb-4 transition-opacity duration-300 ${
-            overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"
-          }`}
-          // ヘッダーと同じく、スクロールバーの手前で止める。
-          style={{ right: scrollbarWidth }}
-        >
-          <Pager index={index} total={total} onNavigate={onNavigate} />
-        </div>
+        {/* ---- 文字数のフッター ---- */}
+        {charCount !== null && (
+          <div
+            className={`absolute inset-x-0 bottom-0 z-10 flex justify-end border-t ${glassBar} px-5 py-2.5 transition-opacity duration-300 ${
+              overlayVisible ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+            // ヘッダーと同じく、スクロールバーの手前で止める。
+            style={{ right: scrollbarWidth }}
+          >
+            <span className="text-xs tabular-nums text-ink-faint">
+              {charCount.toLocaleString()} 文字
+            </span>
+          </div>
+        )}
       </div>
 
       {image && <ImagePreview path={image.path} alt={image.alt} onClose={closeImage} />}
     </div>
   );
+}
+
+/**
+ * 本文の文字数を数える。改行は数えない。
+ * 絵文字や結合文字が 2 文字以上に数えられないよう、見た目の 1 文字（書記素）ごとに数える。
+ */
+function countChars(source: string): number {
+  const text = source.replace(/\r?\n/g, "");
+  return [...new Intl.Segmenter("ja", { granularity: "grapheme" }).segment(text)].length;
 }
 
 /**

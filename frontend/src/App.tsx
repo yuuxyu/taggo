@@ -55,8 +55,7 @@ export default function App({ initialSettings }: Props) {
   const library = useLibrary(initialSettings.sort);
   // 詳細プレビューで見ているノートは、戻る／進むのための履歴として持つ。
   const history = useDetailHistory();
-  const { start: startHistory, push: pushHistory, replace: replaceHistory, clear: clearHistory } =
-    history;
+  const { start: startHistory, push: pushHistory, clear: clearHistory } = history;
   const detailPath = history.current?.path ?? null;
   // 一覧（今の検索結果）に無いのにプレビューで開いたノート。リンク先や
   // タグのページは絞り込みの外にあることが多いので、一覧とは別に持っておく。
@@ -76,13 +75,13 @@ export default function App({ initialSettings }: Props) {
   }, [notify]);
 
   // 一覧が入れ替わっても、開いているプレビューは最新のエントリを指し続ける。
-  // 「前へ／次へ」で隣のノートへ移れるよう、位置も一緒に持つ。
-  const detailIndex = useMemo(
-    () => (detailPath === null ? -1 : entries.findIndex((e) => e.path === detailPath)),
-    [detailPath, entries],
+  const detailEntry = useMemo(
+    () =>
+      detailPath === null
+        ? null
+        : (entries.find((e) => e.path === detailPath) ?? outside.get(detailPath) ?? null),
+    [detailPath, entries, outside],
   );
-  const detailEntry =
-    detailIndex >= 0 ? entries[detailIndex] : detailPath === null ? null : (outside.get(detailPath) ?? null);
 
   // 一覧の外で開いたノートも、外部での変更や削除に追従させる。
   useEffect(
@@ -158,18 +157,6 @@ export default function App({ initialSettings }: Props) {
       }
     },
     [entries, pushHistory],
-  );
-
-  // 詳細プレビューの前後移動。いまの検索結果・並び順のまま隣のノートへ動く。
-  // 端では止める（ループしない）。めくるたびに履歴が伸びないよう、今の項目を置き換える。
-  const navigate = useCallback(
-    (direction: 1 | -1) => {
-      if (detailIndex < 0) return;
-      const next = detailIndex + direction;
-      if (next < 0 || next >= entries.length) return;
-      replaceHistory(entries[next].path, entries[next].title);
-    },
-    [detailIndex, entries, replaceHistory],
   );
 
   // オーバーレイを閉じる共通処理。閉じたあとは必ず検索バーへ戻す。
@@ -442,9 +429,6 @@ export default function App({ initialSettings }: Props) {
           onTogglePin={(pinned) => handleTogglePin(detailEntry, pinned)}
           onEntryUpdated={updateEntry}
           onError={(message) => notify("error", message)}
-          onNavigate={navigate}
-          index={detailIndex}
-          total={entries.length}
           history={history}
         />
       )}
