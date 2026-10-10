@@ -13,9 +13,9 @@
  * まだ無いページ（ページの無いタグや、行き先の無いリンク）も、ファイルを作らずにここで開く。
  * 本文の代わりに「md ファイルを作成する」ボタンを出し、関連ページはふつうのノートと同じく並べる。
  *
- * ヘッダー左端の「戻る／進む」で、リンクをたどる前のノートへ戻れる。
- * 最初のノートでさらに戻ると、プレビューを閉じて一覧へ戻る（閉じるボタンは置かない）。
- * 履歴そのものは App が持ち、ここは操作と表示だけを受け持つ。
+ * ヘッダー左端の「戻る／進む」で、リンクをたどる前のノートや、開く前の一覧へ戻れる。
+ * プレビューを閉じるボタンは置かず、一覧へは「戻る」か Esc で戻る。
+ * 履歴そのものと、Alt + 左右・マウスの戻る／進むボタンは App が受け持つ。
  *
  * フッターには本文の文字数を表示する。
  *
@@ -29,7 +29,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DocumentPlusIcon, MapPinIcon, PencilSquareIcon } from "@heroicons/react/20/solid";
 import { openInEditor, type Entry } from "../api/taggo";
-import type { DetailHistory } from "../hooks/useDetailHistory";
+import type { NavHistory } from "../hooks/useNavHistory";
 import { Button } from "./Button";
 import { CloudOnlyNotice } from "./CloudOnlyNotice";
 import { HistoryNav } from "./HistoryNav";
@@ -58,7 +58,7 @@ interface Props {
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
   /** 移動の履歴。戻る／進むと、戻ったときのスクロール位置の復元に使う。 */
-  history: DetailHistory;
+  history: NavHistory;
 }
 
 /** UI オーバーレイを自動で隠すまでの無操作時間。 */
@@ -84,7 +84,6 @@ export function DetailPanel({
   history,
 }: Props) {
   const { go: goHistory, reportScroll, navId } = history;
-  const historyIndex = history.index;
   // 本文中の画像から開いた画像ビューア。閉じれば null に戻り、本文がそのまま見える。
   const [image, setImage] = useState<OpenImage | null>(null);
 
@@ -144,52 +143,14 @@ export function DetailPanel({
     return () => observer.disconnect();
   }, []);
 
-  // 履歴を delta だけ移動する。最初のノートからさらに戻るときは、一覧へ戻る。
-  const moveHistory = useCallback(
-    (delta: number) => {
-      const index = historyIndex + delta;
-      if (index < 0) onClose();
-      else goHistory(index);
-    },
-    [historyIndex, goHistory, onClose],
-  );
-
-  // Esc でプレビューを閉じ、Alt + 左右で履歴を移動する。
-  // 画像ビューアを開いている間は、これらのキーはビューアが先に受けて止める。
+  // Esc でプレビューを閉じる。画像ビューアを開いている間は、ビューアが先に受けて止める。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-      // Alt + 左右は、ブラウザと同じく履歴の戻る／進む。入力欄の中でも効かせる。
-      if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-        e.preventDefault();
-        moveHistory(e.key === "ArrowLeft" ? -1 : 1);
-      }
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, moveHistory]);
-
-  // マウスの戻る／進むボタン（ボタン 3 / 4）でも履歴を移動する。
-  // WebView 自体のページ遷移に使われないよう、押した時点で既定の動作を止める。
-  useEffect(() => {
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button === 3 || e.button === 4) e.preventDefault();
-    };
-    const onMouseUp = (e: MouseEvent) => {
-      if (e.button !== 3 && e.button !== 4) return;
-      e.preventDefault();
-      moveHistory(e.button === 3 ? -1 : 1);
-    };
-    window.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("mouseup", onMouseUp);
-    return () => {
-      window.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [moveHistory]);
+  }, [onClose]);
 
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -231,7 +192,7 @@ export function DetailPanel({
     reportScroll(el.scrollTop);
   };
   useLayoutEffect(() => {
-    pendingScroll.current = history.current?.scrollTop ?? 0;
+    pendingScroll.current = history.current.kind === "note" ? history.current.scrollTop : 0;
     const samePath = shownPath.current === entry.path;
     shownPath.current = entry.path;
     // 本文を読み込まないページ（クラウド上にしか無い・まだ無い）は、待たずに合わせる。
@@ -323,7 +284,7 @@ export function DetailPanel({
           style={{ right: scrollbarWidth }}
         >
           <header className="flex items-start gap-4 px-5 pt-4 pb-2.5">
-            <HistoryNav items={history.items} index={historyIndex} onGo={goHistory} onExit={onClose} />
+            <HistoryNav items={history.items} index={history.index} onGo={goHistory} />
             <div className="min-w-0 flex-1">
               <h2 className="m-0 text-lg leading-snug break-words">{entry.title}</h2>
               <p

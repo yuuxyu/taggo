@@ -3,9 +3,12 @@
  *
  * 最上部の検索バーと、ノートを並べたカード型グリッドの 2 層だけ。
  * フォルダーツリーは持たない。ノートの詳細プレビューは画面遷移せずオーバーレイで開く。
+ *
+ * 一覧（検索結果）とプレビューで開いたノートは、1 本の履歴に順に積む。
+ * プレビューでタグをクリックして始めた検索も履歴に残るので、「戻る」で元のノートへ戻れる。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ExclamationTriangleIcon,
   FolderOpenIcon,
@@ -29,13 +32,14 @@ import { Button } from "./components/Button";
 import { CardGrid } from "./components/CardGrid";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DetailPanel } from "./components/DetailPanel";
+import { HistoryNav } from "./components/HistoryNav";
 import { LoadMoreBanner, NotLoadedHint } from "./components/LoadMore";
 import { NewTagPageBar } from "./components/NewTagPageBar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Toolbar } from "./components/Toolbar";
-import { useDetailHistory } from "./hooks/useDetailHistory";
 import { useLibrary } from "./hooks/useLibrary";
+import { useNavHistory } from "./hooks/useNavHistory";
 import { applyTheme } from "./theme";
 
 /**
@@ -53,19 +57,62 @@ export default function App({ initialSettings }: Props) {
   const [settings, setSettings] = useState(initialSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const library = useLibrary(initialSettings.sort);
-  // 詳細プレビューで見ているノートは、戻る／進むのための履歴として持つ。
-  const history = useDetailHistory();
-  const { start: startHistory, push: pushHistory, clear: clearHistory } = history;
-  const detailPath = history.current?.path ?? null;
-  // 一覧（今の検索結果）に無いのにプレビューで開いたノート。リンク先や
-  // タグのページは絞り込みの外にあることが多いので、一覧とは別に持っておく。
-  const [outside, setOutside] = useState<ReadonlyMap<string, Entry>>(new Map());
+  // 見てきた一覧とノートは、戻る／進むのための履歴として持つ。
+  const history = useNavHistory();
+  const {
+    current,
+    navId,
+    go: goHistory,
+    pushNote,
+    pushSearch,
+    replaceSearch,
+    backToList,
+    remove: removeFromHistory,
+    reset: resetHistory,
+  } = history;
+  const historyIndex = history.index;
+  const detailPath = current.kind === "note" ? current.path : null;
+  // 履歴にあるノートのエントリ。リンク先やタグのページは絞り込みの外にあることが多く、
+  // 一覧から開いたノートも、別の検索をすると一覧から外れる。戻ったときにも開けるよう、
+  // 一覧とは別に持っておく。
+  const [visited, setVisited] = useState<ReadonlyMap<string, Entry>>(new Map());
   // 「すべて読み込む」の確認ダイアログを出しているか。
   const [confirmLoadAll, setConfirmLoadAll] = useState(false);
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
   const [focusSignal, setFocusSignal] = useState(0);
 
   const { entries, query, setQuery, notify, replaceEntry } = library;
+
+  // 履歴で一覧へ移ったら、その一覧の検索語で引き直し、キー入力の行き先を検索バーへ戻す。
+  // 検索バーへの入力は履歴の検索語を書き換えるだけで移動ではないので、ここは通らない。
+  useEffect(() => {
+    if (current.kind !== "search") return;
+    setQuery(current.query);
+    setFocusSignal((n) => n + 1);
+    // 移動（navId）ごとに一度だけ合わせる。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navId]);
+
+  // 別のフォルダを開いたら、前のフォルダのノートを指す履歴は捨てる。
+  const root = library.status?.root ?? "";
+  const shownRoot = useRef(root);
+  useEffect(() => {
+    if (shownRoot.current === root) return;
+    shownRoot.current = root;
+    resetHistory(query);
+    // 開き直した時点の検索語を使うだけなので、検索語の変化では捨てない。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root, resetHistory]);
+
+  // 履歴から外れたノートのエントリは、持っておく必要がない。
+  useEffect(() => {
+    const paths = new Set(history.items.flatMap((item) => (item.kind === "note" ? [item.path] : [])));
+    setVisited((prev) =>
+      [...prev.keys()].every((path) => paths.has(path))
+        ? prev
+        : new Map([...prev].filter(([path]) => paths.has(path))),
+    );
+  }, [history.items]);
 
   // 起動時に開けなかったフォルダなど、画面の準備ができる前に起きたことを知らせる。
   useEffect(() => {
@@ -79,15 +126,15 @@ export default function App({ initialSettings }: Props) {
     () =>
       detailPath === null
         ? null
-        : (entries.find((e) => e.path === detailPath) ?? outside.get(detailPath) ?? null),
-    [detailPath, entries, outside],
+        : (entries.find((e) => e.path === detailPath) ?? visited.get(detailPath) ?? null),
+    [detailPath, entries, visited],
   );
 
-  // 一覧の外で開いたノートも、外部での変更や削除に追従させる。
+  // 一覧に無いノートも、外部での変更や削除に追従させる。
   useEffect(
     () =>
       on<EntryChanged>(Events.entryChanged, (change) => {
-        setOutside((prev) => {
+        setVisited((prev) => {
           if (!prev.has(change.path)) return prev;
           const next = new Map(prev);
           if (change.removed || !change.entry) {
@@ -101,37 +148,33 @@ export default function App({ initialSettings }: Props) {
     [],
   );
 
-  // 見ていたノートが消えたら、プレビューを閉じる。
+  // 見ていたノートが消えたら、履歴から除いて手前の画面へ戻る。
   useEffect(() => {
-    if (detailPath !== null && detailEntry === null) clearHistory();
-  }, [detailPath, detailEntry, clearHistory]);
+    if (detailPath !== null && detailEntry === null) removeFromHistory(detailPath);
+  }, [detailPath, detailEntry, removeFromHistory]);
 
   // タグの保存などで新しくなったエントリを、一覧と一覧の外の両方へ反映する。
   const updateEntry = useCallback(
     (entry: Entry) => {
       replaceEntry(entry);
-      setOutside((prev) => (prev.has(entry.path) ? new Map(prev).set(entry.path, entry) : prev));
+      setVisited((prev) => (prev.has(entry.path) ? new Map(prev).set(entry.path, entry) : prev));
     },
     [replaceEntry],
   );
 
   /**
-   * 取り寄せたページ（まだ無いページを含む）をプレビューで開き、履歴に積む。
-   * 一覧に載っていればその項目を、無ければ一覧の外として持って開く。
+   * ページ（まだ無いページを含む）をプレビューで開き、履歴に積む。
+   * 一覧に載っていればその項目を開く。どちらでも、戻ってきたときに開けるよう持っておく。
    */
   const openEntry = useCallback(
     (entry: Entry) => {
       // パスの大文字小文字は、Windows に合わせて区別しない。
       const wanted = entry.path.toLowerCase();
-      const inList = entries.find((e) => e.path.toLowerCase() === wanted);
-      if (inList) {
-        pushHistory(inList.path, inList.title);
-        return;
-      }
-      setOutside((prev) => new Map(prev).set(entry.path, entry));
-      pushHistory(entry.path, entry.title);
+      const page = entries.find((e) => e.path.toLowerCase() === wanted) ?? entry;
+      setVisited((prev) => new Map(prev).set(page.path, page));
+      pushNote(page.path, page.title);
     },
-    [entries, pushHistory],
+    [entries, pushNote],
   );
 
   /**
@@ -144,27 +187,18 @@ export default function App({ initialSettings }: Props) {
       const wanted = path.toLowerCase();
       const inList = entries.find((e) => e.path.toLowerCase() === wanted);
       if (inList) {
-        pushHistory(inList.path, inList.title);
+        openEntry(inList);
         return true;
       }
       try {
-        const entry = await getEntry(path);
-        setOutside((prev) => new Map(prev).set(entry.path, entry));
-        pushHistory(entry.path, entry.title);
+        openEntry(await getEntry(path));
         return true;
       } catch {
         return false;
       }
     },
-    [entries, pushHistory],
+    [entries, openEntry],
   );
-
-  // オーバーレイを閉じる共通処理。閉じたあとは必ず検索バーへ戻す。
-  const closeDetail = useCallback(() => {
-    clearHistory();
-    setOutside(new Map());
-    setFocusSignal((n) => n + 1);
-  }, [clearHistory]);
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
@@ -188,13 +222,49 @@ export default function App({ initialSettings }: Props) {
 
   // タグバッジのクリックで、そのタグで検索し直す。タグの名前と一致するので、
   // そのタグのページが先頭に、タグを付けたノートがその後ろに並ぶ。
-  const handleTagClick = useCallback(
-    (tag: string) => {
-      setQuery(tag);
-      clearHistory();
+  // 新しい一覧として履歴に積むので、「戻る」でクリックした画面へ戻れる。
+  const handleTagClick = useCallback((tag: string) => pushSearch(tag), [pushSearch]);
+
+  // 検索バーへの入力は、今の一覧の検索語を書き換える（1 文字ごとに履歴を積まない）。
+  const handleQueryChange = useCallback(
+    (q: string) => {
+      setQuery(q);
+      replaceSearch(q);
     },
-    [setQuery, clearHistory],
+    [setQuery, replaceSearch],
   );
+
+  // Alt + 左右とマウスの戻る／進むボタン（ボタン 3 / 4）で、ブラウザと同じく履歴を移動する。
+  // 一覧でもプレビューでも、入力欄の中でも効かせる。ダイアログを開いている間は動かさない。
+  // 画像ビューアを開いている間は、ビューアが先に受けて止める。
+  const historyBlocked = settingsOpen || confirmLoadAll;
+  useEffect(() => {
+    const move = (delta: number) => {
+      if (!historyBlocked) goHistory(historyIndex + delta);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      e.preventDefault();
+      move(e.key === "ArrowLeft" ? -1 : 1);
+    };
+    // WebView 自体のページ遷移に使われないよう、押した時点で既定の動作を止める。
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 3 || e.button === 4) e.preventDefault();
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      move(e.button === 3 ? -1 : 1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [goHistory, historyIndex, historyBlocked]);
 
   // ピン留めを切り替える。一覧はピン留めの変更イベントで引き直す。
   const handleTogglePin = useCallback(
@@ -298,14 +368,22 @@ export default function App({ initialSettings }: Props) {
   return (
     <div className="flex h-full flex-col bg-canvas text-sm">
       <header className="sticky top-0 z-10 flex flex-col gap-2.5 border-b border-line bg-canvas px-4.5 pt-3.5 pb-3">
-        <SearchBar
-          value={query}
-          onChange={setQuery}
-          total={library.total}
-          entryCount={library.status?.entryCount ?? 0}
-          disabled={!hasFolder}
-          focusSignal={focusSignal}
-        />
+        <div className="flex items-center gap-2">
+          {/* 履歴の一覧が検索バーの下に隠れないよう、検索バーより手前に重ねる。 */}
+          <div className="relative z-30">
+            <HistoryNav items={history.items} index={historyIndex} onGo={goHistory} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <SearchBar
+              value={query}
+              onChange={handleQueryChange}
+              total={library.total}
+              entryCount={library.status?.entryCount ?? 0}
+              disabled={!hasFolder}
+              focusSignal={focusSignal}
+            />
+          </div>
+        </div>
         <Toolbar
           status={library.status}
           progress={library.progress}
@@ -396,7 +474,7 @@ export default function App({ initialSettings }: Props) {
                 entries={entries}
                 head={library.head}
                 pins={library.pins}
-                onOpen={(entry) => startHistory(entry.path, entry.title)}
+                onOpen={openEntry}
                 onTagClick={handleTagClick}
                 onTogglePin={handleTogglePin}
               />
@@ -420,7 +498,7 @@ export default function App({ initialSettings }: Props) {
       {detailEntry && (
         <DetailPanel
           entry={detailEntry}
-          onClose={closeDetail}
+          onClose={backToList}
           onTagClick={handleTagClick}
           onFollowLink={(link, path) => void handleFollowLink(detailEntry.path, link, path)}
           onFollowTag={(tag) => void handleFollowTag(tag)}

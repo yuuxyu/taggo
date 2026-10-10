@@ -1,41 +1,46 @@
 /**
- * 詳細プレビューのヘッダー左端に置く「戻る／進む」と履歴の一覧。
+ * 一覧の検索バーの左と、詳細プレビューのヘッダー左端に置く「戻る／進む」と履歴の一覧。
+ * 履歴にはノートと一覧（検索結果）の両方が並ぶ。
  *
  * ブラウザと同じ並びと操作にそろえ、覚えることを増やさない。
- *  - ← / →            … 1 つ戻る・進む（ホバーで行き先の名前が出る）。
- *                        最初のノートで ← を押すと、プレビューを閉じて一覧へ戻る
- *  - 時計のボタン      … これまでに見たノートの一覧を開き、好きな位置へ飛ぶ
- *  - Alt + ← / →      … キーボードでの戻る・進む（DetailPanel 側で受ける）
+ *  - ← / →            … 1 つ戻る・進む（ホバーで行き先の名前が出る）
+ *  - 時計のボタン      … これまでに見た画面の一覧を開き、好きな位置へ飛ぶ
+ *  - Alt + ← / →      … キーボードでの戻る・進む（App 側で受ける）
  *  - マウスの戻る／進むボタン … 同上
  *
- * 一覧は新しいものを上に並べ、いま見ているものに印を付ける。
- * 一覧から飛んでも履歴は切り詰めないので、「進む」で元の位置へ戻れる。
+ * 履歴の一覧は新しいものを上に並べ、いま見ているものに印を付ける。
+ * 履歴の一覧から飛んでも履歴は切り詰めないので、「進む」で元の位置へ戻れる。
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, ClockIcon } from "@heroicons/react/20/solid";
-import type { HistoryItem } from "../hooks/useDetailHistory";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  CheckIcon,
+  ClockIcon,
+  DocumentTextIcon,
+  MagnifyingGlassIcon,
+} from "@heroicons/react/20/solid";
+import type { HistoryItem } from "../hooks/useNavHistory";
 import { Button } from "./Button";
 
 interface Props {
   items: HistoryItem[];
   index: number;
   onGo: (index: number) => void;
-  /** 最初のノートからさらに戻る。プレビューを閉じて一覧へ戻る。 */
-  onExit: () => void;
 }
 
 /** アイコンだけのボタンは、文字付きのボタンより左右の余白を詰める。 */
 const ICON_ONLY = "px-2!";
 
-export function HistoryNav({ items, index, onGo, onExit }: Props) {
+export function HistoryNav({ items, index, onGo }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const prev = index > 0 ? items[index - 1] : null;
   const next = index >= 0 && index < items.length - 1 ? items[index + 1] : null;
 
-  // 一覧の外をクリックするか Esc で閉じる。Esc はプレビュー自体を閉じる操作でもあるので、
+  // 履歴の一覧の外をクリックするか Esc で閉じる。Esc はプレビュー自体を閉じる操作でもあるので、
   // 一覧が開いている間はキャプチャで先に受け、プレビューまで届かないようにする。
   useEffect(() => {
     if (!menuOpen) return;
@@ -63,8 +68,9 @@ export function HistoryNav({ items, index, onGo, onExit }: Props) {
       <Button
         variant="ghost"
         className={ICON_ONLY}
-        onClick={() => (prev ? onGo(index - 1) : onExit())}
-        title={prev ? `戻る: ${prev.title}（Alt+←）` : "一覧へ戻る（Alt+← / Esc）"}
+        disabled={!prev}
+        onClick={() => onGo(index - 1)}
+        title={prev ? `戻る: ${prev.title}（Alt+←）` : "戻る（Alt+←）"}
         aria-label="戻る"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
@@ -85,7 +91,7 @@ export function HistoryNav({ items, index, onGo, onExit }: Props) {
           className={ICON_ONLY}
           disabled={items.length < 2}
           onClick={() => setMenuOpen((open) => !open)}
-          title="これまでに見たノート"
+          title="これまでに見た画面"
           aria-label="履歴"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -111,7 +117,7 @@ export function HistoryNav({ items, index, onGo, onExit }: Props) {
                       className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sunken ${
                         current ? "font-semibold" : ""
                       }`}
-                      title={item.path}
+                      title={item.kind === "note" ? item.path : item.title}
                       onClick={() => {
                         setMenuOpen(false);
                         onGo(i);
@@ -120,6 +126,11 @@ export function HistoryNav({ items, index, onGo, onExit }: Props) {
                       <span className="flex size-4 shrink-0 items-center justify-center">
                         {current && <CheckIcon className="size-4" aria-hidden="true" />}
                       </span>
+                      {item.kind === "note" ? (
+                        <DocumentTextIcon className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
+                      ) : (
+                        <MagnifyingGlassIcon className="size-4 shrink-0 text-ink-faint" aria-hidden="true" />
+                      )}
                       <span className="truncate">{item.title}</span>
                     </button>
                   </li>
