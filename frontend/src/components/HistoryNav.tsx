@@ -2,7 +2,8 @@
  * 詳細プレビューのヘッダー左端に置く「戻る／進む」と履歴の一覧。
  *
  * ブラウザと同じ並びと操作にそろえ、覚えることを増やさない。
- *  - ← / →            … 1 つ戻る・進む（ホバーで行き先の名前が出る）
+ *  - ← / →            … 1 つ戻る・進む（ホバーで行き先の名前が出る）。
+ *                        最初のノートで ← を押すと、プレビューを閉じて一覧へ戻る
  *  - 時計のボタン      … これまでに見たノートの一覧を開き、好きな位置へ飛ぶ
  *  - Alt + ← / →      … キーボードでの戻る・進む（DetailPanel 側で受ける）
  *  - マウスの戻る／進むボタン … 同上
@@ -20,12 +21,14 @@ interface Props {
   items: HistoryItem[];
   index: number;
   onGo: (index: number) => void;
+  /** 最初のノートからさらに戻る。プレビューを閉じて一覧へ戻る。 */
+  onExit: () => void;
 }
 
 /** アイコンだけのボタンは、文字付きのボタンより左右の余白を詰める。 */
 const ICON_ONLY = "px-2!";
 
-export function HistoryNav({ items, index, onGo }: Props) {
+export function HistoryNav({ items, index, onGo, onExit }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -60,9 +63,8 @@ export function HistoryNav({ items, index, onGo }: Props) {
       <Button
         variant="ghost"
         className={ICON_ONLY}
-        disabled={!prev}
-        onClick={() => onGo(index - 1)}
-        title={prev ? `戻る: ${prev.title}（Alt+←）` : "戻る（Alt+←）"}
+        onClick={() => (prev ? onGo(index - 1) : onExit())}
+        title={prev ? `戻る: ${prev.title}（Alt+←）` : "一覧へ戻る（Alt+← / Esc）"}
         aria-label="戻る"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
