@@ -30,3 +30,9 @@ func (s *Store) TagPagePath(tag string) string {
 	defer s.mu.RUnlock()
 	return pickOne(s.tagPages[key])
 }
+
+// SameNote は、a と b が同じノートを指しているかを判定する。
+// パスの大文字小文字と、.md と .markdown の違いは区別しない。
+func SameNote(a, b string) bool {
+	return noteKey(a) == noteKey(b)
+}

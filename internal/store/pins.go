@@ -27,3 +27,9 @@ func (s *Store) pinOrder() map[string]int {
 	}
 	return order
 }
+
+// IsPinned は、path のノートをピン留めしているかを返す。
+func (s *Store) IsPinned(path string) bool {
+	_, ok := s.pinOrder()[strings.ToLower(path)]
+	return ok
+}

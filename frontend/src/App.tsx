@@ -26,6 +26,8 @@ import {
   takeStartupWarnings,
   type Entry,
   type EntryChanged,
+  type EntryRenamed,
+  type RenameResult,
   type Settings,
 } from "./api/taggo";
 import { Button } from "./components/Button";
@@ -35,6 +37,7 @@ import { DetailPanel } from "./components/DetailPanel";
 import { HistoryNav } from "./components/HistoryNav";
 import { LoadMoreBanner, NotLoadedHint } from "./components/LoadMore";
 import { NewTagPageBar } from "./components/NewTagPageBar";
+import { RenameDialog } from "./components/RenameDialog";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Toolbar } from "./components/Toolbar";
@@ -68,6 +71,7 @@ export default function App({ initialSettings }: Props) {
     replaceSearch,
     backToList,
     remove: removeFromHistory,
+    renamePath: renameHistoryPath,
     reset: resetHistory,
   } = history;
   const historyIndex = history.index;
@@ -78,6 +82,8 @@ export default function App({ initialSettings }: Props) {
   const [visited, setVisited] = useState<ReadonlyMap<string, Entry>>(new Map());
   // 「すべて読み込む」の確認ダイアログを出しているか。
   const [confirmLoadAll, setConfirmLoadAll] = useState(false);
+  // 名前の変更ダイアログで名前を変えようとしているページ。
+  const [renaming, setRenaming] = useState<Entry | null>(null);
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
   const [focusSignal, setFocusSignal] = useState(0);
 
@@ -146,6 +152,21 @@ export default function App({ initialSettings }: Props) {
         });
       }),
     [],
+  );
+
+  // ページの名前を変えたら、履歴と手元のエントリを新しいパスへ付け替える。
+  // 古いパスは消えたものとして扱わないので、見ていたページはそのまま開いたままになる。
+  useEffect(
+    () =>
+      on<EntryRenamed>(Events.entryRenamed, ({ from, to, entry }) => {
+        setVisited((prev) => {
+          const next = new Map(prev);
+          next.delete(from);
+          return next.set(to, entry);
+        });
+        renameHistoryPath(from, to, entry.title);
+      }),
+    [renameHistoryPath],
   );
 
   // 見ていたノートが消えたら、履歴から除いて手前の画面へ戻る。
@@ -237,7 +258,7 @@ export default function App({ initialSettings }: Props) {
   // Alt + 左右とマウスの戻る／進むボタン（ボタン 3 / 4）で、ブラウザと同じく履歴を移動する。
   // 一覧でもプレビューでも、入力欄の中でも効かせる。ダイアログを開いている間は動かさない。
   // 画像ビューアを開いている間は、ビューアが先に受けて止める。
-  const historyBlocked = settingsOpen || confirmLoadAll;
+  const historyBlocked = settingsOpen || confirmLoadAll || renaming !== null;
   useEffect(() => {
     const move = (delta: number) => {
       if (!historyBlocked) goHistory(historyIndex + delta);
@@ -317,6 +338,30 @@ export default function App({ initialSettings }: Props) {
       } catch (err) {
         notify("error", String(err));
       }
+    },
+    [notify],
+  );
+
+  const closeRename = useCallback(() => setRenaming(null), []);
+
+  // 名前を変え終えたら結果を知らせる。一覧と開いているプレビューは、名前の変更イベントと
+  // 書き換えたノートの変更イベントで新しくなる。
+  const handleRenamed = useCallback(
+    (before: Entry, result: RenameResult) => {
+      setRenaming(null);
+      const title = (entry: Entry) => entry.name.slice(0, entry.name.length - entry.ext.length);
+      const after = result.entry ? `「${title(result.entry)}」` : "新しい名前";
+      notify(
+        "info",
+        `「${title(before)}」を${after}に変更しました（書き換えたノート ${result.rewritten.toLocaleString()} 件）。`,
+      );
+      if (result.failed.length > 0) {
+        notify("error", `書き換えられなかったノートがあります: ${result.failed.join("、")}`);
+      }
+      if (result.skipped.length > 0) {
+        notify("error", `大きすぎるため書き換えなかったノートがあります: ${result.skipped.join("、")}`);
+      }
+      if (result.warning) notify("error", result.warning);
     },
     [notify],
   );
@@ -505,6 +550,7 @@ export default function App({ initialSettings }: Props) {
           onCreatePage={handleCreatePage}
           pinned={library.pins.has(detailEntry.path)}
           onTogglePin={(pinned) => handleTogglePin(detailEntry, pinned)}
+          onRename={() => setRenaming(detailEntry)}
           onEntryUpdated={updateEntry}
           onError={(message) => notify("error", message)}
           history={history}
@@ -526,6 +572,14 @@ export default function App({ initialSettings }: Props) {
             void loadMore(true);
           }}
           onCancel={() => setConfirmLoadAll(false)}
+        />
+      )}
+
+      {renaming && (
+        <RenameDialog
+          entry={renaming}
+          onClose={closeRename}
+          onRenamed={(result) => handleRenamed(renaming, result)}
         />
       )}
 

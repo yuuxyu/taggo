@@ -1,5 +1,65 @@
 export namespace app {
 	
+	export class RenamePlan {
+	    from: string;
+	    to: string;
+	    path: string;
+	    notes: string[];
+	    cloudOnly: string[];
+	    skipped: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new RenamePlan(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.from = source["from"];
+	        this.to = source["to"];
+	        this.path = source["path"];
+	        this.notes = source["notes"];
+	        this.cloudOnly = source["cloudOnly"];
+	        this.skipped = source["skipped"];
+	    }
+	}
+	export class RenameResult {
+	    entry?: model.Entry;
+	    rewritten: number;
+	    failed: string[];
+	    skipped: string[];
+	    warning?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RenameResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.entry = this.convertValues(source["entry"], model.Entry);
+	        this.rewritten = source["rewritten"];
+	        this.failed = source["failed"];
+	        this.skipped = source["skipped"];
+	        this.warning = source["warning"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Status {
 	    root: string;
 	    entryCount: number;

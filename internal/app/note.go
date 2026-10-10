@@ -86,7 +86,6 @@ func (a *App) checkPagePath(path string) error {
 // preparePage は、まだ無いページ path の Markdown ファイルを、エディタで開ける状態にする。
 // 無ければ見出しだけのファイルとして作り、created を true にする。
 //
-// taggo は既存のファイルを書き換えないが、まだ無いノートを新しく作るのはその範囲の外にある。
 // 既にあるファイルは上書きせず、そのまま返す。
 func (a *App) preparePage(path string) (string, bool, error) {
 	if err := a.checkPagePath(path); err != nil {

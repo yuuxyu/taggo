@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/yuuxyu/taggo/internal/atomicfile"
 	"github.com/yuuxyu/taggo/internal/cloudfile"
 )
 
@@ -91,7 +92,7 @@ func Save(root string, c Config) error {
 		return err
 	}
 	out = append(out, '\n')
-	if err := replaceFile(path, out); err != nil {
+	if err := atomicfile.Replace(path, out); err != nil {
 		return fmt.Errorf("%s へ書き込めませんでした: %w", FileName, err)
 	}
 	return nil
@@ -126,31 +127,6 @@ func cleanNames(names []string) []string {
 		out = append(out, name)
 	}
 	return out
-}
-
-// replaceFile は data で path を置き換える。一時ファイルの名前は、フォルダの監視が
-// taggo 自身の書き込みとして無視できるよう ".<元の名前>.taggo-XXXX" にする。
-func replaceFile(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+strings.TrimPrefix(filepath.Base(path), ".")+".taggo-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() {
-		tmp.Close()
-		os.Remove(tmpName) // 置き換えに成功していれば何もしない
-	}()
-
-	if _, err := tmp.Write(data); err != nil {
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
 }
 
 // IsConfigFile は、path が root の設定ファイルかを判定する。

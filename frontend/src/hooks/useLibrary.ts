@@ -17,6 +17,7 @@ import {
   selectFolder,
   type Entry,
   type EntryChanged,
+  type EntryRenamed,
   type PinsChanged,
   type ScanDone,
   type ScanProgress,
@@ -203,10 +204,21 @@ export function useLibrary(initialSort: SortOrder): Library {
       void getStatus().then(setStatus);
     });
 
+    // ページの名前を変えたら、一覧の同じ位置のまま新しいエントリへ差し替える。
+    // 名前の順や検索に合うかどうかも変わるので、あわせて引き直しを頼む。
+    const offRenamed = on<EntryRenamed>(Events.entryRenamed, ({ from, entry }) => {
+      setEntries((prev) => prev.map((e) => (e.path === from ? entry : e)));
+      setHeadPaths((prev) =>
+        prev.has(from) ? new Set([...prev].map((p) => (p === from ? entry.path : p))) : prev,
+      );
+      setChangeSeq((n) => n + 1);
+    });
+
     return () => {
       offProgress();
       offDone();
       offChanged();
+      offRenamed();
     };
   }, [notify]);
 

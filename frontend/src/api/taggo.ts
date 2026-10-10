@@ -17,6 +17,10 @@ export type RelatedGroup = store.RelatedGroup;
 export type SearchResult = store.Result;
 /** リンクカードに出す内容。kind は "page" / "youtube" / "x" のいずれか。 */
 export type LinkPreview = linkcard.Preview;
+/** ページの名前を変える前に確かめてもらう、変更の見込み。 */
+export type RenamePlan = app.RenamePlan;
+/** ページの名前を変えた結果。 */
+export type RenameResult = app.RenameResult;
 
 /** 一覧の並び順。Go 側の store.SortOrder と対応する。 */
 export type SortOrder = "modified_desc" | "name_asc" | "relevance";
@@ -97,11 +101,19 @@ export interface EntryChanged {
   removed?: boolean;
 }
 
+/** ページの名前の変更イベントのペイロード。from と to は変更前と変更後のパス。 */
+export interface EntryRenamed {
+  from: string;
+  to: string;
+  entry: Entry;
+}
+
 export const Events = {
   scanProgress: "scan:progress",
   scanDone: "scan:done",
   entryChanged: "entry:changed",
   pinsChanged: "pins:changed",
+  entryRenamed: "entry:renamed",
 } as const;
 
 /**
@@ -175,6 +187,21 @@ export const openInEditor = (path: string): Promise<void> => Backend.OpenInEdito
  * 新しく作ったときは true、既にあったファイルを開いただけなら false になる。
  */
 export const createPage = (path: string): Promise<boolean> => Backend.CreatePage(path);
+
+/**
+ * ページの名前を name に変えたときに書き換わるノートを調べる。ファイルはまだ何も変えない。
+ * 中身がクラウド上にしか無いノートは開かずに、名前だけが返る。
+ */
+export const planRename = (path: string, name: string): Promise<RenamePlan> =>
+  Backend.PlanRename(path, name);
+
+/**
+ * ページの名前を name に変え、そのページを指す [[タグ]] と Markdown のリンクを、
+ * フォルダ直下のすべてのノートで書き換える。中身がクラウド上にしか無いノートは
+ * ダウンロードしてから書き換えるので、planRename の結果を確かめてもらってから呼ぶこと。
+ */
+export const renamePage = (path: string, name: string): Promise<RenameResult> =>
+  Backend.RenamePage(path, name);
 
 /** 一覧の先頭にノートをピン留めする（pinned が false なら外す）。フォルダの .taggo.json に保存される。 */
 export const setPinned = (path: string, pinned: boolean): Promise<void> =>

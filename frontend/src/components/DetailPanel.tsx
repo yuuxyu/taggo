@@ -9,6 +9,7 @@
  * タグ（本文の [[タグ]]）はバッジで表示するだけで、ここでは編集しない。
  *
  * ヘッダーの「ピン留め」で、このノートを一覧の先頭にピン留めする。
+ * 「名前を変更」で、ファイル名と、このページを指す [[タグ]] とリンクをまとめて書き換える。
  *
  * まだ無いページ（ページの無いタグや、行き先の無いリンク）も、ファイルを作らずにここで開く。
  * 本文の代わりに「md ファイルを作成する」ボタンを出し、関連ページはふつうのノートと同じく並べる。
@@ -27,7 +28,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { DocumentPlusIcon, MapPinIcon, PencilSquareIcon } from "@heroicons/react/20/solid";
+import { DocumentPlusIcon, MapPinIcon, PencilIcon, PencilSquareIcon } from "@heroicons/react/20/solid";
 import { openInEditor, type Entry } from "../api/taggo";
 import type { NavHistory } from "../hooks/useNavHistory";
 import { Button } from "./Button";
@@ -54,6 +55,8 @@ interface Props {
   /** 一覧の先頭にピン留めしているか。 */
   pinned: boolean;
   onTogglePin: (pinned: boolean) => void;
+  /** 名前の変更ダイアログを開く。 */
+  onRename: () => void;
   /** クラウド上にだけあったファイルを取り込んだあとの最新状態を一覧へ返す。 */
   onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
@@ -79,6 +82,7 @@ export function DetailPanel({
   onCreatePage,
   pinned,
   onTogglePin,
+  onRename,
   onEntryUpdated,
   onError,
   history,
@@ -294,7 +298,7 @@ export function DetailPanel({
                 {entry.missing ? `${entry.relPath}（まだありません）` : entry.relPath}
               </p>
             </div>
-            {/* まだ無いページは一覧に無いので、ピン留めもエディタで開くこともできない。 */}
+            {/* まだ無いページは一覧に無いので、ピン留めも名前の変更もエディタで開くこともできない。 */}
             {!entry.missing && (
             <Button
               variant={pinned ? "primary" : "ghost"}
@@ -305,6 +309,16 @@ export function DetailPanel({
               <MapPinIcon className="size-4" aria-hidden="true" />
               {pinned ? "ピン留め中" : "ピン留め"}
             </Button>
+            )}
+            {!entry.missing && (
+              <Button
+                variant="ghost"
+                onClick={onRename}
+                title="ファイル名と、このページを指す [[タグ]] とリンクを書き換える"
+              >
+                <PencilIcon className="size-4" aria-hidden="true" />
+                名前を変更
+              </Button>
             )}
             {/* クラウド上にだけあるファイルは、開くとダウンロードが始まるので出さない。 */}
             {!entry.cloudOnly && !entry.missing && (

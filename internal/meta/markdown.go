@@ -143,7 +143,7 @@ func bodyTags(body []byte) []string {
 	inFence := false
 	for line := range strings.SplitSeq(string(body), "\n") {
 		l := strings.TrimSpace(line)
-		if strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~") {
+		if isFence(l) {
 			inFence = !inFence
 			continue
 		}
@@ -157,14 +157,30 @@ func bodyTags(body []byte) []string {
 	return out
 }
 
+// isFence は、前後の空白を除いた 1 行が、コードブロックの始まりか終わりの行かを判定する。
+func isFence(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")
+}
+
 // stripInlineCode は 1 行から、バッククォートで囲んだインラインコードを取り除く。
-// 開きと同じ数のバッククォートで閉じたところまでをコードとみなし、
-// 閉じていないバッククォートはただの文字として残す。
 func stripInlineCode(line string) string {
 	var b strings.Builder
+	last := 0
+	for _, span := range inlineCodeSpans(line) {
+		b.WriteString(line[last:span[0]])
+		last = span[1]
+	}
+	b.WriteString(line[last:])
+	return b.String()
+}
+
+// inlineCodeSpans は 1 行の中のインラインコードの範囲（両端のバッククォートを含む）を返す。
+// 開きと同じ数のバッククォートで閉じたところまでをコードとみなし、
+// 閉じていないバッククォートはただの文字として扱う。
+func inlineCodeSpans(line string) [][2]int {
+	var spans [][2]int
 	for i := 0; i < len(line); {
 		if line[i] != '`' {
-			b.WriteByte(line[i])
 			i++
 			continue
 		}
@@ -172,16 +188,15 @@ func stripInlineCode(line string) string {
 		for i+n < len(line) && line[i+n] == '`' {
 			n++
 		}
-		fence := line[i : i+n]
 		end := closingBackticks(line[i+n:], n)
 		if end < 0 {
-			b.WriteString(fence)
 			i += n
 			continue
 		}
+		spans = append(spans, [2]int{i, i + n + end + n})
 		i += n + end + n
 	}
-	return b.String()
+	return spans
 }
 
 // closingBackticks は s の中で、ちょうど n 個並んだバッククォートの位置を返す。

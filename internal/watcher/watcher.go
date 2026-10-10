@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/yuuxyu/taggo/internal/atomicfile"
 	"github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/folderconf"
 	"github.com/yuuxyu/taggo/internal/meta"
@@ -64,7 +65,7 @@ func New(root string) (*Watcher, error) {
 		fsw:        fsw,
 		changes:    make(chan Change, 64),
 		pending:    map[string]*time.Timer{},
-		ignoreTemp: isTaggoTempFile,
+		ignoreTemp: atomicfile.IsTemp,
 	}
 	if err := fsw.Add(root); err != nil {
 		fsw.Close()
@@ -177,10 +178,4 @@ func (w *Watcher) emit(path string) {
 	case w.changes <- change:
 	default:
 	}
-}
-
-// isTaggoTempFile は、taggo 自身の書き込み用一時ファイルかを判定する。
-// folderconf パッケージの replaceFile は ".<元の名前>.taggo-XXXX" という名前を使う。
-func isTaggoTempFile(name string) bool {
-	return strings.HasPrefix(name, ".") && strings.Contains(name, ".taggo-")
 }

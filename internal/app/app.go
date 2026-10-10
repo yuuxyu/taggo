@@ -33,6 +33,8 @@ const (
 	// EventPinsChanged はピン留めが変わったことを伝える。taggo からの操作のほか、
 	// フォルダの設定ファイル（.taggo.json）が外で書き換えられたときにも送る。
 	EventPinsChanged = "pins:changed"
+	// EventEntryRenamed はページの名前を変えたことを伝える。
+	EventEntryRenamed = "entry:renamed"
 )
 
 // App はアプリ全体の状態を持つ。
@@ -66,6 +68,8 @@ type App struct {
 
 	// pinMu はピン留めの読み書き（設定ファイルを読んで直して書く一連の操作）を 1 つずつにする。
 	pinMu sync.Mutex
+	// renameMu はページの名前の変更（ノートを読んで書き換える一連の操作）を 1 つずつにする。
+	renameMu sync.Mutex
 }
 
 // New はアプリを組み立てる。インメモリ DB の初期化に失敗した場合のみエラーを返す。

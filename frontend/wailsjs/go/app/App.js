@@ -50,8 +50,16 @@ export function OpenStartupFolder(arg1) {
   return window['go']['app']['App']['OpenStartupFolder'](arg1);
 }
 
+export function PlanRename(arg1, arg2) {
+  return window['go']['app']['App']['PlanRename'](arg1, arg2);
+}
+
 export function RelatedPages(arg1) {
   return window['go']['app']['App']['RelatedPages'](arg1);
+}
+
+export function RenamePage(arg1, arg2) {
+  return window['go']['app']['App']['RenamePage'](arg1, arg2);
 }
 
 export function SaveSettings(arg1) {

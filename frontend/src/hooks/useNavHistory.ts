@@ -85,6 +85,8 @@ export interface NavHistory {
   backToList: () => void;
   /** 消えたノートを履歴から除く。見ていたノートなら、その手前の項目へ移る。 */
   remove: (path: string) => void;
+  /** 名前を変えたノートの項目を、新しいパスと名前に付け替える。移動はしない。 */
+  renamePath: (from: string, to: string, title: string) => void;
   /** 履歴を捨てて、query の一覧だけから始め直す。フォルダを開き直したときに使う。 */
   reset: (query: string) => void;
   /** 表示中のスクロール位置を知らせる。離れるときに今の項目へ書き込む。 */
@@ -168,6 +170,18 @@ export function useNavHistory(): NavHistory {
     });
   }, []);
 
+  const renamePath = useCallback((from: string, to: string, title: string) => {
+    setState((s) => {
+      if (!s.items.some((item) => item.kind === "note" && item.path === from)) return s;
+      return {
+        ...s,
+        items: s.items.map((item) =>
+          item.kind === "note" && item.path === from ? { ...item, path: to, title } : item,
+        ),
+      };
+    });
+  }, []);
+
   const reset = useCallback((query: string) => {
     setState((s) => ({ items: [searchItem(query)], index: 0, navId: s.navId + 1 }));
   }, []);
@@ -187,6 +201,7 @@ export function useNavHistory(): NavHistory {
     go,
     backToList,
     remove,
+    renamePath,
     reset,
     reportScroll,
   };

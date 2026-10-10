@@ -3,9 +3,9 @@
 import {model} from '../models';
 import {settings} from '../models';
 import {linkcard} from '../models';
+import {app} from '../models';
 import {store} from '../models';
 import {context} from '../models';
-import {app} from '../models';
 
 export function CancelLoadMore():Promise<void>;
 
@@ -31,7 +31,11 @@ export function OpenInEditor(arg1:string):Promise<void>;
 
 export function OpenStartupFolder(arg1:string):Promise<void>;
 
+export function PlanRename(arg1:string,arg2:string):Promise<app.RenamePlan>;
+
 export function RelatedPages(arg1:string):Promise<store.Related>;
+
+export function RenamePage(arg1:string,arg2:string):Promise<app.RenameResult>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<settings.Settings>;
 
