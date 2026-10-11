@@ -13,9 +13,12 @@
  * 行き先がまだ存在しないもの（ページの無いタグや、行き先の無いリンク）も、
  * 書きかけのメモでは珍しくないため、「まだ無いノート」として控えめに出す。
  * クリックすると、ファイルは作らずに、まだ無いページとして開く。
+ *
+ * Ctrl + N / Ctrl + P で、フォーカスするカードを並び順の次 / 前へ移す。先頭のカードでの
+ * Ctrl + P は本文の末尾へ戻る（本文の末尾での Ctrl + N で先頭のカードへ来る。emacsKeys.ts）。
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { LinkIcon } from "@heroicons/react/16/solid";
 import {
   Events,
@@ -41,6 +44,25 @@ interface GroupProps extends CardProps {
 
 interface Props extends GroupProps {
   related: Related;
+  /** 先頭のカードで Ctrl + P を押したとき、本文の末尾へ戻る。 */
+  onExitTop?: () => void;
+}
+
+/** 関連ページのカード（ボタン）に付ける印（data-related-card）。Ctrl + N / Ctrl + P で移る先になる。 */
+const CARD_ATTR = "data-related-card";
+
+/** カードへフォーカスを移す。ヘッダーやフッターの下に隠れないよう、余白を残して見える位置まで動かす。 */
+function focusCard(card: HTMLElement) {
+  card.focus({ preventScroll: true });
+  card.scrollIntoView({ block: "nearest" });
+}
+
+/** container の中の先頭の関連ページのカードへフォーカスを移す。カードが無ければ false を返す。 */
+export function focusFirstRelatedCard(container: HTMLElement | null): boolean {
+  const card = container?.querySelector<HTMLElement>(`[${CARD_ATTR}]`);
+  if (!card) return false;
+  focusCard(card);
+  return true;
 }
 
 /**
@@ -106,7 +128,8 @@ function RelatedCard({ page, head, onOpen }: { page: RelatedPage; head?: boolean
     <li className="min-w-0">
       <button
         type="button"
-        className={`flex h-44 w-full flex-col overflow-hidden rounded-lg border text-left transition focus-visible:ring-3 focus-visible:ring-accent-soft focus-visible:outline-hidden ${
+        data-related-card=""
+        className={`flex h-44 w-full scroll-mt-28 scroll-mb-14 flex-col overflow-hidden rounded-lg border text-left transition focus-visible:ring-3 focus-visible:ring-accent-soft focus-visible:outline-hidden ${
           !path
             ? "border-dashed border-line bg-surface text-ink-faint hover:border-line-strong"
             : head
@@ -191,14 +214,36 @@ function Group({ group, onOpen, onTagClick }: { group: RelatedGroup } & GroupPro
   );
 }
 
-export function RelatedPages({ related, onOpen, onTagClick }: Props) {
+export function RelatedPages({ related, onOpen, onTagClick, onExitTop }: Props) {
+  // Ctrl + N / Ctrl + P で、フォーカスするカードを並び順の次 / 前へ移す。
+  // グループの見出しなど、カードの外にフォーカスがあるときは、その前後のカードへ移す。
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const ctrl = e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+    const key = e.key.toLowerCase();
+    if (!ctrl || (key !== "n" && key !== "p") || e.nativeEvent.isComposing) return;
+    // WebView の既定の働き（Ctrl + N の新しいウィンドウ、Ctrl + P の印刷）も止める。
+    e.preventDefault();
+    const cards = [...e.currentTarget.querySelectorAll<HTMLElement>(`[${CARD_ATTR}]`)];
+    const active = e.target as Node;
+    // active より後ろ（Ctrl + N）・前（Ctrl + P）にあるカードのうち、いちばん近いもの。
+    const next =
+      key === "n"
+        ? cards.find((card) => active.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING)
+        : cards.findLast((card) => active.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_PRECEDING);
+    if (next) {
+      focusCard(next);
+    } else if (key === "p") {
+      onExitTop?.();
+    }
+  };
+
   // 古いバックエンドの応答でも落ちないよう、欠けていれば空として扱う。
   const groups = related.groups ?? [];
   if (groups.length === 0) {
     return <p className="m-0 text-xs text-ink-faint">タグやリンクでつながるノートはまだありません</p>;
   }
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8" onKeyDown={onKeyDown}>
       {groups.map((group) => (
         <Group key={group.tag ?? ""} group={group} onOpen={onOpen} onTagClick={onTagClick} />
       ))}

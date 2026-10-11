@@ -2,7 +2,7 @@
  * 編集画面の Emacs 風のキー操作（カーソル移動・削除・改行・行き先を開く）。
  *
  * - Ctrl + A / Ctrl + E … 行頭 / 行末（折り返して見えている行ではなく、改行で区切られた 1 行の端）
- * - Ctrl + P / Ctrl + N … 上の行 / 下の行
+ * - Ctrl + P / Ctrl + N … 上の行 / 下の行。本文の末尾での Ctrl + N は、本文の下の関連ページへ移る
  * - Ctrl + B / Ctrl + F … 1 文字左 / 1 文字右
  * - Ctrl + H … Backspace と同じ（補った括弧の対や、箇条書きの記号もまとめて消す）
  * - Ctrl + M … Enter と同じ改行（閉じのフェンスや、箇条書きの記号の補いも同じ）
@@ -33,6 +33,7 @@ import {
 import { deleteMarkupBackward, insertNewlineContinueMarkup } from "@codemirror/lang-markdown";
 import { Prec } from "@codemirror/state";
 import { keymap, type Command } from "@codemirror/view";
+import { hostOf } from "./host";
 import { followAtCursor } from "./livePreview";
 import { closeCodeFence } from "./markup";
 
@@ -50,6 +51,18 @@ const backspace: Command = (view) =>
 const newline: Command = (view) =>
   closeCodeFence(view) || insertNewlineContinueMarkup(view) || insertNewlineAndIndent(view);
 
+/**
+ * 下の行へ動く。カーソルが本文の末尾にあって（選択は無い）、もう下へ動けないときは、
+ * 本文の下の関連ページへフォーカスを移す。移す先が無ければ、ふつうに動く（何も起きない）。
+ */
+const lineDownOrExit: Command = (view) => {
+  const { ranges, main } = view.state.selection;
+  if (ranges.length === 1 && main.empty && main.head === view.state.doc.length) {
+    if (hostOf(view.state)?.onExitBottom?.()) return true;
+  }
+  return cursorLineDown(view);
+};
+
 export function emacsKeys() {
   return [
     // 補完の候補が出ていなければ false を返し、下のカーソル移動に回る。
@@ -64,7 +77,7 @@ export function emacsKeys() {
         { key: "Ctrl-a", run: cursorLineStart, shift: selectLineStart, preventDefault: true },
         { key: "Ctrl-e", run: cursorLineEnd, shift: selectLineEnd, preventDefault: true },
         { key: "Ctrl-p", run: cursorLineUp, shift: selectLineUp, preventDefault: true },
-        { key: "Ctrl-n", run: cursorLineDown, shift: selectLineDown, preventDefault: true },
+        { key: "Ctrl-n", run: lineDownOrExit, shift: selectLineDown, preventDefault: true },
         { key: "Ctrl-b", run: cursorCharBackward, shift: selectCharBackward, preventDefault: true },
         { key: "Ctrl-f", run: cursorCharForward, shift: selectCharForward, preventDefault: true },
         { key: "Ctrl-h", run: backspace, preventDefault: true },

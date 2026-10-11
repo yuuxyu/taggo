@@ -20,6 +20,9 @@
  * ノートの画面を閉じるボタンは置かず、一覧へは「戻る」か Esc で戻る。
  * 履歴そのものと、Alt + 左右・Ctrl + [ / ]・マウスの戻る／進むボタンは App が受け持つ。
  *
+ * 本文の末尾で Ctrl + N を押すと、本文の下の関連ページのカードへフォーカスを移す。
+ * 関連ページの先頭のカードで Ctrl + P を押すと、本文の末尾へ戻る。
+ *
  * フッターには本文の文字数を表示する。
  *
  * 本文中の画像をクリックすると、画像ビューアをこの上に重ねて開く。画像はノートでは
@@ -34,7 +37,13 @@ import { NoteEditor } from "../editor/NoteEditor";
 import { Button } from "./Button";
 import { HistoryNav } from "./HistoryNav";
 import { ImagePreview } from "./ImagePreview";
-import { missingLinksOf, missingTagsOf, RelatedPages, useRelatedPages } from "./RelatedPages";
+import {
+  focusFirstRelatedCard,
+  missingLinksOf,
+  missingTagsOf,
+  RelatedPages,
+  useRelatedPages,
+} from "./RelatedPages";
 import { TagBadge } from "./TagBadge";
 
 interface Props {
@@ -105,6 +114,12 @@ export function DetailPanel({
   const closeImage = useCallback(() => setImage(null), []);
   const openImage = useCallback((path: string, alt?: string) => setImage({ path, alt }), []);
   const countBody = useCallback((body: string) => setCharCount(countChars(body)), []);
+
+  // 本文と関連ページの間を Ctrl + N / Ctrl + P で行き来する。
+  const relatedRef = useRef<HTMLElement>(null);
+  const [focusEndSignal, setFocusEndSignal] = useState(0);
+  const enterRelated = useCallback(() => focusFirstRelatedCard(relatedRef.current), []);
+  const leaveRelated = useCallback(() => setFocusEndSignal((n) => n + 1), []);
 
   // マウスが動いた直後だけヘッダー／タグ UI を出し、止まればしばらくして隠す。
   // ただしヘッダーのボタンなどにフォーカスが残っている間は隠さない。
@@ -255,15 +270,18 @@ export function DetailPanel({
                   onError={onError}
                   onLoaded={applyPendingScroll}
                   onBodyChange={countBody}
+                  onExitBottom={enterRelated}
+                  focusEndSignal={focusEndSignal}
                 />
               )}
             </div>
             {/* 関連ページは本文の下にグリッドで並べ、本文と一緒にスクロールする。
                 読み込み中は出さず、「無い」表示が一瞬出るのを避ける。 */}
             {related && (
-              <aside className="mt-14 w-full border-t border-line pt-6" aria-label="関連ページ">
+              <aside ref={relatedRef} className="mt-14 w-full border-t border-line pt-6" aria-label="関連ページ">
                 <RelatedPages
                   related={related}
+                  onExitTop={leaveRelated}
                   onOpen={(page) => {
                     // 行き先があれば開く。まだ無ければ、リンクなら書かれた場所に、
                     // タグならフォルダの直下に作る。

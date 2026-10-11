@@ -1,7 +1,7 @@
 /**
  * ノートの編集画面。常に編集できる状態で開き、テキストエディタと見た目を分けない。
  *
- * カーソルが無いとき（一覧から開いた直後など）は、Enter / Ctrl + M / Ctrl + N で本文の先頭から書き始められる。
+ * フォーカスがどこにも無いとき（一覧から開いた直後など）は、Enter / Ctrl + M / Ctrl + N で本文の先頭から書き始められる。
  *
  * 本文は Markdown のまま CodeMirror で編集し、見た目はライブプレビュー（livePreview.ts）が整える。
  * 書いた内容は、入力が止まって少し経ったら自動で保存する。ほかのノートへ移るとき・エディタから
@@ -74,6 +74,13 @@ interface Props {
   onLoaded?: () => void;
   /** 本文（Front Matter を除く）が変わるたびに、少し間を置いて呼ぶ。文字数の表示に使う。 */
   onBodyChange?: (body: string) => void;
+  /**
+   * 本文の末尾で Ctrl + N を押したときに、本文の下（関連ページ）へフォーカスを移す。
+   * 移す先が無ければ false を返す。
+   */
+  onExitBottom?: () => boolean;
+  /** 増えるたびに、本文の末尾にカーソルを置いてフォーカスを移す合図（関連ページから Ctrl + P で戻るとき）。 */
+  focusEndSignal?: number;
 }
 
 /** 開いているノート 1 つぶんの、保存のための状態。ノートを読み込むたびに作り直す。 */
@@ -161,6 +168,8 @@ export function NoteEditor({
   onError,
   onLoaded,
   onBodyChange,
+  onExitBottom,
+  focusEndSignal = 0,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -181,6 +190,7 @@ export function NoteEditor({
     onFollowLink,
     onFollowTag,
     onOpenImage,
+    onExitBottom,
     onError,
     missingLinks,
     missingTags,
@@ -431,10 +441,10 @@ export function NoteEditor({
     return () => cancelAnimationFrame(frame);
   }, [status]);
 
-  // カーソルが無いとき（一覧から開いた直後など）に Enter / Ctrl + M / Ctrl + N を押すと、本文の
-  // 先頭にカーソルを置いて書き始められるようにする。ほかの画面（画像ビューア・ダイアログ・履歴の
-  // 一覧）が重なっているときは、そちらの働きを優先する。Enter / Ctrl + M は、ボタンなどに
-  // フォーカスがあるときもそちらを優先する（Ctrl + N はボタンの働きとぶつからないので本文へ移す）。
+  // フォーカスがどこにも無いとき（一覧から開いた直後など）に Enter / Ctrl + M / Ctrl + N を押すと、
+  // 本文の先頭にカーソルを置いて書き始められるようにする。ほかの画面（画像ビューア・ダイアログ・履歴の
+  // 一覧）が重なっているときと、ボタンや関連ページのカードなどにフォーカスがあるときは、そちらの働きを
+  // 優先する（関連ページのカードでの Ctrl + N は、次のカードへ移る）。
   useEffect(() => {
     if (status !== "ready") return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -451,7 +461,7 @@ export function NoteEditor({
       // 外にあるフォーカスは、無いものとして扱う。
       const screen = view.dom.closest('[role="dialog"]');
       const active = document.activeElement;
-      if (!ctrlN && active instanceof Element && screen?.contains(active) && active.closest(INTERACTIVE)) return;
+      if (active instanceof Element && screen?.contains(active) && active.closest(INTERACTIVE)) return;
       if (document.querySelectorAll('[role="dialog"][aria-modal="true"]').length > 1) return;
       if (document.querySelector('[role="menu"]')) return;
       e.preventDefault();
@@ -461,6 +471,16 @@ export function NoteEditor({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [status]);
+
+  // 関連ページから Ctrl + P で戻ってきたら、本文の末尾にカーソルを置く。
+  useEffect(() => {
+    const view = viewRef.current;
+    if (focusEndSignal === 0 || !view || status !== "ready") return;
+    view.dispatch({ selection: { anchor: view.state.doc.length }, scrollIntoView: true });
+    view.focus();
+    // 合図が来たときだけ動かす。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEndSignal]);
 
   // ほかのアプリでの保存は、フォルダの監視が更新日時とサイズの変わったエントリとして届けてくる。
   // 自分の保存で届いたものは、保存の結果で覚えた値と同じなので読み直さない。

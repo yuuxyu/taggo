@@ -24,6 +24,11 @@ export interface EditorHost {
   onFollowTag: (tag: string) => void;
   /** 本文中の画像を画像ビューアで開く。 */
   onOpenImage: (path: string, alt?: string) => void;
+  /**
+   * 本文の末尾で Ctrl + N を押したとき、本文の下（関連ページ）へフォーカスを移す。
+   * 移せなければ false を返し、ふつうのカーソル移動に任せる。
+   */
+  onExitBottom?: () => boolean;
   onError: (message: string) => void;
   /** 行き先がまだ無いリンク（小文字にしたもの）。 */
   missingLinks: ReadonlySet<string>;
