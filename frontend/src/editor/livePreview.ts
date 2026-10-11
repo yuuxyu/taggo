@@ -72,6 +72,29 @@ const EXTERNAL_MARK = Decoration.widget({ widget: new ExternalMarkWidget(), side
 /** URL だけの行（リンクカードにする）。`<…>` で囲んだものも含む。 */
 const BARE_URL_RE = /^<?(https?:\/\/[^\s<>]+)>?$/i;
 
+/**
+ * `<…>` で囲まずに書いた URL（GFM の自動リンク）の終わりの位置を返す。
+ *
+ * GFM の決まりでは、URL の末尾の `_` と `~` は URL に含めない。ところが X のユーザー名
+ * （https://x.com/name_）のように、末尾が `_` の URL はよくあり、落とすと別のページになる。
+ * そこで URL のすぐ後ろに続く `_` と `~` は、強調や取り消し線の記号でなく、その後ろが
+ * 空白か行末なら、URL に含める。
+ */
+function bareUrlEnd(state: EditorState, to: number): number {
+  const doc = state.doc;
+  const line = doc.lineAt(to);
+  let end = to;
+  while (end < line.to && /[_~]/.test(doc.sliceString(end, end + 1))) end++;
+  if (end === to) return to;
+  if (end < line.to && !/\s/.test(doc.sliceString(end, end + 1))) return to;
+  const tree = syntaxTree(state);
+  for (let pos = to; pos < end; pos++) {
+    const name = tree.resolveInner(pos, 1).name;
+    if (name === "EmphasisMark" || name === "StrikethroughMark") return to;
+  }
+  return end;
+}
+
 /** 記号を見せるか（カーソルがかかっているか）を調べる。 */
 function revealer(state: EditorState) {
   const focused = state.field(focusedField);
@@ -301,9 +324,10 @@ function buildInline(view: EditorView): DecorationSet {
             }
             const url = ref.name === "Autolink" ? node.getChild("URL") : node;
             if (!url) return false;
-            const href = doc.sliceString(url.from, url.to);
-            const hidden = !reveal.range(ref.from, ref.to);
-            out.push(linkMark(host, href, hidden).range(url.from, url.to));
+            const urlTo = ref.name === "URL" ? bareUrlEnd(state, url.to) : url.to;
+            const href = doc.sliceString(url.from, urlTo);
+            const hidden = !reveal.range(ref.from, urlTo);
+            out.push(linkMark(host, href, hidden).range(url.from, urlTo));
             if (hidden && ref.name === "Autolink") {
               for (const c of node.getChildren("LinkMark")) hide(c.from, c.to);
             }
@@ -469,7 +493,8 @@ function collectBlocks(state: EditorState): BlockCandidate[] {
           if (c.name !== "URL" && c.name !== "Autolink") continue;
           const line = doc.lineAt(c.from);
           const m = BARE_URL_RE.exec(line.text.trim());
-          if (!m || doc.sliceString(c.from, c.to) !== line.text.trim()) continue;
+          const to = c.name === "URL" ? bareUrlEnd(state, c.to) : c.to;
+          if (!m || doc.sliceString(c.from, to) !== line.text.trim()) continue;
           out.push({ kind: "linkCard", from: line.from, to: line.to, url: m[1] });
         }
         break;
