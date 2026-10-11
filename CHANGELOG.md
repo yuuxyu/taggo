@@ -4,6 +4,14 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.6.0] - 2026-10-11
+
+Ctrl + L で、どの画面からでも検索バーへ移れるようにしました。
+
+### 追加
+
+- Ctrl + L で、一覧の検索バーへフォーカスを移し、入力済みの検索語をすべて選ぶ。ノートの画面では手前の一覧へ戻ってから検索語を選ぶ。入力欄や編集画面の中でも効く
+
 ## [0.5.0] - 2026-10-11
 
 ノートを taggo の中で書けるようにしました。開いたノートはそのまま編集でき、Markdown のまま保存しながら、見た目はその場で整えて見せます。
@@ -141,6 +149,7 @@
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.6.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.6.0
 [0.5.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.5.0
 [0.4.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.4.0
 [0.3.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.3.0
