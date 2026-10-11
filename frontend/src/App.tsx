@@ -88,15 +88,25 @@ export default function App({ initialSettings }: Props) {
   const [renaming, setRenaming] = useState<Entry | null>(null);
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
   const [focusSignal, setFocusSignal] = useState(0);
+  // 検索バーへフォーカスを移し、検索語をすべて選ぶための合図（Ctrl + L）。
+  const [selectSignal, setSelectSignal] = useState(0);
+  // ノートの画面で Ctrl + L を押して一覧へ戻るところか。戻った一覧で検索語を選ぶ。
+  const selectOnList = useRef(false);
 
   const { entries, query, setQuery, notify } = library;
 
   // 履歴で一覧へ移ったら、その一覧の検索語で引き直し、キー入力の行き先を検索バーへ戻す。
   // 検索バーへの入力は履歴の検索語を書き換えるだけで移動ではないので、ここは通らない。
+  // 検索語を差し替えると選択が外れるので、選ぶ合図も差し替えと同じここで出す。
   useEffect(() => {
     if (current.kind !== "search") return;
     setQuery(current.query);
-    setFocusSignal((n) => n + 1);
+    if (selectOnList.current) {
+      selectOnList.current = false;
+      setSelectSignal((n) => n + 1);
+    } else {
+      setFocusSignal((n) => n + 1);
+    }
     // 移動（navId）ごとに一度だけ合わせる。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navId]);
@@ -293,6 +303,28 @@ export default function App({ initialSettings }: Props) {
     };
   }, [goHistory, historyIndex, historyBlocked]);
 
+  // Ctrl + L で、一覧では検索バーへフォーカスを移して検索語をすべて選ぶ。ノートの画面では手前の
+  // 一覧へ戻り、同じく検索バーの検索語を選ぶ。入力欄や編集画面の中でも効かせる。
+  // ダイアログや画像ビューアが重なっている間は、そちらの操作を邪魔しないよう動かさない。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const ctrlL = e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === "l";
+      if (!ctrlL || e.isComposing) return;
+      e.preventDefault();
+      // ノートの画面自身も aria-modal の画面なので、それより多ければ何かが重なっている。
+      const screens = document.querySelectorAll('[role="dialog"][aria-modal="true"]').length;
+      if (screens > (detailPath === null ? 0 : 1)) return;
+      if (detailPath === null) {
+        setSelectSignal((n) => n + 1);
+        return;
+      }
+      selectOnList.current = true;
+      backToList();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [detailPath, backToList]);
+
   // ピン留めを切り替える。一覧はピン留めの変更イベントで引き直す。
   const handleTogglePin = useCallback(
     (entry: Entry, pinned: boolean) => {
@@ -452,6 +484,7 @@ export default function App({ initialSettings }: Props) {
               entryCount={library.status?.entryCount ?? 0}
               disabled={!hasFolder}
               focusSignal={focusSignal}
+              selectSignal={selectSignal}
               onEnter={handleSearchEnter}
             />
           </div>

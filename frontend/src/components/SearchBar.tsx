@@ -25,11 +25,25 @@ interface Props {
    * オーバーレイを閉じた直後など、キー入力の行き先を検索バーへ返したい場面で使う。
    */
   focusSignal?: number;
+  /**
+   * この値が変わるたびに検索バーへフォーカスを移し、入力済みの検索語をすべて選ぶ。
+   * Ctrl + L で、そのまま次の検索語を打てるようにするために使う。
+   */
+  selectSignal?: number;
   /** Enter を押したときに呼ぶ。日本語入力の変換を確定する Enter では呼ばない。 */
   onEnter?: () => void;
 }
 
-export function SearchBar({ value, onChange, total, entryCount, disabled, focusSignal, onEnter }: Props) {
+export function SearchBar({
+  value,
+  onChange,
+  total,
+  entryCount,
+  disabled,
+  focusSignal,
+  selectSignal,
+  onEnter,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 起動時に検索バーへキャレットを置く。
@@ -39,6 +53,15 @@ export function SearchBar({ value, onChange, total, entryCount, disabled, focusS
     if (disabled) return;
     inputRef.current?.focus();
   }, [disabled, focusSignal]);
+
+  // 合図があったときだけ選ぶ。起動時（初めの値）には選ばない。
+  useEffect(() => {
+    if (disabled || !selectSignal) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+    // 合図のたびに一度だけ選ぶ。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectSignal]);
 
   return (
     <div className="relative z-20">
