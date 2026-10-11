@@ -27,6 +27,7 @@ import {
   type EditorHost,
   type HostRef,
 } from "./host";
+import { emacsKeys } from "./emacsKeys";
 import { livePreview } from "./livePreview";
 import { markupHelpers } from "./markup";
 import { imagePaste, PENDING_IMAGE_RE } from "./pasteImage";
@@ -282,6 +283,8 @@ export function NoteEditor({
       placeholder("ここに本文を書きます。[[ でタグ、## で見出し、``` でコード"),
       EditorView.contentAttributes.of({ spellcheck: "false", "aria-label": "本文" }),
       livePreview(),
+      // 上下の移動で表やリンクカードの行に入る割り当て（livePreview）を先に効かせるため、その後ろに置く。
+      emacsKeys(),
       imagePaste(),
       editorTheme(),
       EditorView.updateListener.of((u) => {

@@ -526,7 +526,7 @@ const blockField = StateField.define<Blocks>({
 });
 
 /**
- * 上下キーで、描いた結果に置き換えている行（表・図・リンクカード）へ入れるようにする。
+ * 上下キー（Ctrl + N / Ctrl + P も）で、描いた結果に置き換えている行（表・図・リンクカード）へ入れるようにする。
  * CodeMirror は行ごとのブロックを上下の移動で飛ばすので、隣がそうした行なら、その行の端へ
  * カーソルを置く。カーソルが入ると元の記述に戻るので、そのまま書き直せる。
  */
@@ -551,6 +551,9 @@ const blockKeys = Prec.high(
   keymap.of([
     { key: "ArrowDown", run: enterBlock(true) },
     { key: "ArrowUp", run: enterBlock(false) },
+    // Emacs 風の上下移動（emacsKeys.ts）でも同じように入れるようにする。
+    { key: "Ctrl-n", run: enterBlock(true) },
+    { key: "Ctrl-p", run: enterBlock(false) },
   ]),
 );
 

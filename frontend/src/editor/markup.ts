@@ -4,7 +4,8 @@
  * - `**` と打つと閉じの `**` を補い、間にカーソルを置く。閉じの `**` の前で `*` を打つと、
  *   補った記号の上を進むだけにする。文字を選んで `*` を打つと、選んだ文字を囲む。
  * - 行の頭で ``` と打って Enter を押すと、閉じの ``` を補い、間の行にカーソルを置く。
- * - Ctrl + B / Ctrl + I で、選んだ文字を太字・斜体にする（もう一度押すと戻す）。
+ * - Ctrl + I で、選んだ文字を斜体にする（もう一度押すと戻す）。Ctrl + B は Emacs 風の
+ *   カーソル移動（emacsKeys.ts）に使うので、太字は `**` で書く。
  * - 箇条書き・番号付きリスト・引用の行で Enter を押すと、次の行に同じ記号を補う。
  */
 
@@ -146,7 +147,6 @@ export function markupHelpers() {
         { key: "Enter", run: closeCodeFence },
         { key: "Enter", run: insertNewlineContinueMarkup },
         { key: "Backspace", run: deleteMarkupBackward },
-        { key: "Mod-b", run: toggleWrap("**") },
         { key: "Mod-i", run: toggleWrap("*") },
       ]),
     ),
