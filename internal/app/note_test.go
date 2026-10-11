@@ -22,7 +22,7 @@ func TestPreparePageCreatesMissingNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("作ったファイルを読めない: %v", err)
 	}
-	if string(got) != "# まだ無いノート\n" {
+	if string(got) != "# まだ無いノート\n\n" {
 		t.Fatalf("中身が違う: %q", got)
 	}
 

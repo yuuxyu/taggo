@@ -23,8 +23,6 @@ export function LoadMore(arg1:boolean):Promise<void>;
 
 export function OpenFolder(arg1:string):Promise<void>;
 
-export function OpenInEditor(arg1:string):Promise<void>;
-
 export function OpenStartupFolder(arg1:string):Promise<void>;
 
 export function PlanRename(arg1:string,arg2:string):Promise<app.RenamePlan>;

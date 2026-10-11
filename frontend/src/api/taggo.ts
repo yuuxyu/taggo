@@ -199,8 +199,6 @@ export const getTagNames = (): Promise<string[]> => Backend.TagNames();
  */
 export const getLinkPreview = (url: string): Promise<LinkPreview> => Backend.LinkPreview(url);
 
-/** Markdown ファイルを、拡張子に紐づいたアプリ（使い慣れたテキストエディタ）で開く。 */
-export const openInEditor = (path: string): Promise<void> => Backend.OpenInEditor(path);
 
 /**
  * まだ無いページ（linkedPage や tagPage が返したもの）の md ファイルを、ファイル名を見出しにして作る。

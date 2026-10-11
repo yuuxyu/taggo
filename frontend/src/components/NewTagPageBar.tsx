@@ -13,7 +13,7 @@ import { Button } from "./Button";
 interface Props {
   /** まだ無いタグのページ（tagPage が返したもの）。 */
   page: Entry;
-  /** md ファイルを作り、既定のエディタで開く。 */
+  /** md ファイルを作り、そのページを編集画面で開く。 */
   onCreate: (page: Entry) => Promise<void>;
 }
 

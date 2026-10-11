@@ -21,18 +21,15 @@
  *
  * フッターには本文の文字数を表示する。
  *
- * ヘッダーの「エディタで開く」で、拡張子に紐づいたアプリ（使い慣れたテキストエディタ）へ
- * ファイルを渡すこともできる。そちらで保存した変更はウォッチャーが拾い、本文に反映する。
- *
  * 本文中の画像をクリックすると、画像ビューアをこの上に重ねて開く。画像はノートでは
  * ないので履歴には積まず、ビューアを閉じればそのまま同じ位置の本文へ戻る。
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { DocumentPlusIcon, MapPinIcon, PencilIcon, PencilSquareIcon } from "@heroicons/react/20/solid";
-import { openInEditor, type Entry } from "../api/taggo";
+import { DocumentPlusIcon, MapPinIcon, PencilIcon } from "@heroicons/react/20/solid";
+import type { Entry } from "../api/taggo";
 import type { NavHistory } from "../hooks/useNavHistory";
-import { flushAllEditors, NoteEditor } from "../editor/NoteEditor";
+import { NoteEditor } from "../editor/NoteEditor";
 import { Button } from "./Button";
 import { HistoryNav } from "./HistoryNav";
 import { ImagePreview } from "./ImagePreview";
@@ -205,15 +202,6 @@ export function DetailPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navId]);
 
-  const openEditor = async () => {
-    try {
-      // 外のエディタが書きかけの前の内容を開かないよう、先に保存しておく。
-      await flushAllEditors();
-      await openInEditor(entry.path);
-    } catch (err) {
-      onError(String(err));
-    }
-  };
 
   // ヘッダー・フッターは半透明にして、下を流れる本文をうっすら見せる。
   // 文字が重なっても読めるよう背景はぼかし、罫線も地に合わせて薄める。
@@ -292,7 +280,7 @@ export function DetailPanel({
                 {entry.missing ? `${entry.relPath}（まだありません）` : entry.relPath}
               </p>
             </div>
-            {/* まだ無いページは一覧に無いので、ピン留めも名前の変更もエディタで開くこともできない。 */}
+            {/* まだ無いページは一覧に無いので、ピン留めも名前の変更もできない。 */}
             {!entry.missing && (
             <Button
               variant={pinned ? "primary" : "ghost"}
@@ -312,16 +300,6 @@ export function DetailPanel({
               >
                 <PencilIcon className="size-4" aria-hidden="true" />
                 名前を変更
-              </Button>
-            )}
-            {!entry.missing && (
-              <Button
-                variant="ghost"
-                onClick={() => void openEditor()}
-                title="拡張子に紐づいたエディタで開く"
-              >
-                <PencilSquareIcon className="size-4" aria-hidden="true" />
-                エディタで開く
               </Button>
             )}
           </header>

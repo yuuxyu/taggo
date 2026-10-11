@@ -149,8 +149,9 @@ func (a *App) preparePage(path string) (string, bool, error) {
 		return "", false, fmt.Errorf("ノートを作れませんでした: %w", err)
 	}
 	// 一覧でリンクと同じ名前に見えるよう、ファイル名を見出しにしておく。
+	// 見出しの後ろに空行を入れておき、編集画面ではその下から本文を書き始められるようにする。
 	title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	if _, err := fmt.Fprintf(f, "# %s\n", title); err != nil {
+	if _, err := fmt.Fprintf(f, "# %s\n\n", title); err != nil {
 		f.Close()
 		return "", false, fmt.Errorf("ノートを書き込めませんでした: %w", err)
 	}

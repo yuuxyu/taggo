@@ -383,7 +383,7 @@ func (a *App) RelatedPages(path string) store.Related {
 // LinkPreview は、Markdown 本文に URL だけを書いた段落をリンクカードにするための
 // タイトルや画像を、リンク先から取得して返す。
 //
-// 「勝手に通信しない方針」の例外で、ノートを開いただけで外部へ通信する。
+// 通信の方針の例外で、ノートを開いただけで外部へ通信する。
 // 本文の外部画像を開いた時点で読み込むのと同じく、利用者が本文に書いた URL だけが対象になる。
 func (a *App) LinkPreview(url string) (*linkcard.Preview, error) {
 	ctx := a.ctx

@@ -34,10 +34,6 @@ export function OpenFolder(arg1) {
   return window['go']['app']['App']['OpenFolder'](arg1);
 }
 
-export function OpenInEditor(arg1) {
-  return window['go']['app']['App']['OpenInEditor'](arg1);
-}
-
 export function OpenStartupFolder(arg1) {
   return window['go']['app']['App']['OpenStartupFolder'](arg1);
 }
