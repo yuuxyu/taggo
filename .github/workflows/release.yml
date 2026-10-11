@@ -74,10 +74,12 @@ jobs:
       - name: ビルド
         run: wails build -s -clean -platform windows/amd64 -trimpath -ldflags "-s -w"
 
+      # 添付する exe の名前は、バージョンを入れずに taggo.exe で固定する。
+      # 置き換えるときに名前が変わらないので、ショートカットなどをそのまま使える。
       - name: 成果物をまとめる
         id: dist
         run: |
-          $name = "taggo-${{ github.ref_name }}-windows-amd64.exe"
+          $name = "taggo.exe"
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item build/bin/taggo.exe "dist/$name"
           $hash = (Get-FileHash "dist/$name" -Algorithm SHA256).Hash.ToLower()
