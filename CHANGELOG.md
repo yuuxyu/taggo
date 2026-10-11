@@ -4,6 +4,14 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.8.1] - 2026-10-12
+
+一覧と関連ページで、フォーカスのあるカードが見えるようにしました。
+
+### 修正
+
+- Ctrl + N / Ctrl + P でカードへ移っても、どのカードにフォーカスがあるか見えなかったのを直した。フォーカスのあるカードの外側に、濃い色の線を引く（一覧と関連ページの両方）
+
 ## [0.8.0] - 2026-10-12
 
 ノートの画面からページを削除できるようにしました。本文と関連ページの間も、キーボードで行き来できます。
@@ -177,6 +185,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.8.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.1
 [0.8.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.0
 [0.7.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.7.0
 [0.6.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.6.0
