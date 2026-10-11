@@ -18,7 +18,7 @@
  * Ctrl + P は本文の末尾へ戻る（本文の末尾での Ctrl + N で先頭のカードへ来る。emacsKeys.ts）。
  */
 
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { LinkIcon } from "@heroicons/react/16/solid";
 import {
   Events,
@@ -72,9 +72,16 @@ export function focusFirstRelatedCard(container: HTMLElement | null): boolean {
 export function useRelatedPages(entry: Entry): Related | null {
   const [related, setRelated] = useState<Related | null>(null);
 
+  // 空にするのは、別のノートへ移ったときだけ。同じノートを保存して読み直す間は、今の並びを
+  // 出しておく。空にすると関連ページのカードが描き直しで消え、Ctrl + N でフォーカスを当てた
+  // カード（本文から移るときに、本文の書きかけを保存する）からフォーカスが外れてしまう。
+  const shownPath = useRef(entry.path);
   useEffect(() => {
     let cancelled = false;
-    setRelated(null);
+    if (shownPath.current !== entry.path) {
+      shownPath.current = entry.path;
+      setRelated(null);
+    }
     void getRelatedPages(entry.path).then((got) => {
       if (!cancelled) setRelated(got);
     });
