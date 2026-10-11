@@ -10,6 +10,10 @@ export function CreatePage(arg1) {
   return window['go']['app']['App']['CreatePage'](arg1);
 }
 
+export function DeletePage(arg1) {
+  return window['go']['app']['App']['DeletePage'](arg1);
+}
+
 export function Entry(arg1) {
   return window['go']['app']['App']['Entry'](arg1);
 }

@@ -37,6 +37,8 @@ func newTestApp(t *testing.T, files map[string]string) (*App, string) {
 		t.Fatalf("アプリの初期化に失敗: %v", err)
 	}
 	t.Cleanup(func() { a.Shutdown(context.Background()) })
+	// テストのたびに利用者のごみ箱へファイルを溜めないよう、削除はその場で消す。
+	a.trash = os.Remove
 
 	if err := a.OpenFolder(root); err != nil {
 		t.Fatalf("フォルダの読み込みに失敗: %v", err)

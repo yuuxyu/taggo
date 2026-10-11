@@ -21,6 +21,8 @@ export type LinkPreview = linkcard.Preview;
 export type RenamePlan = app.RenamePlan;
 /** ページの名前を変えた結果。 */
 export type RenameResult = app.RenameResult;
+/** ページを削除した結果。 */
+export type DeleteResult = app.DeleteResult;
 /** 編集画面で開くノートの中身と、読んだときのファイルの中身を表す値。 */
 export type NoteContent = app.NoteContent;
 /** ノートの保存の結果。 */
@@ -216,6 +218,12 @@ export const planRename = (path: string, name: string): Promise<RenamePlan> =>
  */
 export const renamePage = (path: string, name: string): Promise<RenameResult> =>
   Backend.RenamePage(path, name);
+
+/**
+ * ページのファイルをごみ箱へ移し、一覧から除く。ほかのノートの [[タグ]] とリンクは書き換えない。
+ * ごみ箱の無いドライブで、完全に消す確認を利用者がやめたときは cancelled が返る。
+ */
+export const deletePage = (path: string): Promise<DeleteResult> => Backend.DeletePage(path);
 
 /** 一覧の先頭にノートをピン留めする（pinned が false なら外す）。フォルダの .taggo.json に保存される。 */
 export const setPinned = (path: string, pinned: boolean): Promise<void> =>

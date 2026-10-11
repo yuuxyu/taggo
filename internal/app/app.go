@@ -18,6 +18,7 @@ import (
 	"github.com/yuuxyu/taggo/internal/scan"
 	"github.com/yuuxyu/taggo/internal/settings"
 	"github.com/yuuxyu/taggo/internal/store"
+	"github.com/yuuxyu/taggo/internal/trash"
 	"github.com/yuuxyu/taggo/internal/watcher"
 )
 
@@ -71,8 +72,12 @@ type App struct {
 	pinMu sync.Mutex
 	// writeMu はノートへの書き込み（名前の変更に伴う書き換えと、編集画面からの保存）を
 	// 1 つずつにする。名前の変更は、ノートを読んでから書き換えるまでの間に保存が割り込むと、
-	// 保存した内容を古い内容で上書きしてしまうため。
+	// 保存した内容を古い内容で上書きしてしまうため。ページの削除も、保存がファイルを作り直さないよう
+	// これで 1 つずつにする。
 	writeMu sync.Mutex
+
+	// trash はページを削除するときに、ファイルをごみ箱へ移す。テストでは、ごみ箱を使わずに消す関数に差し替える。
+	trash func(path string) error
 }
 
 // New はアプリを組み立てる。インメモリ DB の初期化に失敗した場合のみエラーを返す。
@@ -86,6 +91,7 @@ func New(cfg *settings.Store) (*App, error) {
 		links:      linkcard.New(),
 		settings:   cfg,
 		maxEntries: cfg.Get().ScanLimit,
+		trash:      trash.Move,
 	}, nil
 }
 

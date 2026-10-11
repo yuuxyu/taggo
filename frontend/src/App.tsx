@@ -17,6 +17,7 @@ import {
 } from "@heroicons/react/20/solid";
 import {
   createPage,
+  deletePage,
   Events,
   getEntry,
   on,
@@ -86,6 +87,8 @@ export default function App({ initialSettings }: Props) {
   const [confirmLoadAll, setConfirmLoadAll] = useState(false);
   // 名前の変更ダイアログで名前を変えようとしているページ。
   const [renaming, setRenaming] = useState<Entry | null>(null);
+  // 削除の確認ダイアログで削除しようとしているページ。
+  const [deleting, setDeleting] = useState<Entry | null>(null);
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
   const [focusSignal, setFocusSignal] = useState(0);
   // 検索バーへフォーカスを移し、検索語をすべて選ぶための合図（Ctrl + L）。
@@ -272,7 +275,7 @@ export default function App({ initialSettings }: Props) {
   // Alt + 左右・Ctrl + [ / ]・マウスの戻る／進むボタン（ボタン 3 / 4）で、ブラウザと同じく履歴を移動する。
   // 一覧でもノートの画面でも、入力欄の中でも効かせる。ダイアログを開いている間は動かさない。
   // 画像ビューアを開いている間は、ビューアが先に受けて止める。
-  const historyBlocked = settingsOpen || confirmLoadAll || renaming !== null;
+  const historyBlocked = settingsOpen || confirmLoadAll || renaming !== null || deleting !== null;
   useEffect(() => {
     const move = (delta: number) => {
       if (!historyBlocked) goHistory(historyIndex + delta);
@@ -410,6 +413,30 @@ export default function App({ initialSettings }: Props) {
         notify("error", `大きすぎるため書き換えなかったノートがあります: ${result.skipped.join("、")}`);
       }
       if (result.warning) notify("error", result.warning);
+    },
+    [notify],
+  );
+
+  // 削除を確かめる前に、書きかけのノートを保存しておく。ごみ箱から戻したときに書きかけが失われないように。
+  const startDelete = useCallback((entry: Entry) => {
+    void flushAllEditors().finally(() => setDeleting(entry));
+  }, []);
+
+  const cancelDelete = useCallback(() => setDeleting(null), []);
+
+  // ページのファイルをごみ箱へ移す。一覧と、開いていたノートの画面は、削除の変更イベントで
+  // 閉じる（見ていたノートが消えたときと同じく、手前の画面へ戻る）。
+  const handleDelete = useCallback(
+    async (entry: Entry) => {
+      setDeleting(null);
+      try {
+        const result = await deletePage(entry.path);
+        if (result.cancelled) return;
+        notify("info", `「${entry.name}」をごみ箱へ移しました。`);
+        if (result.warning) notify("error", result.warning);
+      } catch (err) {
+        notify("error", String(err));
+      }
     },
     [notify],
   );
@@ -615,6 +642,7 @@ export default function App({ initialSettings }: Props) {
           pinned={library.pins.has(detailEntry.path)}
           onTogglePin={(pinned) => handleTogglePin(detailEntry, pinned)}
           onRename={() => startRename(detailEntry)}
+          onDelete={() => startDelete(detailEntry)}
           onError={(message) => notify("error", message)}
           history={history}
         />
@@ -643,6 +671,19 @@ export default function App({ initialSettings }: Props) {
           entry={renaming}
           onClose={closeRename}
           onRenamed={(result) => handleRenamed(renaming, result)}
+        />
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`「${deleting.name}」を削除しますか？`}
+          lines={[
+            "ファイルをごみ箱へ移します。元に戻すときは、ごみ箱から戻してください。",
+            "このページを指す [[タグ]] とリンクは書き換えません。まだ無いページを指すようになります。",
+          ]}
+          confirmLabel="削除する"
+          onConfirm={() => void handleDelete(deleting)}
+          onCancel={cancelDelete}
         />
       )}
 

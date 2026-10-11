@@ -1,10 +1,14 @@
 /**
  * 取り返しのつく形で確認を取るためのダイアログ。
  *
- * いまは、上限を大きく超えて続きを読み込む前の確認に使っている。
- * 既定の操作を「やめる」側に置き、勢いで通信を始めてしまわないようにする。
+ * いまは、上限を大きく超えて続きを読み込む前と、ページを削除する前の確認に使っている。
+ * 既定の操作を「やめる」側に置き、勢いで読み込みや削除を始めてしまわないようにする。
+ *
+ * Esc でやめる。下のノートの画面や一覧も Esc や Alt + 左右、マウスの戻る／進むボタンで動くので、
+ * キャプチャで先に受けて届かないようにする。
  */
 
+import { useEffect } from "react";
 import { ExclamationTriangleIcon } from "@heroicons/react/20/solid";
 import { Button } from "./Button";
 
@@ -26,6 +30,31 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        e.preventDefault();
+        onCancel();
+        return;
+      }
+      if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) e.stopPropagation();
+    };
+    const onMouse = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    window.addEventListener("mousedown", onMouse, { capture: true });
+    window.addEventListener("mouseup", onMouse, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      window.removeEventListener("mousedown", onMouse, { capture: true });
+      window.removeEventListener("mouseup", onMouse, { capture: true });
+    };
+  }, [onCancel]);
+
   return (
     <div className="fixed inset-0 z-[120] grid place-items-center p-8" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onCancel} />

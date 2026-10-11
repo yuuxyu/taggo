@@ -11,6 +11,8 @@ export function CancelLoadMore():Promise<void>;
 
 export function CreatePage(arg1:string):Promise<app.CreatedPage>;
 
+export function DeletePage(arg1:string):Promise<app.DeleteResult>;
+
 export function Entry(arg1:string):Promise<model.Entry>;
 
 export function GetSettings():Promise<settings.Settings>;

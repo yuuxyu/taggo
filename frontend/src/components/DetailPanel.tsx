@@ -10,6 +10,7 @@
  *
  * ヘッダーの「ピン留め」で、このノートを一覧の先頭にピン留めする。
  * 「名前を変更」で、ファイル名と、このページを指す [[タグ]] とリンクをまとめて書き換える。
+ * 「削除」で、このページのファイルをごみ箱へ移す（確かめるダイアログは App が出す）。
  *
  * まだ無いページ（ページの無いタグや、行き先の無いリンク）も、ファイルを作らずにここで開く。
  * 本文の代わりに「md ファイルを作成する」ボタンを出し、関連ページはふつうのノートと同じく並べる。
@@ -26,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { DocumentPlusIcon, MapPinIcon, PencilIcon } from "@heroicons/react/20/solid";
+import { DocumentPlusIcon, MapPinIcon, PencilIcon, TrashIcon } from "@heroicons/react/20/solid";
 import type { Entry } from "../api/taggo";
 import type { NavHistory } from "../hooks/useNavHistory";
 import { NoteEditor } from "../editor/NoteEditor";
@@ -54,6 +55,8 @@ interface Props {
   onTogglePin: (pinned: boolean) => void;
   /** 名前の変更ダイアログを開く。 */
   onRename: () => void;
+  /** 削除を確かめるダイアログを開く。 */
+  onDelete: () => void;
   onError: (message: string) => void;
   /** 移動の履歴。戻る／進むと、戻ったときのスクロール位置の復元に使う。 */
   history: NavHistory;
@@ -78,6 +81,7 @@ export function DetailPanel({
   pinned,
   onTogglePin,
   onRename,
+  onDelete,
   onError,
   history,
 }: Props) {
@@ -296,7 +300,7 @@ export function DetailPanel({
                 {entry.missing ? `${entry.relPath}（まだありません）` : entry.relPath}
               </p>
             </div>
-            {/* まだ無いページは一覧に無いので、ピン留めも名前の変更もできない。 */}
+            {/* まだ無いページは一覧に無いので、ピン留めも名前の変更も削除もできない。 */}
             {!entry.missing && (
             <Button
               variant={pinned ? "primary" : "ghost"}
@@ -316,6 +320,12 @@ export function DetailPanel({
               >
                 <PencilIcon className="size-4" aria-hidden="true" />
                 名前を変更
+              </Button>
+            )}
+            {!entry.missing && (
+              <Button variant="ghost" onClick={onDelete} title="このページのファイルをごみ箱へ移す">
+                <TrashIcon className="size-4" aria-hidden="true" />
+                削除
               </Button>
             )}
           </header>

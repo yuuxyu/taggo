@@ -32,6 +32,20 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class DeleteResult {
+	    cancelled?: boolean;
+	    warning?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeleteResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cancelled = source["cancelled"];
+	        this.warning = source["warning"];
+	    }
+	}
 	export class NoteContent {
 	    content: string;
 	    version: string;
