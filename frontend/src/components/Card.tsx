@@ -131,7 +131,7 @@ export const Card = memo(function Card({
 
   return (
     <article
-      className={`group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-lg border bg-surface transition hover:-translate-y-px hover:shadow-card focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-accent-soft ${
+      className={`group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-lg border bg-surface transition hover:-translate-y-px hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
         entry.err ? "border-danger hover:border-line-strong" : "border-line hover:border-line-strong"
       }`}
       role="button"

@@ -129,7 +129,7 @@ function RelatedCard({ page, head, onOpen }: { page: RelatedPage; head?: boolean
       <button
         type="button"
         data-related-card=""
-        className={`flex h-44 w-full scroll-mt-28 scroll-mb-14 flex-col overflow-hidden rounded-lg border text-left transition focus-visible:ring-3 focus-visible:ring-accent-soft focus-visible:outline-hidden ${
+        className={`flex h-44 w-full scroll-mt-28 scroll-mb-14 flex-col overflow-hidden rounded-lg border text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
           !path
             ? "border-dashed border-line bg-surface text-ink-faint hover:border-line-strong"
             : head
