@@ -4,6 +4,14 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.8.3] - 2026-10-12
+
+キーボードで移ったカードに、いつもフォーカスの印が出るようにしました。
+
+### 修正
+
+- マウスでノートを開いて Ctrl + N だけで関連ページへ移ると、どのカードにフォーカスがあるか見えなかったのを直した（本文に文字を打ったあとでないと出なかった）。一覧のカードも同じく、Ctrl + N / Ctrl + P で移ったときはいつも印を出す
+
 ## [0.8.2] - 2026-10-12
 
 本文を書き換えた直後でも、関連ページへキーボードで移れるようにしました。
@@ -193,6 +201,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.8.3]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.3
 [0.8.2]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.2
 [0.8.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.1
 [0.8.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.0
