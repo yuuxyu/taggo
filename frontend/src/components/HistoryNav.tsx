@@ -5,7 +5,7 @@
  * ブラウザと同じ並びと操作にそろえ、覚えることを増やさない。
  *  - ← / →            … 1 つ戻る・進む（ホバーで行き先の名前が出る）
  *  - 時計のボタン      … これまでに見た画面の一覧を開き、好きな位置へ飛ぶ
- *  - Alt + ← / →      … キーボードでの戻る・進む（App 側で受ける）
+ *  - Alt + ← / →、Ctrl + [ / ] … キーボードでの戻る・進む（App 側で受ける）
  *  - マウスの戻る／進むボタン … 同上
  *
  * 履歴の一覧は新しいものを上に並べ、いま見ているものに印を付ける。
@@ -70,7 +70,7 @@ export function HistoryNav({ items, index, onGo }: Props) {
         className={ICON_ONLY}
         disabled={!prev}
         onClick={() => onGo(index - 1)}
-        title={prev ? `戻る: ${prev.title}（Alt+←）` : "戻る（Alt+←）"}
+        title={prev ? `戻る: ${prev.title}（Alt+← / Ctrl+[）` : "戻る（Alt+← / Ctrl+[）"}
         aria-label="戻る"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
@@ -80,7 +80,7 @@ export function HistoryNav({ items, index, onGo }: Props) {
         className={ICON_ONLY}
         disabled={!next}
         onClick={() => onGo(index + 1)}
-        title={next ? `進む: ${next.title}（Alt+→）` : "進む（Alt+→）"}
+        title={next ? `進む: ${next.title}（Alt+→ / Ctrl+]）` : "進む（Alt+→ / Ctrl+]）"}
         aria-label="進む"
       >
         <ArrowRightIcon className="size-4" aria-hidden="true" />

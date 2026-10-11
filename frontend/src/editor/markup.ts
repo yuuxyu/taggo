@@ -83,7 +83,7 @@ const starHandler = EditorView.inputHandler.of((view, from, to, text) => {
  * 行末で Enter を押したとき、その行が閉じていないコードブロックの開きのフェンス（```lang）なら、
  * 閉じのフェンスを補って間の行にカーソルを置く。
  */
-const closeCodeFence: Command = (view) => {
+export const closeCodeFence: Command = (view) => {
   const { state } = view;
   const sel = state.selection.main;
   if (state.selection.ranges.length !== 1 || !sel.empty) return false;

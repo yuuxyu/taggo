@@ -620,6 +620,63 @@ const clickHandler = EditorView.domEventHandlers({
   },
 });
 
+/**
+ * カーソルのある `[[タグ]]`・リンク・URL の行き先を開く（Ctrl + O）。
+ * `[[タグ]]` はそのタグのページを、ノートへのリンクはそのノートを、外部リンクは既定のブラウザで開く。
+ * カーソルの左右どちらに接していてもよい。何も無ければ何もしない。
+ */
+export const followAtCursor: Command = (view) => {
+  const { state } = view;
+  const host = hostOf(state);
+  if (!host || state.selection.ranges.length !== 1) return false;
+  const doc = state.doc;
+  const pos = state.selection.main.head;
+  const tree = syntaxTree(state);
+
+  for (const side of [-1, 1] as const) {
+    for (let n: SyntaxNode | null = tree.resolveInner(pos, side); n; n = n.parent) {
+      switch (n.name) {
+        case "BracketTag": {
+          const [open, close] = n.getChildren("BracketTagMark");
+          if (!open || !close) return false;
+          host.onFollowTag(normalizeTag(doc.sliceString(open.to, close.from)));
+          return true;
+        }
+        case "Link":
+        case "Autolink": {
+          const url = n.getChild("URL");
+          if (!url) break;
+          followHref(host, cleanHref(doc.sliceString(url.from, url.to)));
+          return true;
+        }
+        case "URL": {
+          // リンクの中の URL は、外側のリンクとして扱う。
+          const parent = n.parent?.name;
+          if (parent === "Link" || parent === "Autolink" || parent === "Image" || parent === "LinkReference") break;
+          followHref(host, doc.sliceString(n.from, bareUrlEnd(state, n.to)));
+          return true;
+        }
+      }
+    }
+  }
+
+  // URL の末尾の `_` の上にカーソルがあるときは、構文木では URL の外になるので、行の中から探す。
+  const line = doc.lineAt(pos);
+  let found: string | null = null;
+  tree.iterate({
+    from: line.from,
+    to: line.to,
+    enter: (n) => {
+      if (found !== null || n.name !== "URL" || n.node.parent?.name !== "Paragraph") return;
+      const end = bareUrlEnd(state, n.to);
+      if (n.from <= pos && pos <= end) found = doc.sliceString(n.from, end);
+    },
+  });
+  if (found === null) return false;
+  followHref(host, found);
+  return true;
+};
+
 /** ライブプレビュー一式。 */
 export function livePreview() {
   return [inlinePlugin, blockField, blockKeys, clickHandler];

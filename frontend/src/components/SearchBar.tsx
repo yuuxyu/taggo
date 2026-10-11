@@ -7,6 +7,7 @@
  *
  * 検索は単純な全文検索で、タグを指定する記法や AND / OR のような条件式は持たない。
  * 入力がタグの名前と一致すれば、そのタグのページが結果の先頭に出る（Go 側で並べる）。
+ * Enter で何をするか（そのタグのページがまだ無ければ作るなど）は呼び出し側が決める。
  */
 
 import { useEffect, useRef } from "react";
@@ -24,9 +25,11 @@ interface Props {
    * オーバーレイを閉じた直後など、キー入力の行き先を検索バーへ返したい場面で使う。
    */
   focusSignal?: number;
+  /** Enter を押したときに呼ぶ。日本語入力の変換を確定する Enter では呼ばない。 */
+  onEnter?: () => void;
 }
 
-export function SearchBar({ value, onChange, total, entryCount, disabled, focusSignal }: Props) {
+export function SearchBar({ value, onChange, total, entryCount, disabled, focusSignal, onEnter }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 起動時に検索バーへキャレットを置く。
@@ -53,6 +56,11 @@ export function SearchBar({ value, onChange, total, entryCount, disabled, focusS
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") onChange("");
+            const plain = !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+            if (e.key === "Enter" && plain && !e.nativeEvent.isComposing && onEnter) {
+              e.preventDefault();
+              onEnter();
+            }
           }}
         />
         {value !== "" && (

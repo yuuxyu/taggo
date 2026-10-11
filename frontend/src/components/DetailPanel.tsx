@@ -17,7 +17,7 @@
  *
  * ヘッダー左端の「戻る／進む」で、リンクをたどる前のノートや、開く前の一覧へ戻れる。
  * ノートの画面を閉じるボタンは置かず、一覧へは「戻る」か Esc で戻る。
- * 履歴そのものと、Alt + 左右・マウスの戻る／進むボタンは App が受け持つ。
+ * 履歴そのものと、Alt + 左右・Ctrl + [ / ]・マウスの戻る／進むボタンは App が受け持つ。
  *
  * フッターには本文の文字数を表示する。
  *
@@ -155,6 +155,15 @@ export function DetailPanel({
 
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // 開いたら、フォーカスをこの画面の中へ移す。一覧から開いた直後は後ろのカードに
+  // フォーカスが残っていて、Enter などのキーを後ろの一覧が受けてしまうため。
+  // 編集画面などに既にフォーカスがあれば、そのままにする。
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
+  }, [entry.path]);
+
   // ヘッダーがスクロールバーの上に重なると、どこまで読んだかが分かりにくい。
   // スクロールバーの幅を測って、ヘッダーの右端をその手前で止める。
   // スクロールバーは本文の長さやウィンドウの大きさで出たり消えたりするので、
@@ -210,7 +219,14 @@ export function DetailPanel({
   const contentTop = overlayHeight + 24;
 
   return (
-    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true">
+    <div
+      ref={rootRef}
+      className="fixed inset-0 z-[100] outline-hidden"
+      role="dialog"
+      aria-modal="true"
+      // フォーカスを受けられるようにするが、Tab でたどる順には入れない。
+      tabIndex={-1}
+    >
       <div className="relative size-full overflow-hidden bg-canvas">
         {/* ---- 本文 ---- */}
         <div ref={contentRef} className="size-full overflow-auto">

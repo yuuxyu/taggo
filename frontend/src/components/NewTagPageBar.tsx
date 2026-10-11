@@ -23,7 +23,7 @@ export function NewTagPageBar({ page, onCreate }: Props) {
     <div className="mx-4.5 mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-dashed border-line px-3 py-2 text-xs text-ink-muted">
       <span className="min-w-60 flex-1">
         「<strong className="text-ink">{page.title}</strong>」のページはまだありません。
-        作ると、このタグのページとして一覧の先頭に出ます。
+        作ると、このタグのページとして一覧の先頭に出ます（検索バーで Enter を押しても作れます）。
       </span>
       <Button
         variant="primary"

@@ -257,7 +257,7 @@ export default function App({ initialSettings }: Props) {
     [setQuery, replaceSearch],
   );
 
-  // Alt + 左右とマウスの戻る／進むボタン（ボタン 3 / 4）で、ブラウザと同じく履歴を移動する。
+  // Alt + 左右・Ctrl + [ / ]・マウスの戻る／進むボタン（ボタン 3 / 4）で、ブラウザと同じく履歴を移動する。
   // 一覧でもノートの画面でも、入力欄の中でも効かせる。ダイアログを開いている間は動かさない。
   // 画像ビューアを開いている間は、ビューアが先に受けて止める。
   const historyBlocked = settingsOpen || confirmLoadAll || renaming !== null;
@@ -266,9 +266,13 @@ export default function App({ initialSettings }: Props) {
       if (!historyBlocked) goHistory(historyIndex + delta);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      const alt = e.altKey && !e.ctrlKey && (e.key === "ArrowLeft" || e.key === "ArrowRight");
+      // 記号の位置はキーボードの配列で違う（JIS では [ と ] が US 配列と別の位置）ので、
+      // 押したキーの位置ではなく入力される文字で見る。
+      const ctrl = e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "[" || e.key === "]");
+      if (!alt && !ctrl) return;
       e.preventDefault();
-      move(e.key === "ArrowLeft" ? -1 : 1);
+      move(e.key === "ArrowLeft" || e.key === "[" ? -1 : 1);
     };
     // WebView 自体のページ遷移に使われないよう、押した時点で既定の動作を止める。
     const onMouseDown = (e: MouseEvent) => {
@@ -402,6 +406,18 @@ export default function App({ initialSettings }: Props) {
   const shownNewTagPage =
     lacksTagPage && newTagPage?.query === resultQuery ? newTagPage.page : null;
 
+  // 検索バーで Enter を押したとき、「タグ.md を作成する」が出ていれば、そのページを作る。
+  // 打ったばかりで結果がまだ追いついていないときは、前の検索語のページを作らないよう何もしない。
+  // 続けて押しても 1 回だけ作る。
+  const creatingFromSearch = useRef(false);
+  const handleSearchEnter = useCallback(() => {
+    if (!shownNewTagPage || resultQuery !== query || creatingFromSearch.current) return;
+    creatingFromSearch.current = true;
+    void handleCreatePage(shownNewTagPage).finally(() => {
+      creatingFromSearch.current = false;
+    });
+  }, [shownNewTagPage, resultQuery, query, handleCreatePage]);
+
   const remaining = library.status?.remaining ?? 0;
   // 読み込み中は重ねて始められないので、続きを読む操作は出さないか押せなくする。
   const busy = library.progress !== null;
@@ -436,6 +452,7 @@ export default function App({ initialSettings }: Props) {
               entryCount={library.status?.entryCount ?? 0}
               disabled={!hasFolder}
               focusSignal={focusSignal}
+              onEnter={handleSearchEnter}
             />
           </div>
         </div>

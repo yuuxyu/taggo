@@ -1,6 +1,8 @@
 /**
  * ノートの編集画面。常に編集できる状態で開き、テキストエディタと見た目を分けない。
  *
+ * カーソルが無いとき（一覧から開いた直後など）は、Enter / Ctrl + M / Ctrl + N で本文の先頭から書き始められる。
+ *
  * 本文は Markdown のまま CodeMirror で編集し、見た目はライブプレビュー（livePreview.ts）が整える。
  * 書いた内容は、入力が止まって少し経ったら自動で保存する。ほかのノートへ移るとき・エディタから
  * フォーカスが外れたとき・ウィンドウを閉じるとき・名前を変える前にも、待たずに保存する。
@@ -33,6 +35,13 @@ import { markupHelpers } from "./markup";
 import { imagePaste, PENDING_IMAGE_RE } from "./pasteImage";
 import { markdownSyntax } from "./syntax";
 import { editorTheme } from "./theme";
+
+/** 画面全体の「戻る／進む」（App）に使うので、編集画面では割り当てないキー。 */
+const HISTORY_KEYS = new Set(["Alt-ArrowLeft", "Alt-ArrowRight", "Mod-[", "Mod-]"]);
+
+/** Enter / Ctrl + M を、本文へカーソルを置くのではなく、それ自身の働きに使う要素。 */
+const INTERACTIVE =
+  "input, textarea, select, button, a[href], [contenteditable], [role='button'], [role='menuitem'], [role='checkbox']";
 
 /** 入力が止まってから自動で保存するまでの時間。 */
 const AUTOSAVE_MS = 1000;
@@ -274,8 +283,8 @@ export function NoteEditor({
       completions(),
       keymap.of([
         ...closeBracketsKeymap,
-        // Alt + 左右は、画面全体の「戻る／進む」に使う。
-        ...defaultKeymap.filter((b) => b.key !== "Alt-ArrowLeft" && b.key !== "Alt-ArrowRight"),
+        // Alt + 左右と Ctrl + [ / ]（既定では字下げ）は、画面全体の「戻る／進む」に使う。
+        ...defaultKeymap.filter((b) => !HISTORY_KEYS.has(b.key ?? "")),
         ...historyKeymap,
         indentWithTab,
       ]),
@@ -398,6 +407,37 @@ export function NoteEditor({
       });
     });
     return () => cancelAnimationFrame(frame);
+  }, [status]);
+
+  // カーソルが無いとき（一覧から開いた直後など）に Enter / Ctrl + M / Ctrl + N を押すと、本文の
+  // 先頭にカーソルを置いて書き始められるようにする。ほかの画面（画像ビューア・ダイアログ・履歴の
+  // 一覧）が重なっているときは、そちらの働きを優先する。Enter / Ctrl + M は、ボタンなどに
+  // フォーカスがあるときもそちらを優先する（Ctrl + N はボタンの働きとぶつからないので本文へ移す）。
+  useEffect(() => {
+    if (status !== "ready") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const view = viewRef.current;
+      if (!view || view.hasFocus || e.defaultPrevented || e.isComposing) return;
+      const enter = e.key === "Enter" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+      const ctrl = e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+      const ctrlM = ctrl && e.key.toLowerCase() === "m";
+      const ctrlN = ctrl && e.key.toLowerCase() === "n";
+      if (!enter && !ctrlM && !ctrlN) return;
+      // Ctrl + N は、WebView の既定の働き（新しいウィンドウ）をいつも止める。
+      if (ctrlN) e.preventDefault();
+      // 一覧から開いた直後は、後ろの一覧のカードにフォーカスが残っている。ノートの画面の
+      // 外にあるフォーカスは、無いものとして扱う。
+      const screen = view.dom.closest('[role="dialog"]');
+      const active = document.activeElement;
+      if (!ctrlN && active instanceof Element && screen?.contains(active) && active.closest(INTERACTIVE)) return;
+      if (document.querySelectorAll('[role="dialog"][aria-modal="true"]').length > 1) return;
+      if (document.querySelector('[role="menu"]')) return;
+      e.preventDefault();
+      view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true });
+      view.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [status]);
 
   // ほかのアプリでの保存は、フォルダの監視が更新日時とサイズの変わったエントリとして届けてくる。
