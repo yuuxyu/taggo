@@ -4,6 +4,14 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.8.2] - 2026-10-12
+
+本文を書き換えた直後でも、関連ページへキーボードで移れるようにしました。
+
+### 修正
+
+- 本文を書き換えた直後に Ctrl + N で関連ページのカードへ移ると、フォーカスが外れてしまっていたのを直した（続けて Ctrl + N を押すと本文の先頭へ飛んでいた）
+
 ## [0.8.1] - 2026-10-12
 
 一覧と関連ページで、フォーカスのあるカードが見えるようにしました。
@@ -185,6 +193,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.8.2]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.2
 [0.8.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.1
 [0.8.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.0
 [0.7.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.7.0
