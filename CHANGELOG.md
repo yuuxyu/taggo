@@ -4,6 +4,15 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.7.0] - 2026-10-11
+
+一覧のカードを、キーボードだけで選んで開けるようにしました。
+
+### 追加
+
+- 一覧で Ctrl + N / Ctrl + P を押すと、フォーカスするカードを並び順の次 / 前へ移す（画面の外のカードへは、そこまでスクロールする）。移ったカードは Enter で開く
+- 検索バーなど、カードの外にフォーカスがあるときの Ctrl + N で先頭のカードへ、先頭のカードでの Ctrl + P で検索バーへ移る
+
 ## [0.6.0] - 2026-10-11
 
 Ctrl + L で、どの画面からでも検索バーへ移れるようにしました。
@@ -149,6 +158,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.7.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.7.0
 [0.6.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.6.0
 [0.5.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.5.0
 [0.4.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.4.0
