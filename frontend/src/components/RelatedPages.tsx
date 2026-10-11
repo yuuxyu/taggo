@@ -30,6 +30,7 @@ import {
   type RelatedGroup,
   type RelatedPage,
 } from "../api/taggo";
+import { FOCUS_RING, focusByKey } from "../keyFocus";
 import { NotePreview } from "./NotePreview";
 
 interface CardProps {
@@ -53,7 +54,7 @@ const CARD_ATTR = "data-related-card";
 
 /** カードへフォーカスを移す。ヘッダーやフッターの下に隠れないよう、余白を残して見える位置まで動かす。 */
 function focusCard(card: HTMLElement) {
-  card.focus({ preventScroll: true });
+  focusByKey(card, { preventScroll: true });
   card.scrollIntoView({ block: "nearest" });
 }
 
@@ -136,7 +137,7 @@ function RelatedCard({ page, head, onOpen }: { page: RelatedPage; head?: boolean
       <button
         type="button"
         data-related-card=""
-        className={`flex h-44 w-full scroll-mt-28 scroll-mb-14 flex-col overflow-hidden rounded-lg border text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+        className={`flex h-44 w-full scroll-mt-28 scroll-mb-14 flex-col overflow-hidden rounded-lg border text-left transition ${FOCUS_RING} ${
           !path
             ? "border-dashed border-line bg-surface text-ink-faint hover:border-line-strong"
             : head

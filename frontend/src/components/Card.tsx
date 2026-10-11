@@ -8,6 +8,7 @@
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { MapPinIcon } from "@heroicons/react/16/solid";
 import type { Entry } from "../api/taggo";
+import { FOCUS_RING } from "../keyFocus";
 import { NotePreview } from "./NotePreview";
 import { TagBadge } from "./TagBadge";
 
@@ -131,7 +132,7 @@ export const Card = memo(function Card({
 
   return (
     <article
-      className={`group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-lg border bg-surface transition hover:-translate-y-px hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+      className={`group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-lg border bg-surface transition hover:-translate-y-px hover:shadow-card ${FOCUS_RING} ${
         entry.err ? "border-danger hover:border-line-strong" : "border-line hover:border-line-strong"
       }`}
       role="button"

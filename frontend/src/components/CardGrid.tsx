@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Grid, useGridRef, type CellComponentProps } from "react-window";
 import type { Entry } from "../api/taggo";
+import { focusByKey } from "../keyFocus";
 import { Card } from "./Card";
 
 /** カード 1 枚の目標幅。実際の幅は、この値を下回らない範囲で列数から決まる。 */
@@ -227,7 +228,7 @@ export function CardGrid({
         const card = container.querySelector<HTMLElement>(`[data-card-index="${index}"] > article`);
         if (card || ++tries > FOCUS_RETRY_FRAMES) {
           pending.current = null;
-          card?.focus({ preventScroll: true });
+          if (card) focusByKey(card, { preventScroll: true });
           return;
         }
         pending.current = { index, frame: requestAnimationFrame(attempt) };
