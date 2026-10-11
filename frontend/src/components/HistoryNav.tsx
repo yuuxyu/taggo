@@ -1,5 +1,5 @@
 /**
- * 一覧の検索バーの左と、詳細プレビューのヘッダー左端に置く「戻る／進む」と履歴の一覧。
+ * 一覧の検索バーの左と、ノートの画面のヘッダー左端に置く「戻る／進む」と履歴の一覧。
  * 履歴にはノートと一覧（検索結果）の両方が並ぶ。
  *
  * ブラウザと同じ並びと操作にそろえ、覚えることを増やさない。
@@ -40,8 +40,8 @@ export function HistoryNav({ items, index, onGo }: Props) {
   const prev = index > 0 ? items[index - 1] : null;
   const next = index >= 0 && index < items.length - 1 ? items[index + 1] : null;
 
-  // 履歴の一覧の外をクリックするか Esc で閉じる。Esc はプレビュー自体を閉じる操作でもあるので、
-  // 一覧が開いている間はキャプチャで先に受け、プレビューまで届かないようにする。
+  // 履歴の一覧の外をクリックするか Esc で閉じる。Esc はノートの画面自体を閉じる操作でもあるので、
+  // 一覧が開いている間はキャプチャで先に受け、ノートの画面まで届かないようにする。
   useEffect(() => {
     if (!menuOpen) return;
     const onPointerDown = (e: MouseEvent) => {

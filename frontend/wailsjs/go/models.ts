@@ -1,11 +1,56 @@
 export namespace app {
 	
+	export class CreatedPage {
+	    entry?: model.Entry;
+	    created: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreatedPage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.entry = this.convertValues(source["entry"], model.Entry);
+	        this.created = source["created"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class NoteContent {
+	    content: string;
+	    version: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NoteContent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.content = source["content"];
+	        this.version = source["version"];
+	    }
+	}
 	export class RenamePlan {
 	    from: string;
 	    to: string;
 	    path: string;
 	    notes: string[];
-	    cloudOnly: string[];
 	    skipped: string[];
 	
 	    static createFrom(source: any = {}) {
@@ -18,7 +63,6 @@ export namespace app {
 	        this.to = source["to"];
 	        this.path = source["path"];
 	        this.notes = source["notes"];
-	        this.cloudOnly = source["cloudOnly"];
 	        this.skipped = source["skipped"];
 	    }
 	}
@@ -60,6 +104,40 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class SaveResult {
+	    conflict?: boolean;
+	    version: string;
+	    entry?: model.Entry;
+	
+	    static createFrom(source: any = {}) {
+	        return new SaveResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.conflict = source["conflict"];
+	        this.version = source["version"];
+	        this.entry = this.convertValues(source["entry"], model.Entry);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Status {
 	    root: string;
 	    entryCount: number;
@@ -67,7 +145,6 @@ export namespace app {
 	    scanning: boolean;
 	    maxEntries: number;
 	    remaining: number;
-	    cloudOnly: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -81,7 +158,6 @@ export namespace app {
 	        this.scanning = source["scanning"];
 	        this.maxEntries = source["maxEntries"];
 	        this.remaining = source["remaining"];
-	        this.cloudOnly = source["cloudOnly"];
 	    }
 	}
 
@@ -132,7 +208,6 @@ export namespace model {
 	    thumbnail?: string;
 	    links?: string[];
 	    err?: string;
-	    cloudOnly?: boolean;
 	    missing?: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -153,7 +228,6 @@ export namespace model {
 	        this.thumbnail = source["thumbnail"];
 	        this.links = source["links"];
 	        this.err = source["err"];
-	        this.cloudOnly = source["cloudOnly"];
 	        this.missing = source["missing"];
 	    }
 	
@@ -217,7 +291,6 @@ export namespace store {
 	    relPath?: string;
 	    preview?: string;
 	    thumbnail?: string;
-	    cloudOnly?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new RelatedPage(source);
@@ -232,7 +305,6 @@ export namespace store {
 	        this.relPath = source["relPath"];
 	        this.preview = source["preview"];
 	        this.thumbnail = source["thumbnail"];
-	        this.cloudOnly = source["cloudOnly"];
 	    }
 	}
 	export class RelatedGroup {

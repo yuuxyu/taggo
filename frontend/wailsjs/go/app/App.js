@@ -14,10 +14,6 @@ export function Entry(arg1) {
   return window['go']['app']['App']['Entry'](arg1);
 }
 
-export function FetchCloudEntry(arg1) {
-  return window['go']['app']['App']['FetchCloudEntry'](arg1);
-}
-
 export function GetSettings() {
   return window['go']['app']['App']['GetSettings']();
 }
@@ -32,10 +28,6 @@ export function LinkedPage(arg1, arg2) {
 
 export function LoadMore(arg1) {
   return window['go']['app']['App']['LoadMore'](arg1);
-}
-
-export function MarkdownSource(arg1) {
-  return window['go']['app']['App']['MarkdownSource'](arg1);
 }
 
 export function OpenFolder(arg1) {
@@ -54,12 +46,24 @@ export function PlanRename(arg1, arg2) {
   return window['go']['app']['App']['PlanRename'](arg1, arg2);
 }
 
+export function ReadNote(arg1) {
+  return window['go']['app']['App']['ReadNote'](arg1);
+}
+
 export function RelatedPages(arg1) {
   return window['go']['app']['App']['RelatedPages'](arg1);
 }
 
 export function RenamePage(arg1, arg2) {
   return window['go']['app']['App']['RenamePage'](arg1, arg2);
+}
+
+export function SaveImage(arg1, arg2) {
+  return window['go']['app']['App']['SaveImage'](arg1, arg2);
+}
+
+export function SaveNote(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SaveNote'](arg1, arg2, arg3);
 }
 
 export function SaveSettings(arg1) {
@@ -88,6 +92,10 @@ export function Startup(arg1) {
 
 export function Status() {
   return window['go']['app']['App']['Status']();
+}
+
+export function TagNames() {
+  return window['go']['app']['App']['TagNames']();
 }
 
 export function TagPage(arg1) {

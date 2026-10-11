@@ -7,14 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-	"github.com/yuuxyu/taggo/internal/cloudfile"
+	// プレースホルダーの見え方を、ファイルを扱う前に固定する。
+	_ "github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/linkcard"
-	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 	"github.com/yuuxyu/taggo/internal/scan"
 	"github.com/yuuxyu/taggo/internal/settings"
@@ -35,6 +34,9 @@ const (
 	EventPinsChanged = "pins:changed"
 	// EventEntryRenamed はページの名前を変えたことを伝える。
 	EventEntryRenamed = "entry:renamed"
+	// EventBeforeClose はウィンドウを閉じようとしていることを伝える。
+	// 画面は書きかけのノートを保存してから、終了（runtime の Quit）を呼び直す。
+	EventBeforeClose = "app:beforeClose"
 )
 
 // App はアプリ全体の状態を持つ。
@@ -44,8 +46,8 @@ type App struct {
 	links    *linkcard.Client
 	settings *settings.Store
 
-	// mu は maxEntries と watcher、scanCancel、cloudOnly、続きの読み込み位置、
-	// startupWarnings を守る。フォルダの開き直しと進行中の走査キャンセルが競合しうるため。
+	// mu は maxEntries と watcher、scanCancel、続きの読み込み位置、startupWarnings、
+	// quitting を守る。フォルダの開き直しと進行中の走査キャンセルが競合しうるため。
 	mu sync.Mutex
 	// maxEntries は 1 回の読み込みで展開する件数の上限。
 	// 設定の ScanLimit に従い、テストでは小さくして上限まわりを確かめる。
@@ -55,9 +57,6 @@ type App struct {
 	scanCancel  context.CancelFunc
 	// loadingMore は、進行中の走査が続きの読み込み（LoadMore）かどうか。
 	loadingMore bool
-	// cloudOnly は読み込んだファイルのうち、中身がクラウド上にしか無いため
-	// 開かなかったファイルの数。
-	cloudOnly int
 	// cursor は上限で打ち切ったときの再開位置（ルートからの相対パス）。
 	// 空なら、フォルダの Markdown ファイルは全部読み込み済み。
 	cursor string
@@ -65,11 +64,15 @@ type App struct {
 	remaining int
 	// startupWarnings は、起動時に画面へ出せなかった警告。画面が用意できてから取りに来る。
 	startupWarnings []string
+	// quitting は、ウィンドウを閉じる途中（画面に保存を頼んだあと）かどうか。
+	quitting bool
 
 	// pinMu はピン留めの読み書き（設定ファイルを読んで直して書く一連の操作）を 1 つずつにする。
 	pinMu sync.Mutex
-	// renameMu はページの名前の変更（ノートを読んで書き換える一連の操作）を 1 つずつにする。
-	renameMu sync.Mutex
+	// writeMu はノートへの書き込み（名前の変更に伴う書き換えと、編集画面からの保存）を
+	// 1 つずつにする。名前の変更は、ノートを読んでから書き換えるまでの間に保存が割り込むと、
+	// 保存した内容を古い内容で上書きしてしまうため。
+	writeMu sync.Mutex
 }
 
 // New はアプリを組み立てる。インメモリ DB の初期化に失敗した場合のみエラーを返す。
@@ -121,8 +124,6 @@ type Status struct {
 	// Remaining は、上限で打ち切ったためにまだ読み込んでいない Markdown ファイルの数。
 	// 0 より大きければ、LoadMore で続きを読み込める。
 	Remaining int `json:"remaining"`
-	// CloudOnly は、中身がクラウド上にしか無いため読み込まなかった件数。
-	CloudOnly int `json:"cloudOnly"`
 }
 
 // ScanDone は走査完了イベントのペイロード。
@@ -162,81 +163,6 @@ func (a *App) SelectFolder() (string, error) {
 	return dir, nil
 }
 
-// FetchCloudEntry はクラウド上にだけあるファイルを、利用者の明示操作で取り込む。
-//
-// ここで初めてファイルを開くため、クラウドからのダウンロードが発生する。
-// 自動では決して呼ばず、画面上の操作から呼ぶこと。
-func (a *App) FetchCloudEntry(path string) (*model.Entry, error) {
-	entry, ok := a.store.Get(path)
-	if !ok {
-		return nil, fmt.Errorf("エントリが見つかりません: %s", path)
-	}
-	if !entry.CloudOnly {
-		return entry, nil // すでに取り込み済み
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("ファイルを読めませんでした: %w", err)
-	}
-	updated, err := meta.Read(path, info)
-	if err != nil {
-		return nil, fmt.Errorf("メタデータを読めませんでした: %w", err)
-	}
-	updated.RelPath = entry.RelPath
-
-	if err := a.putEntry(updated); err != nil {
-		return nil, err
-	}
-	a.emit(EventEntryChanged, map[string]any{"path": path, "entry": updated})
-	return updated, nil
-}
-
-// ensureLocal は、これから中身を開くファイルが今もローカルにあるかを確かめる。
-//
-// 走査のあとで同期サービスがファイルを「オンラインのみ」へ戻しても、変わるのは属性だけで
-// 更新日時は変わらないため、ウォッチャーでは気付けない。DB 上はローカルのままなので、
-// 確かめずに開くとその場でダウンロードが始まってしまう。属性の問い合わせはファイルを
-// 開かずに済むので、開く直前に毎回確かめる。
-//
-// クラウド上にしか無くなっていたら、DB と画面をその状態へ直したうえでエラーを返す。
-func (a *App) ensureLocal(entry *model.Entry) error {
-	info, err := cloudfile.StatLocal(entry.Path)
-	if !errors.Is(err, cloudfile.ErrCloudOnly) {
-		return err
-	}
-
-	cloud := model.NewCloudOnly(entry.Path, info.Name(), info.Size(), info.ModTime())
-	cloud.RelPath = entry.RelPath
-	if err := a.putEntry(cloud); err == nil {
-		a.emit(EventEntryChanged, map[string]any{"path": entry.Path, "entry": cloud})
-	}
-	return fmt.Errorf("クラウド上にだけあるファイルに戻っていたため開きません: %s", entry.Name)
-}
-
-// putEntry はエントリを DB へ入れ、クラウド上にだけある件数を前の状態との差で数え直す。
-// 走査のあとでローカルとクラウドの間を行き来したファイルも、件数に正しく反映するため。
-func (a *App) putEntry(e *model.Entry) error {
-	prev, had := a.store.Get(e.Path)
-	if err := a.store.Put(e); err != nil {
-		return err
-	}
-	a.adjustCloudOnly(had && prev.CloudOnly, e.CloudOnly)
-	return nil
-}
-
-// adjustCloudOnly は、1 件のエントリがクラウド上にだけあるかどうかの変化を件数へ反映する。
-func (a *App) adjustCloudOnly(was, now bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	switch {
-	case !was && now:
-		a.cloudOnly++
-	case was && !now && a.cloudOnly > 0:
-		a.cloudOnly--
-	}
-}
-
 // OpenFolder は指定フォルダの直下を走査してインメモリ DB へ展開する。
 // 走査はバックグラウンドで進み、進捗はイベントで通知する。
 func (a *App) OpenFolder(root string) error {
@@ -244,14 +170,6 @@ func (a *App) OpenFolder(root string) error {
 	if err != nil {
 		return fmt.Errorf("フォルダのパスを解決できませんでした: %w", err)
 	}
-	// 走査を始めると中身の読み取りでダウンロードが始まってしまうので、
-	// 開いているフォルダの状態を捨てる前に断る。
-	if cloudfile.IsGoogleDriveStreaming(abs) {
-		return fmt.Errorf("Google ドライブのストリーミング用ドライブは対象外です。" +
-			"クラウド上にだけあるファイルを見分けられず、読み込むとダウンロードが始まるためです。" +
-			"Google ドライブの設定で「ファイルをミラーリング」にしたフォルダなら読み込めます")
-	}
-
 	a.mu.Lock()
 	if a.scanCancel != nil {
 		a.scanCancel() // 前の走査が残っていれば止める
@@ -305,7 +223,6 @@ func (a *App) runScan(ctx context.Context, root string, limit int, warning strin
 
 	a.mu.Lock()
 	a.scanCancel = nil
-	a.cloudOnly = result.CloudOnly
 	a.setCursor(result)
 	a.mu.Unlock()
 
@@ -387,7 +304,6 @@ func (a *App) runLoadMore(ctx context.Context, root, cursor string, limit int) {
 	a.scanCancel = nil
 	a.loadingMore = false
 	if err == nil {
-		a.cloudOnly += result.CloudOnly
 		a.setCursor(result)
 	}
 	a.mu.Unlock()
@@ -422,7 +338,6 @@ func (a *App) notLoadedYet(path string) bool {
 func (a *App) Status() Status {
 	a.mu.Lock()
 	scanning := a.scanCancel != nil
-	cloudOnly := a.cloudOnly
 	remaining := a.remaining
 	maxEntries := a.maxEntries
 	a.mu.Unlock()
@@ -434,7 +349,6 @@ func (a *App) Status() Status {
 		Scanning:   scanning,
 		MaxEntries: maxEntries,
 		Remaining:  remaining,
-		CloudOnly:  cloudOnly,
 	}
 }
 
@@ -443,7 +357,7 @@ func (a *App) Search(opts store.SearchOptions) (store.Result, error) {
 	return a.store.Search(opts)
 }
 
-// Entry は 1 件のエントリを返す。詳細プレビューを開くときに使う。
+// Entry は 1 件のエントリを返す。ノートの画面を開くときに使う。
 func (a *App) Entry(path string) (*model.Entry, error) {
 	e, ok := a.store.Get(path)
 	if !ok {
@@ -452,7 +366,7 @@ func (a *App) Entry(path string) (*model.Entry, error) {
 	return e, nil
 }
 
-// RelatedPages は、そのノートの関連ページをグループに分けて返す。プレビューの本文の下に並べる。
+// RelatedPages は、そのノートの関連ページをグループに分けて返す。ノートの画面の本文の下に並べる。
 //
 // まだ無いページ（LinkedPage や TagPage が返したもの）でも、そのページを指しているノートや、
 // そのページが表すタグを持つノートを返す。
@@ -464,22 +378,6 @@ func (a *App) RelatedPages(path string) store.Related {
 		return store.EmptyRelated()
 	}
 	return a.store.Related(a.pageAt(path))
-}
-
-// MarkdownSource は Markdown ファイルの本文を返す。先頭に「---」で囲んだブロック
-// （ほかのツールの Front Matter）があれば、本文からは外す。
-func (a *App) MarkdownSource(path string) (string, error) {
-	e, ok := a.store.Get(path)
-	if !ok {
-		return "", fmt.Errorf("エントリが見つかりません: %s", path)
-	}
-	if e.CloudOnly {
-		return "", fmt.Errorf("クラウド上にだけあるファイルのため読み込みません: %s", e.Name)
-	}
-	if err := a.ensureLocal(e); err != nil {
-		return "", err
-	}
-	return readMarkdownBody(path)
 }
 
 // LinkPreview は、Markdown 本文に URL だけを書いた段落をリンクカードにするための
@@ -532,14 +430,12 @@ func (a *App) consumeChanges(w *watcher.Watcher) {
 			continue
 		}
 		if change.Removed {
-			prev, had := a.store.Get(change.Path)
-			if !had {
+			if _, had := a.store.Get(change.Path); !had {
 				continue // 読み込んでいないファイルが消えただけ
 			}
 			if err := a.store.Delete(change.Path); err != nil {
 				continue
 			}
-			a.adjustCloudOnly(had && prev.CloudOnly, false)
 			a.emit(EventEntryChanged, map[string]any{
 				"path":    change.Path,
 				"removed": true,
@@ -549,7 +445,7 @@ func (a *App) consumeChanges(w *watcher.Watcher) {
 		if a.notLoadedYet(change.Path) {
 			continue
 		}
-		if err := a.putEntry(change.Entry); err != nil {
+		if err := a.store.Put(change.Entry); err != nil {
 			continue
 		}
 		a.emit(EventEntryChanged, map[string]any{
@@ -572,13 +468,4 @@ func (a *App) stopWatcher() {
 	if w != nil {
 		w.Close()
 	}
-}
-
-// readMarkdownBody は、先頭の「---」で囲んだブロックを除いた本文を読む。
-func readMarkdownBody(path string) (string, error) {
-	raw, err := readFileLimited(path)
-	if err != nil {
-		return "", err
-	}
-	return string(meta.StripFrontMatter(raw)), nil
 }

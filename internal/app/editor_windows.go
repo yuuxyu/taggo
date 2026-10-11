@@ -7,36 +7,17 @@ import (
 )
 
 // OpenInEditor は Markdown ファイルを、拡張子に紐づいたアプリ（既定のテキストエディタ）で開く。
-// taggo は本文を編集しないため、本文を直したいときはここから好きなエディタへ渡す。
+// 本文は taggo の中で編集できるが、使い慣れたエディタで直したいときのために残してある。
+// 外のエディタで保存した変更はウォッチャーが拾い、編集画面へ反映する。
 //
 // 開けるのは読み込み済みのエントリだけにする。フロントエンドから任意のパスを
 // 渡されても、開いているフォルダ外のファイルや実行ファイルを起動しないため。
-// クラウド上にだけあるファイルは、開くとダウンロードが始まるので開かない。
 func (a *App) OpenInEditor(path string) error {
 	e, ok := a.store.Get(path)
 	if !ok {
 		return fmt.Errorf("エントリが見つかりません: %s", path)
 	}
-	if e.CloudOnly {
-		return fmt.Errorf("クラウド上にだけあるファイルのため開きません: %s", e.Name)
-	}
-	if err := a.ensureLocal(e); err != nil {
-		return err
-	}
 	return openWithDefaultApp(e.Path)
-}
-
-// CreatePage は、まだ無いページ path の Markdown ファイルを作り、拡張子に紐づいたアプリ
-// （既定のテキストエディタ）で開く。path は LinkedPage や TagPage が返した「まだ無いページ」のパス。
-// 新しく作ったときは true を、既にあったファイルを開いただけなら false を返す。
-//
-// 作ったファイルはフォルダの監視が拾って一覧へ載せる。
-func (a *App) CreatePage(path string) (bool, error) {
-	path, created, err := a.preparePage(path)
-	if err != nil {
-		return false, err
-	}
-	return created, openWithDefaultApp(path)
 }
 
 // openWithDefaultApp はファイルを、拡張子に紐づいたアプリで開く。

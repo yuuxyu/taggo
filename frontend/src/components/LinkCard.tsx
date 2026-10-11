@@ -1,11 +1,11 @@
 /**
- * Markdown 本文に URL だけを書いた段落を、リンク先の OGP をもとにしたカードとして描く。
+ * Markdown 本文に URL だけを書いた行を、リンク先の OGP をもとにしたカードとして描く。
  *
  * 取得は Go 側で行う（WebView からは CORS で他サイトの HTML を読めないため）。
  * YouTube は動画のサムネイルを大きく、X は投稿の本文を主役に、
  * それ以外のページはタイトル・説明・画像を横に並べる。
  *
- * 取得できなかったときは、カードにせず元の段落（ただのリンク）を出す。
+ * 取得できなかったときは、カードにせずただのリンクを出す。
  */
 
 import { useEffect, useState, type ReactNode } from "react";
@@ -15,7 +15,7 @@ import { getLinkPreview, type LinkPreview } from "../api/taggo";
 
 interface Props {
   url: string;
-  /** 取得に失敗したときに代わりに出すもの。元の段落を渡す。 */
+  /** 取得に失敗したときに代わりに出すもの。ただのリンクを渡す。 */
   fallback: ReactNode;
 }
 
@@ -55,7 +55,7 @@ function Frame({ url, className, children }: { url: string; className: string; c
       href={url}
       title={url}
       rel="noreferrer"
-      className={`not-prose my-5 flex overflow-hidden rounded-lg border border-line bg-surface text-ink no-underline transition hover:border-line-strong hover:bg-sunken focus-visible:ring-3 focus-visible:ring-accent-soft focus-visible:outline-hidden ${className}`}
+      className={`not-prose my-2 flex overflow-hidden rounded-lg border border-line bg-surface text-ink no-underline transition hover:border-line-strong hover:bg-sunken focus-visible:ring-3 focus-visible:ring-accent-soft focus-visible:outline-hidden ${className}`}
       onClick={(e) => {
         // target="_blank" に任せると WebView2 が自前のウィンドウを開いてしまう。
         e.preventDefault();

@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/yuuxyu/taggo/internal/atomicfile"
-	"github.com/yuuxyu/taggo/internal/cloudfile"
 )
 
 // FileName はフォルダの直下に置く設定ファイルの名前。
@@ -40,11 +39,10 @@ func Path(root string) string { return filepath.Join(root, FileName) }
 
 // Load は root の設定ファイルを読む。
 //
-// ファイルが無ければ空の設定を返す。中身がクラウド上にしか無ければ、開くと
-// ダウンロードが始まるので読まずに cloudfile.ErrCloudOnly を返す。
+// ファイルが無ければ空の設定を返す。
 // JSON として壊れていればエラーを返す（呼び出し側は空の設定として扱えばよい）。
 func Load(root string) (Config, error) {
-	raw, err := readLocal(Path(root))
+	raw, err := os.ReadFile(Path(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return Config{}, nil
 	}
@@ -67,7 +65,7 @@ func Load(root string) (Config, error) {
 func Save(root string, c Config) error {
 	path := Path(root)
 	fields := map[string]json.RawMessage{}
-	raw, err := readLocal(path)
+	raw, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
@@ -96,17 +94,6 @@ func Save(root string, c Config) error {
 		return fmt.Errorf("%s へ書き込めませんでした: %w", FileName, err)
 	}
 	return nil
-}
-
-// readLocal はファイルを読む。中身がクラウド上にしか無ければ開かずに ErrCloudOnly を返す。
-func readLocal(path string) ([]byte, error) {
-	if _, err := cloudfile.StatLocal(path); err != nil {
-		if errors.Is(err, cloudfile.ErrCloudOnly) {
-			return nil, fmt.Errorf("%s は%w", FileName, err)
-		}
-		return nil, err
-	}
-	return os.ReadFile(path)
 }
 
 // cleanNames はファイル名の並びから、空のものとフォルダを含むものを除き、

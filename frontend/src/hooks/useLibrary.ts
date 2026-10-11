@@ -64,8 +64,6 @@ export interface Library {
   reload: () => Promise<void>;
   notify: (kind: Notice["kind"], message: string) => void;
   dismissNotice: (id: number) => void;
-  /** 単一エントリを差し替える。タグ編集後に一覧へ即反映するために使う。 */
-  replaceEntry: (entry: Entry) => void;
   /** 上限で打ち切ったことを知らせるバナーを出しているか。 */
   loadMoreBannerOpen: boolean;
   setLoadMoreBannerOpen: (open: boolean) => void;
@@ -173,7 +171,6 @@ export function useLibrary(initialSort: SortOrder): Library {
           notify("info", `${(done.added ?? 0).toLocaleString()} 件を追加で読み込みました。`);
         }
       } else {
-        // クラウド上にだけあるファイルの件数はツールバーに常に出ているので、通知はしない。
         // 上限で打ち切ったことは、すぐ消える通知ではなく、閉じるまで残るバナーで伝える。
         setLoadMoreBannerOpen((done.remaining ?? 0) > 0);
       }
@@ -190,7 +187,7 @@ export function useLibrary(initialSort: SortOrder): Library {
       }
       if (!change.entry) return;
       const updated = change.entry;
-      // まずはその場で差し替えて、開いているプレビューなどへすぐ反映する。
+      // まずはその場で差し替えて、開いているノートの画面などへすぐ反映する。
       setEntries((prev) => {
         const idx = prev.findIndex((e) => e.path === updated.path);
         if (idx < 0) return prev;
@@ -313,16 +310,6 @@ export function useLibrary(initialSort: SortOrder): Library {
     return n;
   }, [entries, headPaths]);
 
-  const replaceEntry = useCallback((entry: Entry) => {
-    setEntries((prev) => {
-      const idx = prev.findIndex((e) => e.path === entry.path);
-      if (idx < 0) return prev;
-      const next = prev.slice();
-      next[idx] = entry;
-      return next;
-    });
-  }, []);
-
   return useMemo(
     () => ({
       status,
@@ -342,7 +329,6 @@ export function useLibrary(initialSort: SortOrder): Library {
       reload,
       notify,
       dismissNotice,
-      replaceEntry,
       loadMoreBannerOpen,
       setLoadMoreBannerOpen,
       loadMore,
@@ -364,7 +350,6 @@ export function useLibrary(initialSort: SortOrder): Library {
       reload,
       notify,
       dismissNotice,
-      replaceEntry,
       loadMoreBannerOpen,
       loadMore,
       cancelLoadMore,

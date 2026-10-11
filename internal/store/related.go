@@ -25,9 +25,6 @@ type RelatedPage struct {
 	RelPath   string `json:"relPath,omitempty"`
 	Preview   string `json:"preview,omitempty"`
 	Thumbnail string `json:"thumbnail,omitempty"`
-	// CloudOnly は行き先の中身がクラウド上にしか無いこと。本文を読むと
-	// ダウンロードが始まるので、画面側でそれと分かるように出すために使う。
-	CloudOnly bool `json:"cloudOnly,omitempty"`
 }
 
 // RelatedGroup は関連ページの 1 グループ。
@@ -333,6 +330,5 @@ func relatedPage(e *model.Entry) RelatedPage {
 		RelPath:   e.RelPath,
 		Preview:   e.Preview,
 		Thumbnail: e.Thumbnail,
-		CloudOnly: e.CloudOnly,
 	}
 }

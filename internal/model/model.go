@@ -47,31 +47,10 @@ type Entry struct {
 	// 読み取りに失敗したことを隠さずに、ファイル自体は一覧に表示するため。
 	Err string `json:"err,omitempty"`
 
-	// CloudOnly は、中身がクラウド上にしか無いファイル（Dropbox や OneDrive の
-	// オンライン専用ファイル）であることを表す。true のとき taggo はその中身を
-	// 一度も開いておらず、埋まっているのはファイル一覧から分かる情報だけになる。
-	// 開けばダウンロードが始まるため、利用者が明示的に取り込むまでは触らない。
-	CloudOnly bool `json:"cloudOnly,omitempty"`
-
 	// Missing は、まだファイルの無いページであることを表す。ページの無いタグや、行き先の
 	// 無いリンクをたどったときに、ファイルを作らずにページとして開くために使う。
 	// BuntDB には載せない。
 	Missing bool `json:"missing,omitempty"`
-}
-
-// NewCloudOnly は、中身を読まずに分かる情報だけでエントリを組み立てる。
-// クラウド上にしか無いファイルを、ダウンロードを起こさずに一覧へ出すために使う。
-func NewCloudOnly(path, name string, size int64, modTime time.Time) *Entry {
-	return &Entry{
-		Path:      path,
-		Name:      name,
-		Ext:       Ext(path),
-		Size:      size,
-		ModTime:   modTime,
-		Tags:      []string{},
-		Title:     name,
-		CloudOnly: true,
-	}
 }
 
 // NewMissing は、まだファイルの無いページ path のエントリを組み立てる。

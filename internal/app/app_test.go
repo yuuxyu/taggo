@@ -85,21 +85,21 @@ func TestOpenFolderAndSearch(t *testing.T) {
 	}
 }
 
-// 先頭の「---」で囲んだブロック（ほかのツールの Front Matter）は、本文として見せないこと。
-func TestMarkdownSourceStripsFrontMatter(t *testing.T) {
-	a, root := newTestApp(t, map[string]string{
-		"a.md": "---\ntags: [x]\n---\n\n# 本文の見出し\n\n本文。\n",
-	})
+// 編集画面には、先頭の「---」で囲んだブロック（ほかのツールの Front Matter）も含めて
+// ファイルの中身をそのまま渡すこと。保存で消えてしまわないようにするため。
+func TestReadNoteKeepsFrontMatter(t *testing.T) {
+	const body = "---\ntags: [x]\n---\n\n# 本文の見出し\n\n本文。\n"
+	a, root := newTestApp(t, map[string]string{"a.md": body})
 
-	body, err := a.MarkdownSource(filepath.Join(root, "a.md"))
+	note, err := a.ReadNote(filepath.Join(root, "a.md"))
 	if err != nil {
 		t.Fatalf("本文取得に失敗: %v", err)
 	}
-	if contains(body, "tags:") {
-		t.Fatalf("Front Matter が本文に残っている:\n%s", body)
+	if note.Content != body {
+		t.Fatalf("中身が違う:\n%s", note.Content)
 	}
-	if !contains(body, "# 本文の見出し") {
-		t.Fatalf("本文が欠けている:\n%s", body)
+	if note.Version == "" {
+		t.Fatal("Version が空")
 	}
 }
 
@@ -211,19 +211,6 @@ func TestWatcherSyncsExternalEdits(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("外部編集がインメモリ DB へ反映されなかった")
-}
-
-func contains(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0
-}
-
-func indexOf(haystack, needle string) int {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return i
-		}
-	}
-	return -1
 }
 
 // TestAssetHandlerContentTypeFollowsContent は、拡張子ではなく中身に合わせた

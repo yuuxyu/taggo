@@ -59,7 +59,9 @@ func main() {
 			a.Startup(ctx)
 			a.OpenStartupFolder(*folder)
 		},
-		OnShutdown: a.Shutdown,
+		// 閉じる前に、編集画面の書きかけのノートを保存させる。
+		OnBeforeClose: app.OnBeforeClose(a),
+		OnShutdown:    a.Shutdown,
 		Bind: []any{
 			a,
 		},

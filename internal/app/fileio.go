@@ -6,9 +6,9 @@ import (
 	"os"
 )
 
-// maxMarkdownPreviewBytes はプレビューで読み込む Markdown の上限。
-// これを超えるファイルはエディタで開くべき大きさで、プレビューには向かない。
-const maxMarkdownPreviewBytes = 8 << 20
+// maxNoteBytes は編集画面で扱う Markdown の上限。
+// これを超えるファイルは読み込まず、保存もしない。名前の変更でも書き換えない。
+const maxNoteBytes = 8 << 20
 
 // readFileLimited は上限付きでファイルを読む。
 func readFileLimited(path string) ([]byte, error) {
@@ -18,12 +18,12 @@ func readFileLimited(path string) ([]byte, error) {
 	}
 	defer f.Close()
 
-	data, err := io.ReadAll(io.LimitReader(f, maxMarkdownPreviewBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, maxNoteBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > maxMarkdownPreviewBytes {
-		return nil, fmt.Errorf("ファイルが大きすぎてプレビューできません (%d バイト超)", maxMarkdownPreviewBytes)
+	if len(data) > maxNoteBytes {
+		return nil, fmt.Errorf("ファイルが大きすぎて開けません (%d バイト超)", maxNoteBytes)
 	}
 	return data, nil
 }

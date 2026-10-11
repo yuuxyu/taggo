@@ -1,27 +1,28 @@
 /**
- * カードをクリックしたときに開く、ノートの詳細プレビュー。
+ * カードをクリックしたときに開く、ノートの画面。本文は常に編集できる（NoteEditor）。
  *
  * 要件どおり画面遷移はせず、同じ画面にオーバーレイとして重ねる。
  * ウィンドウ全体を使って本文を優先するレイアウトにしている。ヘッダーとタグは、
  * マウスを動かした間だけ本文の上に一時的にオーバーレイ表示し、動きが止まれば
  * しばらくして消える。
  *
- * タグ（本文の [[タグ]]）はバッジで表示するだけで、ここでは編集しない。
+ * ヘッダーのタグ（本文の [[タグ]]）はバッジで表示するだけで、付け外しは本文を書き換えて行う。
  *
  * ヘッダーの「ピン留め」で、このノートを一覧の先頭にピン留めする。
  * 「名前を変更」で、ファイル名と、このページを指す [[タグ]] とリンクをまとめて書き換える。
  *
  * まだ無いページ（ページの無いタグや、行き先の無いリンク）も、ファイルを作らずにここで開く。
  * 本文の代わりに「md ファイルを作成する」ボタンを出し、関連ページはふつうのノートと同じく並べる。
+ * 作ると、そのまま本文を書き始められる。
  *
  * ヘッダー左端の「戻る／進む」で、リンクをたどる前のノートや、開く前の一覧へ戻れる。
- * プレビューを閉じるボタンは置かず、一覧へは「戻る」か Esc で戻る。
+ * ノートの画面を閉じるボタンは置かず、一覧へは「戻る」か Esc で戻る。
  * 履歴そのものと、Alt + 左右・マウスの戻る／進むボタンは App が受け持つ。
  *
  * フッターには本文の文字数を表示する。
  *
- * 本文は編集しない方針なので、ヘッダーの「エディタで開く」から、拡張子に紐づいた
- * アプリ（既定のテキストエディタ）へファイルを渡す。保存された変更はウォッチャーが拾う。
+ * ヘッダーの「エディタで開く」で、拡張子に紐づいたアプリ（使い慣れたテキストエディタ）へ
+ * ファイルを渡すこともできる。そちらで保存した変更はウォッチャーが拾い、本文に反映する。
  *
  * 本文中の画像をクリックすると、画像ビューアをこの上に重ねて開く。画像はノートでは
  * ないので履歴には積まず、ビューアを閉じればそのまま同じ位置の本文へ戻る。
@@ -31,11 +32,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { DocumentPlusIcon, MapPinIcon, PencilIcon, PencilSquareIcon } from "@heroicons/react/20/solid";
 import { openInEditor, type Entry } from "../api/taggo";
 import type { NavHistory } from "../hooks/useNavHistory";
+import { flushAllEditors, NoteEditor } from "../editor/NoteEditor";
 import { Button } from "./Button";
-import { CloudOnlyNotice } from "./CloudOnlyNotice";
 import { HistoryNav } from "./HistoryNav";
 import { ImagePreview } from "./ImagePreview";
-import { MarkdownPreview } from "./MarkdownPreview";
 import { missingLinksOf, missingTagsOf, RelatedPages, useRelatedPages } from "./RelatedPages";
 import { TagBadge } from "./TagBadge";
 
@@ -50,15 +50,13 @@ interface Props {
   onFollowLink: (link: string, path?: string) => void;
   /** タグのページ（ファイル名がそのタグのノート）を開く。まだ無ければ、まだ無いページとして開く。 */
   onFollowTag: (tag: string) => void;
-  /** まだ無いページの md ファイルを作り、既定のエディタで開く。 */
+  /** まだ無いページの md ファイルを作る。作ると、このページがそのまま編集画面になる。 */
   onCreatePage: (entry: Entry) => Promise<void>;
   /** 一覧の先頭にピン留めしているか。 */
   pinned: boolean;
   onTogglePin: (pinned: boolean) => void;
   /** 名前の変更ダイアログを開く。 */
   onRename: () => void;
-  /** クラウド上にだけあったファイルを取り込んだあとの最新状態を一覧へ返す。 */
-  onEntryUpdated: (entry: Entry) => void;
   onError: (message: string) => void;
   /** 移動の履歴。戻る／進むと、戻ったときのスクロール位置の復元に使う。 */
   history: NavHistory;
@@ -83,7 +81,6 @@ export function DetailPanel({
   pinned,
   onTogglePin,
   onRename,
-  onEntryUpdated,
   onError,
   history,
 }: Props) {
@@ -105,6 +102,8 @@ export function DetailPanel({
     setCharCount(null);
   }, [entry.path]);
   const closeImage = useCallback(() => setImage(null), []);
+  const openImage = useCallback((path: string, alt?: string) => setImage({ path, alt }), []);
+  const countBody = useCallback((body: string) => setCharCount(countChars(body)), []);
 
   // マウスが動いた直後だけヘッダー／タグ UI を出し、止まればしばらくして隠す。
   // ただしヘッダーのボタンなどにフォーカスが残っている間は隠さない。
@@ -147,10 +146,11 @@ export function DetailPanel({
     return () => observer.disconnect();
   }, []);
 
-  // Esc でプレビューを閉じる。画像ビューアを開いている間は、ビューアが先に受けて止める。
+  // Esc で一覧へ戻る。画像ビューアを開いている間は、ビューアが先に受けて止める。
+  // 本文の入力補完を閉じるなど、エディタが使った Esc では戻らない。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !e.defaultPrevented) onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -172,7 +172,7 @@ export function DetailPanel({
     for (const child of el.children) observer.observe(child);
     measure();
     return () => observer.disconnect();
-  }, [entry.path, entry.cloudOnly]);
+  }, [entry.path, entry.missing]);
 
   // 読んでいる位置を履歴へ知らせておき、戻ってきたときにその位置から再開する。
   useEffect(() => {
@@ -199,14 +199,16 @@ export function DetailPanel({
     pendingScroll.current = history.current.kind === "note" ? history.current.scrollTop : 0;
     const samePath = shownPath.current === entry.path;
     shownPath.current = entry.path;
-    // 本文を読み込まないページ（クラウド上にしか無い・まだ無い）は、待たずに合わせる。
-    if (entry.cloudOnly || entry.missing || samePath) applyPendingScroll();
+    // 本文を読み込まないページ（まだ無い）は、待たずに合わせる。
+    if (entry.missing || samePath) applyPendingScroll();
     // 移動（navId）ごとに一度だけ合わせる。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navId]);
 
   const openEditor = async () => {
     try {
+      // 外のエディタが書きかけの前の内容を開かないよう、先に保存しておく。
+      await flushAllEditors();
       await openInEditor(entry.path);
     } catch (err) {
       onError(String(err));
@@ -224,58 +226,50 @@ export function DetailPanel({
       <div className="relative size-full overflow-hidden bg-canvas">
         {/* ---- 本文 ---- */}
         <div ref={contentRef} className="size-full overflow-auto">
-          {entry.cloudOnly && (
-            <div className="min-h-full" style={{ paddingTop: contentTop }}>
-              <CloudOnlyNotice entry={entry} onFetched={onEntryUpdated} onError={onError} />
-            </div>
-          )}
-          {!entry.cloudOnly && (
-            <div
-              // 関連ページのグリッドは本文より広く取り、カードを横に多く並べる。
-              className="mx-auto flex min-h-full max-w-243 flex-col items-center px-5 pb-18"
-              style={{ paddingTop: contentTop }}
-            >
-              {/* 本文の 1 行が長くなりすぎないよう、横幅は本文の最大幅
-                  （全角 38 文字 = 18px × 38 = 42.75rem = 171）で止める。 */}
-              <div className="w-full max-w-171">
-                {entry.missing ? (
-                  <MissingPageNotice entry={entry} onCreate={onCreatePage} />
-                ) : (
-                <MarkdownPreview
+          <div
+            // 関連ページのグリッドは本文より広く取り、カードを横に多く並べる。
+            className="mx-auto flex min-h-full max-w-243 flex-col items-center px-5 pb-18"
+            style={{ paddingTop: contentTop }}
+          >
+            {/* 本文の 1 行が長くなりすぎないよう、横幅は本文の最大幅
+                （全角 38 文字 = 18px × 38 = 42.75rem = 171）で止める。 */}
+            <div className="w-full max-w-171">
+              {entry.missing ? (
+                <MissingPageNotice entry={entry} onCreate={onCreatePage} />
+              ) : (
+                <NoteEditor
                   entry={entry}
                   onFollowLink={onFollowLink}
                   missingLinks={missingLinks}
                   onFollowTag={onFollowTag}
                   missingTags={missingTags}
-                  onOpenImage={(path, alt) => setImage({ path, alt })}
-                  onLoaded={(source) => {
-                    setCharCount(countChars(source));
-                    applyPendingScroll();
-                  }}
+                  onOpenImage={openImage}
+                  onError={onError}
+                  onLoaded={applyPendingScroll}
+                  onBodyChange={countBody}
                 />
-                )}
-              </div>
-              {/* 関連ページは本文の下にグリッドで並べ、本文と一緒にスクロールする。
-                  読み込み中は出さず、「無い」表示が一瞬出るのを避ける。 */}
-              {related && (
-                <aside className="mt-14 w-full border-t border-line pt-6" aria-label="関連ページ">
-                  <RelatedPages
-                    related={related}
-                    onOpen={(page) => {
-                      // 行き先があれば開く。まだ無ければ、リンクなら書かれた場所に、
-                      // タグならフォルダの直下に作る。
-                      if (page.path || page.target) {
-                        onFollowLink(page.target ?? "", page.path);
-                      } else if (page.tag) {
-                        onFollowTag(page.tag);
-                      }
-                    }}
-                    onTagClick={onTagClick}
-                  />
-                </aside>
               )}
             </div>
-          )}
+            {/* 関連ページは本文の下にグリッドで並べ、本文と一緒にスクロールする。
+                読み込み中は出さず、「無い」表示が一瞬出るのを避ける。 */}
+            {related && (
+              <aside className="mt-14 w-full border-t border-line pt-6" aria-label="関連ページ">
+                <RelatedPages
+                  related={related}
+                  onOpen={(page) => {
+                    // 行き先があれば開く。まだ無ければ、リンクなら書かれた場所に、
+                    // タグならフォルダの直下に作る。
+                    if (page.path || page.target) {
+                      onFollowLink(page.target ?? "", page.path);
+                    } else if (page.tag) {
+                      onFollowTag(page.tag);
+                    }
+                  }}
+                  onTagClick={onTagClick}
+                />
+              </aside>
+            )}
+          </div>
         </div>
 
         {/* ---- ヘッダー／タグのオーバーレイ ---- */}
@@ -320,8 +314,7 @@ export function DetailPanel({
                 名前を変更
               </Button>
             )}
-            {/* クラウド上にだけあるファイルは、開くとダウンロードが始まるので出さない。 */}
-            {!entry.cloudOnly && !entry.missing && (
+            {!entry.missing && (
               <Button
                 variant="ghost"
                 onClick={() => void openEditor()}
@@ -333,7 +326,7 @@ export function DetailPanel({
             )}
           </header>
 
-          {/* タグは本文の [[タグ]] から読んだもので、ここでは編集しない。 */}
+          {/* タグは本文の [[タグ]] から読んだもの。付け外しは本文を書き換えて行う。 */}
           {!entry.missing && (
             <div className="flex flex-wrap items-center gap-2 px-5 pb-3">
               {entry.tags.length > 0 ? (
@@ -376,8 +369,8 @@ function countChars(source: string): number {
 }
 
 /**
- * まだ無いページで、本文の代わりに出す案内。md ファイルを作るとエディタが開き、
- * 保存するとフォルダの監視が拾って、このページがふつうのノートに切り替わる。
+ * まだ無いページで、本文の代わりに出す案内。md ファイルを作ると、このページが
+ * そのまま編集画面に切り替わる。
  */
 function MissingPageNotice({ entry, onCreate }: { entry: Entry; onCreate: (entry: Entry) => Promise<void> }) {
   const [creating, setCreating] = useState(false);
@@ -385,7 +378,7 @@ function MissingPageNotice({ entry, onCreate }: { entry: Entry; onCreate: (entry
     <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-line px-6 py-10 text-center">
       <p className="m-0 text-base font-semibold text-ink">このノートはまだありません</p>
       <p className="m-0 text-sm text-ink-muted">
-        「{entry.name}」を作ると、本文を書けるようになります。
+        「{entry.name}」を作ると、ここで本文を書けるようになります。
         下に、このページを指しているノートが並びます。
       </p>
       <Button

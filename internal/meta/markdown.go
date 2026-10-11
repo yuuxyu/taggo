@@ -357,7 +357,7 @@ func excerpt(body []byte) string {
 		l = strings.ReplaceAll(l, "|", " ")
 		l = mdImageTextRe.ReplaceAllString(l, "")
 		l = mdLinkTextRe.ReplaceAllString(l, "$1")
-		// [[タグ]] は、プレビューでリンクとして見えるタグの名前だけを残す。
+		// [[タグ]] は、編集画面でリンクとして見えるタグの名前だけを残す。
 		l = bracketTagRe.ReplaceAllString(l, "$1")
 		l = strings.Join(strings.Fields(l), " ")
 		if l == "" {

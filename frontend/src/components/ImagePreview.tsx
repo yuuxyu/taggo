@@ -1,7 +1,7 @@
 /**
  * Markdown の本文中の画像をクリックしたときに開く画像ビューア。
  *
- * Markdown プレビューの上に重ねて開き、閉じればそのまま元の Markdown プレビューへ戻る。
+ * ノートの画面の上に重ねて開き、閉じればそのまま元の ノートの画面へ戻る。
  * 画像は一覧にもタグ管理にも載せないので、前後の画像への移動やタグの表示は持たない。
  *
  * 漫画ビューアのように、既定では画像全体が見えるようウィンドウにフィットさせて表示する
@@ -16,7 +16,7 @@
  * 操作の割り当ては次のとおり。
  *  - Ctrl + ホイール   … カーソル位置を軸にした拡大・縮小
  *  - ホイール・ドラッグ … はみ出しているときの画像の移動
- *  - Esc・マウスの戻るボタン … 閉じて Markdown プレビューへ戻る
+ *  - Esc・マウスの戻るボタン … 閉じて ノートの画面へ戻る
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -35,7 +35,7 @@ interface Props {
   path: string;
   /** 本文に書かれていた代替テキスト。 */
   alt?: string;
-  /** 閉じて Markdown プレビューへ戻る。 */
+  /** 閉じて ノートの画面へ戻る。 */
   onClose: () => void;
 }
 
@@ -148,7 +148,7 @@ export function ImagePreview({ path, alt, onClose }: Props) {
     };
   }, []);
 
-  // Esc とマウスの戻るボタンで閉じる。下にある Markdown プレビューも同じキーで
+  // Esc とマウスの戻るボタンで閉じる。下にある ノートの画面も同じキーで
   // 閉じたり前後のノートへ移ったりするので、キャプチャで先に受けて届かないようにする。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

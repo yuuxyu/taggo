@@ -21,6 +21,12 @@ export type LinkPreview = linkcard.Preview;
 export type RenamePlan = app.RenamePlan;
 /** ページの名前を変えた結果。 */
 export type RenameResult = app.RenameResult;
+/** 編集画面で開くノートの中身と、読んだときのファイルの中身を表す値。 */
+export type NoteContent = app.NoteContent;
+/** ノートの保存の結果。 */
+export type SaveResult = app.SaveResult;
+/** まだ無いページを作った結果。 */
+export type CreatedPage = app.CreatedPage;
 
 /** 一覧の並び順。Go 側の store.SortOrder と対応する。 */
 export type SortOrder = "modified_desc" | "name_asc" | "relevance";
@@ -114,6 +120,8 @@ export const Events = {
   entryChanged: "entry:changed",
   pinsChanged: "pins:changed",
   entryRenamed: "entry:renamed",
+  /** ウィンドウを閉じようとしている。書きかけのノートを保存してから quit を呼ぶ。 */
+  beforeClose: "app:beforeClose",
 } as const;
 
 /**
@@ -121,12 +129,6 @@ export const Events = {
  * 選ぶだけで、読み込みは openFolder を呼ぶまで始まらない。
  */
 export const selectFolder = (): Promise<string> => Backend.SelectFolder();
-
-/**
- * クラウド上にだけあるファイルを取り込む。
- * この呼び出しで実際にダウンロードが発生するので、利用者の操作からのみ呼ぶこと。
- */
-export const fetchCloudEntry = (path: string): Promise<Entry> => Backend.FetchCloudEntry(path);
 
 /** 指定フォルダを走査して読み込む。走査自体は非同期に進む。 */
 export const openFolder = (path: string): Promise<void> => Backend.OpenFolder(path);
@@ -170,8 +172,26 @@ export const tagPage = (tag: string): Promise<Entry> => Backend.TagPage(tag);
 /** そのノートの関連ページを取得する。まだ無いページでも、そのページを指しているノートが返る。 */
 export const getRelatedPages = (path: string): Promise<Related> => Backend.RelatedPages(path);
 
-/** Markdown の本文（先頭の「---」で囲んだブロックは除く）を取得する。 */
-export const getMarkdownSource = (path: string): Promise<string> => Backend.MarkdownSource(path);
+/** 編集画面で開くノートの中身（Front Matter も含めたファイルの中身）を読む。 */
+export const readNote = (path: string): Promise<NoteContent> => Backend.ReadNote(path);
+
+/**
+ * 編集したノートを保存する。baseVersion は読んだとき（か前回の保存）の version。
+ * その後ほかのアプリがファイルを書き換えていれば、保存せずに conflict が返る。
+ * baseVersion を空にすると、確かめずに上書きする。
+ */
+export const saveNote = (path: string, content: string, baseVersion: string): Promise<SaveResult> =>
+  Backend.SaveNote(path, content, baseVersion);
+
+/**
+ * 編集画面に貼り付けた画像を、開いているフォルダの直下に保存する。
+ * data は画像を Base64 にしたもの。ノートの本文に書く画像のパスが返る。
+ */
+export const saveImage = (notePath: string, data: string): Promise<string> =>
+  Backend.SaveImage(notePath, data);
+
+/** 本文に [[ と入力したときに補完するタグの候補（使われている件数の多い順）。 */
+export const getTagNames = (): Promise<string[]> => Backend.TagNames();
 
 /**
  * 本文に書かれた URL のリンク先から、リンクカードに出すタイトルや画像を取得する。
@@ -179,26 +199,22 @@ export const getMarkdownSource = (path: string): Promise<string> => Backend.Mark
  */
 export const getLinkPreview = (url: string): Promise<LinkPreview> => Backend.LinkPreview(url);
 
-/** Markdown ファイルを、拡張子に紐づいたアプリ（既定のテキストエディタ）で開く。 */
+/** Markdown ファイルを、拡張子に紐づいたアプリ（使い慣れたテキストエディタ）で開く。 */
 export const openInEditor = (path: string): Promise<void> => Backend.OpenInEditor(path);
 
 /**
- * まだ無いページ（linkedPage や tagPage が返したもの）の md ファイルを作り、既定のエディタで開く。
- * 新しく作ったときは true、既にあったファイルを開いただけなら false になる。
+ * まだ無いページ（linkedPage や tagPage が返したもの）の md ファイルを、ファイル名を見出しにして作る。
+ * 作ったページはすぐ一覧に載る。既にあったファイルなら作らずにそのページが返る（created が false）。
  */
-export const createPage = (path: string): Promise<boolean> => Backend.CreatePage(path);
+export const createPage = (path: string): Promise<CreatedPage> => Backend.CreatePage(path);
 
-/**
- * ページの名前を name に変えたときに書き換わるノートを調べる。ファイルはまだ何も変えない。
- * 中身がクラウド上にしか無いノートは開かずに、名前だけが返る。
- */
+/** ページの名前を name に変えたときに書き換わるノートを調べる。ファイルはまだ何も変えない。 */
 export const planRename = (path: string, name: string): Promise<RenamePlan> =>
   Backend.PlanRename(path, name);
 
 /**
  * ページの名前を name に変え、そのページを指す [[タグ]] と Markdown のリンクを、
- * フォルダ直下のすべてのノートで書き換える。中身がクラウド上にしか無いノートは
- * ダウンロードしてから書き換えるので、planRename の結果を確かめてもらってから呼ぶこと。
+ * フォルダ直下のすべてのノートで書き換える。planRename の結果を確かめてもらってから呼ぶこと。
  */
 export const renamePage = (path: string, name: string): Promise<RenameResult> =>
   Backend.RenamePage(path, name);

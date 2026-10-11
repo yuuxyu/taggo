@@ -2,10 +2,10 @@
  * taggo のメイン画面。
  *
  * 最上部の検索バーと、ノートを並べたカード型グリッドの 2 層だけ。
- * フォルダーツリーは持たない。ノートの詳細プレビューは画面遷移せずオーバーレイで開く。
+ * フォルダーツリーは持たない。ノートは画面遷移せず、オーバーレイの編集画面で開く。
  *
- * 一覧（検索結果）とプレビューで開いたノートは、1 本の履歴に順に積む。
- * プレビューでタグをクリックして始めた検索も履歴に残るので、「戻る」で元のノートへ戻れる。
+ * 一覧（検索結果）と開いたノートは、1 本の履歴に順に積む。
+ * ノートの画面でタグをクリックして始めた検索も履歴に残るので、「戻る」で元のノートへ戻れる。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +30,7 @@ import {
   type RenameResult,
   type Settings,
 } from "./api/taggo";
+import { Quit } from "../wailsjs/runtime/runtime";
 import { Button } from "./components/Button";
 import { CardGrid } from "./components/CardGrid";
 import { ConfirmDialog } from "./components/ConfirmDialog";
@@ -41,6 +42,7 @@ import { RenameDialog } from "./components/RenameDialog";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { Toolbar } from "./components/Toolbar";
+import { flushAllEditors, requestEditorFocus } from "./editor/NoteEditor";
 import { useLibrary } from "./hooks/useLibrary";
 import { useNavHistory } from "./hooks/useNavHistory";
 import { applyTheme } from "./theme";
@@ -87,7 +89,7 @@ export default function App({ initialSettings }: Props) {
   // オーバーレイを閉じたあと、キー入力の行き先を検索バーへ戻すための合図。
   const [focusSignal, setFocusSignal] = useState(0);
 
-  const { entries, query, setQuery, notify, replaceEntry } = library;
+  const { entries, query, setQuery, notify } = library;
 
   // 履歴で一覧へ移ったら、その一覧の検索語で引き直し、キー入力の行き先を検索バーへ戻す。
   // 検索バーへの入力は履歴の検索語を書き換えるだけで移動ではないので、ここは通らない。
@@ -127,7 +129,7 @@ export default function App({ initialSettings }: Props) {
     });
   }, [notify]);
 
-  // 一覧が入れ替わっても、開いているプレビューは最新のエントリを指し続ける。
+  // 一覧が入れ替わっても、開いているノートの画面は最新のエントリを指し続ける。
   const detailEntry = useMemo(
     () =>
       detailPath === null
@@ -169,22 +171,22 @@ export default function App({ initialSettings }: Props) {
     [renameHistoryPath],
   );
 
+  // ウィンドウを閉じる前に、書きかけのノートを保存してから閉じる。
+  useEffect(
+    () =>
+      on(Events.beforeClose, () => {
+        void flushAllEditors().finally(() => Quit());
+      }),
+    [],
+  );
+
   // 見ていたノートが消えたら、履歴から除いて手前の画面へ戻る。
   useEffect(() => {
     if (detailPath !== null && detailEntry === null) removeFromHistory(detailPath);
   }, [detailPath, detailEntry, removeFromHistory]);
 
-  // タグの保存などで新しくなったエントリを、一覧と一覧の外の両方へ反映する。
-  const updateEntry = useCallback(
-    (entry: Entry) => {
-      replaceEntry(entry);
-      setVisited((prev) => (prev.has(entry.path) ? new Map(prev).set(entry.path, entry) : prev));
-    },
-    [replaceEntry],
-  );
-
   /**
-   * ページ（まだ無いページを含む）をプレビューで開き、履歴に積む。
+   * ページ（まだ無いページを含む）を開き、履歴に積む。
    * 一覧に載っていればその項目を開く。どちらでも、戻ってきたときに開けるよう持っておく。
    */
   const openEntry = useCallback(
@@ -199,7 +201,7 @@ export default function App({ initialSettings }: Props) {
   );
 
   /**
-   * パスの分かっているノートをプレビューで開き、履歴に積む。
+   * パスの分かっているノートを開き、履歴に積む。
    * 一覧に無ければ Go 側から取り寄せる。開けなければ false を返す。
    */
   const openPath = useCallback(
@@ -256,7 +258,7 @@ export default function App({ initialSettings }: Props) {
   );
 
   // Alt + 左右とマウスの戻る／進むボタン（ボタン 3 / 4）で、ブラウザと同じく履歴を移動する。
-  // 一覧でもプレビューでも、入力欄の中でも効かせる。ダイアログを開いている間は動かさない。
+  // 一覧でもノートの画面でも、入力欄の中でも効かせる。ダイアログを開いている間は動かさない。
   // 画像ビューアを開いている間は、ビューアが先に受けて止める。
   const historyBlocked = settingsOpen || confirmLoadAll || renaming !== null;
   useEffect(() => {
@@ -323,28 +325,36 @@ export default function App({ initialSettings }: Props) {
     [notify, openEntry],
   );
 
-  // まだ無いページの md ファイルを作って、既定のエディタで開く。
-  // 作ったファイルはフォルダの監視が拾い、開いているページがふつうのノートに切り替わる。
+  // まだ無いページの md ファイルを作って、本文を書き始められるようにする。
+  // まだ無いページとして開いていたなら、作ったページの知らせでそのまま編集画面に切り替わる。
+  // 検索結果の上のボタンから作ったときは、作ったページを開く。
   const handleCreatePage = useCallback(
     async (entry: Entry) => {
       try {
-        const created = await createPage(entry.path);
-        notify(
-          "info",
-          created
-            ? `「${entry.name}」を作成して、エディタで開きました。`
-            : `「${entry.name}」は既にあるため、エディタで開きました。`,
-        );
+        const result = await createPage(entry.path);
+        const page = result.entry;
+        if (!page) return;
+        if (result.created) requestEditorFocus(page.path);
+        if (detailPath?.toLowerCase() !== page.path.toLowerCase()) openEntry(page);
+        if (!result.created) notify("info", `「${page.name}」は既にあるため、そのページを開きました。`);
       } catch (err) {
         notify("error", String(err));
       }
     },
-    [notify],
+    [notify, detailPath, openEntry],
+  );
+
+  // 名前を変える前に、書きかけのノートを保存しておく。参照の書き換えが古い内容を読まないように。
+  const startRename = useCallback(
+    (entry: Entry) => {
+      void flushAllEditors().finally(() => setRenaming(entry));
+    },
+    [],
   );
 
   const closeRename = useCallback(() => setRenaming(null), []);
 
-  // 名前を変え終えたら結果を知らせる。一覧と開いているプレビューは、名前の変更イベントと
+  // 名前を変え終えたら結果を知らせる。一覧と開いているノートの画面は、名前の変更イベントと
   // 書き換えたノートの変更イベントで新しくなる。
   const handleRenamed = useCallback(
     (before: Entry, result: RenameResult) => {
@@ -550,8 +560,7 @@ export default function App({ initialSettings }: Props) {
           onCreatePage={handleCreatePage}
           pinned={library.pins.has(detailEntry.path)}
           onTogglePin={(pinned) => handleTogglePin(detailEntry, pinned)}
-          onRename={() => setRenaming(detailEntry)}
-          onEntryUpdated={updateEntry}
+          onRename={() => startRename(detailEntry)}
           onError={(message) => notify("error", message)}
           history={history}
         />

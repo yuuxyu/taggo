@@ -35,7 +35,7 @@ export function RenameDialog({ entry, onClose, onRenamed }: Props) {
     inputRef.current?.select();
   }, []);
 
-  // Esc で閉じる。下のプレビューや一覧も Esc や Alt + 左右、マウスの戻る／進むボタンで
+  // Esc で閉じる。下のノートの画面や一覧も Esc や Alt + 左右、マウスの戻る／進むボタンで
   // 動くので、キャプチャで先に受けて届かないようにする。書き換えの途中は閉じない。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -164,15 +164,6 @@ function PlanSummary({ plan }: { plan: RenamePlan }) {
         }
         names={plan.notes}
       />
-      {plan.cloudOnly.length > 0 && (
-        <NameList
-          title={
-            `中身がクラウド上にしか無い ${plan.cloudOnly.length.toLocaleString()} 件は、` +
-            "ダウンロードしてから確かめて書き換えます。"
-          }
-          names={plan.cloudOnly}
-        />
-      )}
       {plan.skipped.length > 0 && (
         <NameList
           title={`大きすぎる ${plan.skipped.length.toLocaleString()} 件は書き換えません。`}

@@ -3,6 +3,10 @@
 // 対象はフォルダの直下にあるファイルだけで、サブフォルダの中は見ない。
 // ノートのファイル名がタグを表すので、フォルダをまたいで同じ名前のノートが
 // 並ばないようにするため。
+//
+// クラウド同期フォルダで中身がまだローカルに無いノートも、読み取りの時点で
+// 同期サービスがダウンロードする。ノートはアプリの中で編集するので、
+// フォルダ直下のノートはすべて手元にあるものとして扱う。
 package scan
 
 import (
@@ -16,7 +20,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 )
@@ -41,9 +44,6 @@ type Result struct {
 	Entries []*model.Entry
 	// Skipped は、Markdown だがメタデータを読めなかったファイルの数。
 	Skipped int
-	// CloudOnly は、中身がクラウド上にしか無いため開かなかったファイルの数。
-	// エントリ自体は一覧へ出しているので、利用者への注意書きに使う。
-	CloudOnly int
 	// LimitReached は上限に達して打ち切ったかどうか。
 	LimitReached bool
 	// Remaining は上限で打ち切ったあとに残っている Markdown ファイルの数。
@@ -55,14 +55,10 @@ type Result struct {
 }
 
 // candidate は走査で見つけた 1 ファイル。
-//
-// ディレクトリ列挙で得た FileInfo をそのまま持ち回るのは、あとで stat を
-// やり直さないため。クラウド上にしか無いファイルは、stat のためにハンドルを
-// 開くだけでも呼び戻しが走る方式があるので、触る回数を最小にする。
+// ディレクトリ列挙で得た FileInfo をそのまま持ち回り、あとで stat をやり直さない。
 type candidate struct {
-	path      string
-	info      fs.FileInfo
-	cloudOnly bool
+	path string
+	info fs.FileInfo
 }
 
 // Scan は Root の直下を走査してエントリを組み立てる。
@@ -74,13 +70,6 @@ func Scan(ctx context.Context, opts Options) (Result, error) {
 	}
 	found := c.found
 
-	cloudOnly := 0
-	for _, c := range found {
-		if c.cloudOnly {
-			cloudOnly++
-		}
-	}
-
 	cursor := ""
 	if len(found) > 0 {
 		cursor = relPath(opts.Root, found[len(found)-1].path)
@@ -90,7 +79,6 @@ func Scan(ctx context.Context, opts Options) (Result, error) {
 	return Result{
 		Entries:      entries,
 		Skipped:      skipped,
-		CloudOnly:    cloudOnly,
 		LimitReached: c.limitReached,
 		Remaining:    c.remaining,
 		Cursor:       cursor,
@@ -110,8 +98,8 @@ type collected struct {
 // 進捗の分母（発見総数）を最初から表示できるようにしている。
 //
 // 上限に達したあとも、残りの件数を数えるために最後まで列挙を続ける。
-// この段階ではファイルを一度も開かない。ディレクトリの列挙だけで済むため、
-// クラウド同期フォルダを走査してもダウンロードは起こらない。
+// この段階ではファイルを一度も開かない。上限を超えた分は、クラウド同期フォルダでも
+// ダウンロードさせない。
 func collectPaths(ctx context.Context, opts Options) (collected, error) {
 	// 走査ルート自体が読めない場合だけは打ち切る。配下の個別エラーは飛ばして続ける。
 	info, err := os.Stat(opts.Root)
@@ -159,11 +147,7 @@ func collectPaths(ctx context.Context, opts Options) (collected, error) {
 		if err != nil {
 			return nil
 		}
-		c.found = append(c.found, candidate{
-			path:      path,
-			info:      info,
-			cloudOnly: cloudfile.IsPlaceholder(info),
-		})
+		c.found = append(c.found, candidate{path: path, info: info})
 		return nil
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -268,19 +252,11 @@ func readAll(ctx context.Context, found []candidate, opts Options) ([]*model.Ent
 
 // readOne は 1 ファイルを読み取る。読めない場合は nil を返し、呼び出し側で数える。
 //
-// 中身がクラウド上にしか無いファイルは開かない。開いた時点でダウンロードが
-// 始まり、フォルダを開いただけで同期フォルダ全体を引き落としてしまうため、
-// 一覧に出すのに要る情報（名前・サイズ・更新日時）だけでエントリを作る。
+// 中身がクラウド上にしか無いファイルは、ここで読んだ時点で同期サービスがダウンロードする。
 func readOne(c candidate, root string) *model.Entry {
-	var e *model.Entry
-	if c.cloudOnly {
-		e = model.NewCloudOnly(c.path, c.info.Name(), c.info.Size(), c.info.ModTime())
-	} else {
-		var err error
-		e, err = meta.Read(c.path, c.info)
-		if err != nil {
-			return nil
-		}
+	e, err := meta.Read(c.path, c.info)
+	if err != nil {
+		return nil
 	}
 	e.RelPath = relPath(root, c.path)
 	return e

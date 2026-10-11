@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/yuuxyu/taggo/internal/atomicfile"
-	"github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/folderconf"
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
@@ -26,8 +25,6 @@ type RenamePlan struct {
 	// Notes は参照を書き換えるノートのファイル名。名前を変えるページ自身も、
 	// 見出しなどを書き換えるなら含む。
 	Notes []string `json:"notes"`
-	// CloudOnly は中身がクラウド上にしか無いため、ダウンロードしてから確かめるノートのファイル名。
-	CloudOnly []string `json:"cloudOnly"`
 	// Skipped は大きすぎて書き換えないノートのファイル名。
 	Skipped []string `json:"skipped"`
 }
@@ -65,13 +62,12 @@ type renameTarget struct {
 
 // renameNote は、参照を書き換えるかもしれないノート 1 件。
 type renameNote struct {
-	path      string
-	cloudOnly bool
-	tooLarge  bool
+	path     string
+	tooLarge bool
 }
 
 // PlanRename は、path のページの名前を name に変えたときに書き換わるノートを調べて返す。
-// ファイルはまだ何も変えない。中身がクラウド上にしか無いノートは開かずに、件数だけを返す。
+// ファイルはまだ何も変えない。
 func (a *App) PlanRename(path, name string) (*RenamePlan, error) {
 	t, err := a.resolveRename(path, name)
 	if err != nil {
@@ -83,20 +79,17 @@ func (a *App) PlanRename(path, name string) (*RenamePlan, error) {
 	}
 
 	plan := &RenamePlan{
-		From:      t.from,
-		To:        t.to,
-		Path:      t.newPath,
-		Notes:     []string{},
-		CloudOnly: []string{},
-		Skipped:   []string{},
+		From:    t.from,
+		To:      t.to,
+		Path:    t.newPath,
+		Notes:   []string{},
+		Skipped: []string{},
 	}
 	for _, n := range notes {
 		name := filepath.Base(n.path)
 		switch {
 		case n.tooLarge:
 			plan.Skipped = append(plan.Skipped, name)
-		case n.cloudOnly:
-			plan.CloudOnly = append(plan.CloudOnly, name)
 		default:
 			raw, err := os.ReadFile(n.path)
 			if err != nil {
@@ -114,14 +107,13 @@ func (a *App) PlanRename(path, name string) (*RenamePlan, error) {
 // [[タグ]] と Markdown のリンク（行き先と、名前と同じ表示文字）を、フォルダ直下の
 // すべてのノートで書き換える。ページ自身の最初の見出しが名前と同じなら、それも書き換える。
 //
-// 中身がクラウド上にしか無いノートも、ここで読むためダウンロードが始まる。
 // 利用者が PlanRename の結果を確かめたうえで呼ぶこと。
 //
 // 先にすべてのノートを読んで書き換え後の中身を作り、読めないノートがあれば何も変えずに断る。
 // 名前を変えてから各ノートを書き換えるので、途中で書き込めなかったノートは結果の Failed で知らせる。
 func (a *App) RenamePage(path, name string) (*RenameResult, error) {
-	a.renameMu.Lock()
-	defer a.renameMu.Unlock()
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
 
 	t, err := a.resolveRename(path, name)
 	if err != nil {
@@ -174,7 +166,6 @@ func (a *App) RenamePage(path, name string) (*RenameResult, error) {
 	}
 
 	// 一覧（DB）を新しい状態へ直す。ウォッチャーも同じ変更を拾うが、待たずに反映しておく。
-	// クラウド上にしか無かったノートは、読んだことでローカルに来ているので読み直す。
 	result.Entry, err = a.moveEntry(t)
 	if err != nil {
 		return nil, err
@@ -187,7 +178,7 @@ func (a *App) RenamePage(path, name string) (*RenameResult, error) {
 		if strings.EqualFold(n.path, t.oldPath) {
 			continue
 		}
-		if n.cloudOnly || rewritten[n.path] {
+		if rewritten[n.path] {
 			a.refreshEntry(n.path)
 		}
 	}
@@ -268,7 +259,6 @@ func (a *App) renameRefs(t renameTarget, notePath string) meta.RenameRefs {
 // renameNotes は、参照を書き換えるかもしれないノートとして、root 直下の Markdown を集める。
 //
 // 読み込みの上限で一覧に載っていないノートも、参照を残さないよう対象にする。
-// クラウド上にしか無いかどうかは、ディレクトリの列挙で得た属性で見分け、ファイルは開かない。
 func renameNotes(root string) ([]renameNote, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -285,9 +275,8 @@ func renameNotes(root string) ([]renameNote, error) {
 			continue // 列挙のあとで消えた
 		}
 		notes = append(notes, renameNote{
-			path:      filepath.Join(root, d.Name()),
-			cloudOnly: cloudfile.IsPlaceholder(info),
-			tooLarge:  info.Size() > maxMarkdownPreviewBytes,
+			path:     filepath.Join(root, d.Name()),
+			tooLarge: info.Size() > maxNoteBytes,
 		})
 	}
 	return notes, nil
@@ -295,11 +284,9 @@ func renameNotes(root string) ([]renameNote, error) {
 
 // moveEntry は、名前を変えたページのエントリを DB の中で付け替え、新しいエントリを返す。
 func (a *App) moveEntry(t renameTarget) (*model.Entry, error) {
-	prev, had := a.store.Get(t.oldPath)
 	if err := a.store.Delete(t.oldPath); err != nil {
 		return nil, err
 	}
-	a.adjustCloudOnly(had && prev.CloudOnly, false)
 
 	info, err := os.Stat(t.newPath)
 	if err != nil {
@@ -310,7 +297,7 @@ func (a *App) moveEntry(t renameTarget) (*model.Entry, error) {
 		return nil, err
 	}
 	entry.RelPath = filepath.Base(t.newPath)
-	if err := a.putEntry(entry); err != nil {
+	if err := a.store.Put(entry); err != nil {
 		return nil, err
 	}
 	return entry, nil
@@ -331,7 +318,7 @@ func (a *App) refreshEntry(path string) {
 		return
 	}
 	entry.RelPath = filepath.Base(path)
-	if err := a.putEntry(entry); err != nil {
+	if err := a.store.Put(entry); err != nil {
 		return
 	}
 	a.emit(EventEntryChanged, map[string]any{"path": path, "entry": entry})

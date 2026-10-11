@@ -2,13 +2,11 @@ package app
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/yuuxyu/taggo/internal/cloudfile"
 	"github.com/yuuxyu/taggo/internal/imagefile"
 )
 
@@ -86,12 +84,8 @@ func (a *App) resolveImage(raw string) (string, error) {
 		return "", errors.New("開いているフォルダの外のファイルは配信しません")
 	}
 
-	// 中身がクラウド上にしか無いファイルは、開いた時点でダウンロードが始まる。
-	// ノートを開いただけで通信が走らないよう、属性だけを見て断る。
-	info, err := cloudfile.StatLocal(abs)
-	if errors.Is(err, cloudfile.ErrCloudOnly) {
-		return "", fmt.Errorf("クラウド上にだけある画像のため配信しません: %s", filepath.Base(abs))
-	}
+	// 中身がクラウド上にしか無い画像は、配信のために読んだ時点で同期サービスがダウンロードする。
+	info, err := os.Stat(abs)
 	if err != nil {
 		return "", errors.New("ファイルが見つかりません")
 	}

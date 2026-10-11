@@ -1,5 +1,5 @@
 /**
- * Markdown プレビューの本文の下に並べる関連ページ。
+ * ノートの画面の本文の下に並べる関連ページ。
  *
  * タグごとに「そのタグのページと、そのタグを持つノート」を 1 つのグループにして、
  * カードのグリッドで並べる。タグは本文の [[タグ]] で付けたもの。
@@ -44,17 +44,13 @@ interface Props extends GroupProps {
 }
 
 /**
- * 関連ページを読み込む。中身がクラウド上にしか無いノートでは何も読まない。
+ * 関連ページを読み込む。
  * 一覧が入れ替わってもリンク関係は変わらないので、開いているノートだけを見る。
  */
 export function useRelatedPages(entry: Entry): Related | null {
   const [related, setRelated] = useState<Related | null>(null);
 
   useEffect(() => {
-    if (entry.cloudOnly) {
-      setRelated(null);
-      return;
-    }
     let cancelled = false;
     setRelated(null);
     void getRelatedPages(entry.path).then((got) => {
@@ -64,7 +60,7 @@ export function useRelatedPages(entry: Entry): Related | null {
       cancelled = true;
     };
     // タグを書き換えるとリンクの索引も張り直されるため、更新日時も見る。
-  }, [entry.cloudOnly, entry.path, entry.modTime]);
+  }, [entry.path, entry.modTime]);
 
   // まだ無いノートへのリンクやタグがあるうちは、ほかのファイルが増えるたびに読み直す。
   // リンクから作ったノートを、開き直さなくても「ある」側へ移すため。

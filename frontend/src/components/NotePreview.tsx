@@ -2,17 +2,16 @@
  * カードの上部に出すノートの中身。一覧のカードと、関連ページのカードで共有する。
  *
  * 本文で画像か YouTube 動画を使っていれば、その最初のもののサムネイルを、
- * そうでなければ本文の抜粋を出す。中身がクラウド上にしか無いノートは本文を
- * 読んでいないので、その印を出す。
+ * そうでなければ本文の抜粋を出す。
  */
 
 import { useState } from "react";
-import { CloudIcon, PlayIcon } from "@heroicons/react/16/solid";
+import { PlayIcon } from "@heroicons/react/16/solid";
 import { imageURL, type Entry } from "../api/taggo";
 import { resolveLocalPath } from "../notePath";
 
 /** 中身を出すのに要るノートの情報。 */
-export type PreviewSource = Pick<Entry, "path" | "relPath" | "preview" | "thumbnail" | "cloudOnly">;
+export type PreviewSource = Pick<Entry, "path" | "relPath" | "preview" | "thumbnail">;
 
 interface Props {
   note: PreviewSource;
@@ -23,14 +22,6 @@ interface Props {
 const LINE_CLAMP = { 3: "line-clamp-3", 6: "line-clamp-6" } as const;
 
 export function NotePreview({ note, lines = 6 }: Props) {
-  if (note.cloudOnly) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-1.5 p-3 text-center text-xs text-ink-faint">
-        <CloudIcon className="size-6" aria-hidden="true" />
-        クラウド上のみ
-      </div>
-    );
-  }
   if (note.thumbnail) {
     return <Thumbnail key={note.thumbnail} note={note} thumbnail={note.thumbnail} lines={lines} />;
   }
@@ -53,7 +44,7 @@ const YOUTUBE_THUMBNAIL_RE = /^https:\/\/i\.ytimg\.com\//;
 /**
  * 本文で最初に使われている画像か、YouTube 動画のサムネイル。
  * フォルダ内の画像は taggo の配信 URL で読み込む。読み込めなければ
- * （クラウド上にしか無い・フォルダの外・画像でない など）本文の抜粋に戻す。
+ * （フォルダの外・画像でない など）本文の抜粋に戻す。
  */
 function Thumbnail({ note, thumbnail, lines }: { note: PreviewSource; thumbnail: string; lines: 3 | 6 }) {
   const [failed, setFailed] = useState(false);

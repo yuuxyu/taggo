@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yuuxyu/taggo/internal/cloudfile"
+	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
 )
 
@@ -83,7 +83,45 @@ func (a *App) checkPagePath(path string) error {
 	return nil
 }
 
-// preparePage は、まだ無いページ path の Markdown ファイルを、エディタで開ける状態にする。
+// CreatedPage は CreatePage の結果。
+type CreatedPage struct {
+	// Entry は作ったページ（既にあったなら、そのページ）のエントリ。
+	Entry *model.Entry `json:"entry"`
+	// Created は新しく作ったかどうか。既にあったファイルなら false。
+	Created bool `json:"created"`
+}
+
+// CreatePage は、まだ無いページ path の Markdown ファイルを、ファイル名を見出しにして作る。
+// path は LinkedPage や TagPage が返した「まだ無いページ」のパス。
+//
+// 作ったページは、画面がすぐに編集画面で開けるよう、ウォッチャーを待たずに一覧へ載せる。
+// 同じ名前のファイルが既にあれば上書きせず、そのファイルを返す（読み込みの上限で
+// 一覧に載っていなかったファイルなら、ここで一覧に載せる）。
+func (a *App) CreatePage(path string) (*CreatedPage, error) {
+	path, created, err := a.preparePage(path)
+	if err != nil {
+		return nil, err
+	}
+	if e, ok := a.store.Get(path); ok {
+		return &CreatedPage{Entry: e, Created: created}, nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("作ったノートを読めませんでした: %w", err)
+	}
+	entry, err := meta.Read(path, info)
+	if err != nil {
+		return nil, err
+	}
+	entry.RelPath = filepath.Base(path)
+	if err := a.store.Put(entry); err != nil {
+		return nil, err
+	}
+	a.emit(EventEntryChanged, map[string]any{"path": path, "entry": entry})
+	return &CreatedPage{Entry: entry, Created: created}, nil
+}
+
+// preparePage は、まだ無いページ path の Markdown ファイルを、編集できる状態にする。
 // 無ければ見出しだけのファイルとして作り、created を true にする。
 //
 // 既にあるファイルは上書きせず、そのまま返す。
@@ -92,10 +130,8 @@ func (a *App) preparePage(path string) (string, bool, error) {
 		return "", false, err
 	}
 	// 読み込みの上限で一覧に載っていないだけで、ファイル自体はあることもある。
-	info, err := cloudfile.StatLocal(path)
+	info, err := os.Stat(path)
 	switch {
-	case errors.Is(err, cloudfile.ErrCloudOnly):
-		return "", false, fmt.Errorf("クラウド上にだけあるファイルのため開きません: %s", filepath.Base(path))
 	case err == nil && info.IsDir():
 		return "", false, fmt.Errorf("同じ名前のフォルダがあるため作れません: %s", filepath.Base(path))
 	case err == nil:

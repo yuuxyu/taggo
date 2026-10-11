@@ -1,7 +1,7 @@
 // Package imagefile は、Markdown の本文に埋め込まれた画像ファイルを見分ける。
 //
 // taggo は画像をタグ管理の対象にしない。画像を扱うのは、ノートの本文が
-// 参照している画像をプレビューへ配信するときだけである。
+// 参照している画像を配信するときと、編集画面に貼り付けた画像を保存するときだけである。
 package imagefile
 
 import (
@@ -39,6 +39,33 @@ func ContentType(path string) (string, bool) {
 		return "", false
 	}
 	return sniffBytes(head[:n])
+}
+
+// Sniff はファイルの中身（先頭バイト列）から、ブラウザで表示できる画像の MIME タイプを判定する。
+// 判定の規則は ContentType と同じ。
+func Sniff(data []byte) (string, bool) {
+	return sniffBytes(data[:min(len(data), sniffLen)])
+}
+
+// Ext は、Sniff や ContentType が返した MIME タイプに合う拡張子（先頭のドットを含む）を返す。
+func Ext(contentType string) string {
+	switch contentType {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/gif":
+		return ".gif"
+	case "image/bmp":
+		return ".bmp"
+	case "image/webp":
+		return ".webp"
+	case "image/avif":
+		return ".avif"
+	case "image/svg+xml":
+		return ".svg"
+	}
+	return ""
 }
 
 // sniffBytes は先頭バイト列から画像の MIME タイプを判定する。
