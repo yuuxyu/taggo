@@ -3,16 +3,18 @@ package app
 import (
 	"fmt"
 	"io"
-	"os"
+
+	"github.com/yuuxyu/taggo/internal/atomicfile"
 )
 
 // maxNoteBytes は編集画面で扱う Markdown の上限。
 // これを超えるファイルは読み込まず、保存もしない。名前の変更でも書き換えない。
 const maxNoteBytes = 8 << 20
 
-// readFileLimited は上限付きでファイルを読む。
+// readFileLimited は上限付きでファイルを読む。読んでいる間も、保存（atomicfile.Replace）の
+// 置き換えを邪魔しないように開く。
 func readFileLimited(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		return nil, err
 	}

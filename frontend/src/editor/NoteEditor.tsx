@@ -45,6 +45,12 @@ const INTERACTIVE =
 
 /** 入力が止まってから自動で保存するまでの時間。 */
 const AUTOSAVE_MS = 1000;
+/**
+ * 保存に失敗したとき（同期サービスがファイルを使っていたなど）に、もう一度保存するまでの時間と回数。
+ * 同じ知らせを何度も出さないよう、知らせるのは最初の失敗だけにする。
+ */
+const SAVE_RETRY_MS = 3000;
+const SAVE_RETRY_MAX = 5;
 /** 文字数を数え直すまでの時間。長いノートで入力のたびに数えないよう、少し待つ。 */
 const COUNT_MS = 300;
 
@@ -86,6 +92,8 @@ interface OpenNote {
   recheck: boolean;
   /** ほかのアプリでの変更とぶつかっているか。解決するまで自動では保存しない。 */
   conflict: boolean;
+  /** 続けて保存に失敗した回数。失敗を知らせるのは最初の 1 回だけにし、決まった回数まではやり直す。 */
+  failures: number;
 }
 
 /** ディスクから読み込んだ内容で本文を差し替える変更。保存のきっかけにしない。 */
@@ -207,12 +215,25 @@ export function NoteEditor({
         note.baseVersion = res.version;
         note.savedDoc = text;
         note.knownKey = entryKey(res.entry);
+        note.failures = 0;
         if (force) {
           note.conflict = false;
           if (noteRef.current === note) setConflict(false);
         }
       } catch (err) {
-        callbacks.current.onError(`「${fileName(note.path)}」を保存できませんでした: ${String(err)}`);
+        if (note.failures === 0) {
+          callbacks.current.onError(
+            `「${fileName(note.path)}」を保存できませんでした。少し後にもう一度保存します: ${String(err)}`,
+          );
+        }
+        note.failures++;
+        if (note.failures <= SAVE_RETRY_MAX) {
+          window.setTimeout(() => {
+            // 開いたままなら最新の本文で、ほかのノートへ移っていれば失敗したときの本文で保存し直す。
+            if (noteRef.current === note) void flushRef.current();
+            else void save(note, text);
+          }, SAVE_RETRY_MS);
+        }
       } finally {
         note.saving--;
       }
@@ -357,6 +378,7 @@ export function NoteEditor({
           saving: 0,
           recheck: false,
           conflict: false,
+          failures: 0,
         };
         const wantFocus = focusRequests.delete(entry.path.toLowerCase());
         focusPending.current = wantFocus;

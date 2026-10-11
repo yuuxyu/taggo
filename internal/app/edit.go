@@ -112,6 +112,11 @@ func (a *App) SaveNote(path, content, baseVersion string) (*SaveResult, error) {
 	}
 
 	if err := atomicfile.Replace(path, data); err != nil {
+		// 同期サービスなどが使っていて待っても置き換えられなかったときは、一時ファイルのパスを
+		// 並べずに理由だけを伝える。画面は少し後にもう一度保存する。
+		if errors.Is(err, atomicfile.ErrInUse) {
+			return nil, atomicfile.ErrInUse
+		}
 		return nil, fmt.Errorf("保存できませんでした: %w", err)
 	}
 	info, err := os.Stat(path)

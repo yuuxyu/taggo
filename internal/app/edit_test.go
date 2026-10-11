@@ -7,7 +7,9 @@ import (
 	"regexp"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/yuuxyu/taggo/internal/atomicfile"
 	"github.com/yuuxyu/taggo/internal/store"
 )
 
@@ -202,5 +204,35 @@ func TestTagNames(t *testing.T) {
 		if !slices.Contains(got, name) {
 			t.Fatalf("候補に %q が無い: %v", name, got)
 		}
+	}
+}
+
+// ほかがノートを読んでいる最中でも保存できること。ウォッチャーが保存直後のノートを読み直すのと
+// 次の保存が重なったり、同期サービスが一瞬だけ読んでいたりしても、「保存できませんでした」にしない。
+func TestSaveNoteWhileFileIsRead(t *testing.T) {
+	a, root := newTestApp(t, map[string]string{"a.md": "# A\n"})
+	path := filepath.Join(root, "a.md")
+
+	// taggo 自身の読み込み（ウォッチャーなど）と同じ開き方で読んでいる最中。
+	shared, err := atomicfile.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.SaveNote(path, "# 1 回目\n", ""); err != nil {
+		t.Fatalf("taggo 自身が読んでいる最中の保存に失敗: %v", err)
+	}
+	shared.Close()
+
+	// ほかのアプリ（名前の変更を許さずに開く）が一瞬だけ読んでいる最中。
+	other, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(300*time.Millisecond, func() { other.Close() })
+	if _, err := a.SaveNote(path, "# 2 回目\n", ""); err != nil {
+		t.Fatalf("ほかのアプリが一瞬読んでいる最中の保存に失敗: %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "# 2 回目\n" {
+		t.Fatalf("中身が違う: %q", got)
 	}
 }

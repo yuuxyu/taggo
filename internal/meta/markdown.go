@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
+
+	"github.com/yuuxyu/taggo/internal/atomicfile"
 )
 
 const (
@@ -46,7 +47,9 @@ const (
 
 // readMarkdown は Markdown ファイルを読み、一覧と検索に使う情報を取り出す。
 func readMarkdown(path string) (Info, error) {
-	raw, err := os.ReadFile(path)
+	// 読んでいる間も、保存（atomicfile.Replace）の置き換えを邪魔しないように開く。
+	// ウォッチャーが保存直後のノートを読み直すのと、次の保存が重なることがあるため。
+	raw, err := atomicfile.ReadFile(path)
 	if err != nil {
 		return Info{}, err
 	}

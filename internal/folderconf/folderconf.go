@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -42,7 +41,7 @@ func Path(root string) string { return filepath.Join(root, FileName) }
 // ファイルが無ければ空の設定を返す。
 // JSON として壊れていればエラーを返す（呼び出し側は空の設定として扱えばよい）。
 func Load(root string) (Config, error) {
-	raw, err := os.ReadFile(Path(root))
+	raw, err := atomicfile.ReadFile(Path(root))
 	if errors.Is(err, fs.ErrNotExist) {
 		return Config{}, nil
 	}
@@ -65,7 +64,7 @@ func Load(root string) (Config, error) {
 func Save(root string, c Config) error {
 	path := Path(root)
 	fields := map[string]json.RawMessage{}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:

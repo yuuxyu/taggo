@@ -91,7 +91,7 @@ func (a *App) PlanRename(path, name string) (*RenamePlan, error) {
 		case n.tooLarge:
 			plan.Skipped = append(plan.Skipped, name)
 		default:
-			raw, err := os.ReadFile(n.path)
+			raw, err := atomicfile.ReadFile(n.path)
 			if err != nil {
 				return nil, fmt.Errorf("「%s」を読めませんでした: %w", name, err)
 			}
@@ -137,7 +137,7 @@ func (a *App) RenamePage(path, name string) (*RenameResult, error) {
 			result.Skipped = append(result.Skipped, name)
 			continue
 		}
-		raw, err := os.ReadFile(n.path)
+		raw, err := atomicfile.ReadFile(n.path)
 		if err != nil {
 			unreadable = append(unreadable, fmt.Sprintf("%s（%v）", name, err))
 			continue
@@ -150,7 +150,7 @@ func (a *App) RenamePage(path, name string) (*RenameResult, error) {
 		return nil, fmt.Errorf("読めないノートがあったため、名前を変えませんでした: %s", strings.Join(unreadable, "、"))
 	}
 
-	if err := os.Rename(t.oldPath, t.newPath); err != nil {
+	if err := atomicfile.Rename(t.oldPath, t.newPath); err != nil {
 		return nil, fmt.Errorf("名前を変えられませんでした: %w", err)
 	}
 	for _, w := range rewrites {
