@@ -233,10 +233,12 @@ export default function App({ initialSettings }: Props) {
     [entries, openEntry],
   );
 
+  const focusSearchBar = useCallback(() => setFocusSignal((n) => n + 1), []);
+
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
-    setFocusSignal((n) => n + 1);
-  }, []);
+    focusSearchBar();
+  }, [focusSearchBar]);
 
   const { setSort, reload } = library;
   const handleSettingsSaved = useCallback(
@@ -582,6 +584,8 @@ export default function App({ initialSettings }: Props) {
                 onOpen={openEntry}
                 onTagClick={handleTagClick}
                 onTogglePin={handleTogglePin}
+                keyboardNav={detailEntry === null}
+                onExitTop={focusSearchBar}
               />
             </div>
             {/* 絞り込んでいるときは、読み込んでいない分が結果に入っていないことを

@@ -6,10 +6,14 @@
  *
  * 先頭の別枠（ピン留めしたノートや、検索語と同じ名前のタグのページ）は、
  * 残りのカードと行を分けて並べる。別枠の最後の行が埋まらなくても、残りは次の行から始める。
+ *
+ * Ctrl + N / Ctrl + P で、フォーカスするカードを並び順の次 / 前へ移す。
+ * カードの外（検索バーなど）にフォーカスがあるときの Ctrl + N は先頭のカードへ、
+ * 先頭のカードでの Ctrl + P はカードの外（呼び出し側が決める。検索バー）へ移す。
  */
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { Grid, type CellComponentProps } from "react-window";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Grid, useGridRef, type CellComponentProps } from "react-window";
 import type { Entry } from "../api/taggo";
 import { Card } from "./Card";
 
@@ -32,6 +36,9 @@ const PADDING = 18;
  */
 const WRAPPER_PADDING = PADDING - GAP / 2;
 const CELL_PADDING = GAP / 2;
+
+/** スクロールした先のカードが描かれるまで、フォーカスを移すのを試し直す回数（フレーム数）。 */
+const FOCUS_RETRY_FRAMES = 10;
 
 /**
  * 縦スクロールバーが占める幅を一度だけ測る。
@@ -61,6 +68,13 @@ interface Props {
   onOpen: (entry: Entry) => void;
   onTagClick: (tag: string) => void;
   onTogglePin: (entry: Entry, pinned: boolean) => void;
+  /**
+   * Ctrl + N / Ctrl + P でカードを移るか。一覧の上にノートの画面が重なっている間は、
+   * そちらのキー操作（Ctrl + N で本文を書き始めるなど）を優先させるため false にする。
+   */
+  keyboardNav: boolean;
+  /** 先頭のカードで Ctrl + P を押したときに呼ぶ。 */
+  onExitTop: () => void;
 }
 
 /** セルに渡す追加プロパティ。react-window が変更を検知して再描画する。 */
@@ -87,6 +101,18 @@ function indexAt(rowIndex: number, columnIndex: number, p: Pick<CellProps, "head
   return p.head + (rowIndex - p.headRows) * p.columnCount + columnIndex;
 }
 
+/** indexAt の逆。エントリの番号から、それを置くセルの位置を求める。 */
+function cellOf(index: number, p: Pick<CellProps, "head" | "headRows" | "columnCount">) {
+  if (index < p.head) {
+    return { rowIndex: Math.floor(index / p.columnCount), columnIndex: index % p.columnCount };
+  }
+  const rest = index - p.head;
+  return {
+    rowIndex: p.headRows + Math.floor(rest / p.columnCount),
+    columnIndex: rest % p.columnCount,
+  };
+}
+
 function Cell({
   columnIndex,
   rowIndex,
@@ -105,7 +131,8 @@ function Cell({
   if (!entry) return null;
 
   return (
-    <div style={{ ...style, padding: CELL_PADDING }}>
+    // キー操作でカードを移るとき、フォーカスのあるカードの番号をここから読む。
+    <div style={{ ...style, padding: CELL_PADDING }} data-card-index={index}>
       <Card
         entry={entry}
         pinned={pins.has(entry.path)}
@@ -124,8 +151,11 @@ export function CardGrid({
   onOpen,
   onTagClick,
   onTogglePin,
+  keyboardNav,
+  onExitTop,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const gridRef = useGridRef(null);
   const [width, setWidth] = useState(0);
 
   // 列数は実際の表示幅から決めるので、幅の変化を監視する。
@@ -166,10 +196,81 @@ export function CardGrid({
     [],
   );
 
+  // キー操作でカードを移るときに使う、今の並べ方。
+  const layout = useRef({ count: 0, head: 0, headRows: 0, columnCount: 1 });
+  useLayoutEffect(() => {
+    layout.current = { count: entries.length, head: headCount, headRows, columnCount };
+  });
+
+  // スクロールした先のカードが描かれるのを待って、フォーカスを移そうとしているカード。
+  // キーを押し続けたときは、まだフォーカスの移っていないこのカードから数える。
+  const pending = useRef<{ index: number; frame: number } | null>(null);
+  const cancelPending = useCallback(() => {
+    if (pending.current) cancelAnimationFrame(pending.current.frame);
+    pending.current = null;
+  }, []);
+  useEffect(() => cancelPending, [cancelPending]);
+
+  // Ctrl + N / Ctrl + P で、フォーカスするカードを並び順の次 / 前へ移す。入力欄の中でも効かせる。
+  useEffect(() => {
+    if (!keyboardNav) return;
+
+    // 仮想スクロールでは画面の外のカードは描かれていないので、先にそのセルまでスクロールし、
+    // 描かれてからフォーカスを移す。
+    const focusCard = (index: number) => {
+      const container = containerRef.current;
+      if (!container) return;
+      cancelPending();
+      gridRef.current?.scrollToCell({ ...cellOf(index, layout.current), rowAlign: "smart" });
+      let tries = 0;
+      const attempt = () => {
+        const card = container.querySelector<HTMLElement>(`[data-card-index="${index}"] > article`);
+        if (card || ++tries > FOCUS_RETRY_FRAMES) {
+          pending.current = null;
+          card?.focus({ preventScroll: true });
+          return;
+        }
+        pending.current = { index, frame: requestAnimationFrame(attempt) };
+      };
+      attempt();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+      const key = e.key.toLowerCase();
+      if (!ctrl || (key !== "n" && key !== "p") || e.isComposing) return;
+      // ダイアログや履歴の一覧が開いている間は、そちらに任せる。
+      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return;
+      // WebView の既定の働き（Ctrl + N の新しいウィンドウ、Ctrl + P の印刷）は止める。
+      e.preventDefault();
+      const { count } = layout.current;
+      if (count === 0) return;
+      // フォーカスのあるカード（カードの中のピンやタグも含む）の番号。カードの外なら -1。
+      const active = document.activeElement;
+      const cell = active instanceof Element ? active.closest<HTMLElement>("[data-card-index]") : null;
+      const focused = cell && containerRef.current?.contains(cell) ? Number(cell.dataset.cardIndex) : -1;
+      const current = Math.min(pending.current?.index ?? focused, count);
+      if (key === "n") {
+        if (current + 1 < count) focusCard(current + 1);
+        return;
+      }
+      if (current < 0) return;
+      if (current === 0) {
+        cancelPending();
+        onExitTop();
+        return;
+      }
+      focusCard(current - 1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keyboardNav, onExitTop, gridRef, cancelPending]);
+
   return (
     <div className="h-full" style={{ padding: WRAPPER_PADDING }} ref={containerRef}>
       {width > 0 && (
         <Grid<CellProps>
+          gridRef={gridRef}
           className="[scrollbar-gutter:stable]"
           cellComponent={Cell}
           cellProps={{
