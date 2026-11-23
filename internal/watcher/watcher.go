@@ -44,8 +44,11 @@ type Watcher struct {
 	fsw     *fsnotify.Watcher
 	changes chan Change
 
+	// mu は pending と closed を守る。changes を閉じることと送ることも、これで 1 つずつにする。
 	mu      sync.Mutex
 	pending map[string]*time.Timer
+	// closed は、Run が changes を閉じたこと。閉じたあとは送らない。
+	closed bool
 
 	// ignoreTemp は taggo 自身が書き込みに使う一時ファイルを無視するための判定。
 	// 自分の書き込みに反応して読み直しても無駄なうえ、中途半端な内容を読みかねない。
@@ -78,7 +81,7 @@ func (w *Watcher) Changes() <-chan Change { return w.changes }
 
 // Run はイベントループを回す。ctx のキャンセルか Close で戻る。
 func (w *Watcher) Run(ctx context.Context) {
-	defer close(w.changes)
+	defer w.closeChanges()
 	for {
 		select {
 		case <-ctx.Done():
@@ -96,6 +99,22 @@ func (w *Watcher) Run(ctx context.Context) {
 			// 監視全体を止める理由にはならないため読み捨てる。
 		}
 	}
+}
+
+// closeChanges は通知のチャネルを閉じ、待っている読み直しをやめる。
+//
+// 読み直しはタイマーで遅らせて走るので、止めたあとに待ち時間が過ぎることがある。
+// タイマーを止めても、既に走り始めた読み直しは止まらないので、閉じたことを覚えておき、
+// emit は閉じたチャネルへ送らない（送ると panic する）。
+func (w *Watcher) closeChanges() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, timer := range w.pending {
+		timer.Stop()
+	}
+	w.pending = map[string]*time.Timer{}
+	w.closed = true
+	close(w.changes)
 }
 
 // Close は監視を終了する。
@@ -130,6 +149,9 @@ func (w *Watcher) schedule(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	if w.closed {
+		return
+	}
 	if timer, ok := w.pending[path]; ok {
 		timer.Reset(debounceInterval)
 		return
@@ -164,7 +186,13 @@ func (w *Watcher) emit(path string) {
 		}
 	}
 
-	// 受け手が居なくなっている可能性があるので、送信でブロックしない。
+	// 読み直している間に止められたかもしれないので、閉じていないことを確かめてから送る。
+	// 受け手が居なくなっている可能性もあるので、送信でブロックしない（ロックを握ったまま待たない）。
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return
+	}
 	select {
 	case w.changes <- change:
 	default:

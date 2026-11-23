@@ -137,3 +137,47 @@ func TestWatcherIgnoresUnsupportedAndTempFiles(t *testing.T) {
 		// 想定どおり無通知。
 	}
 }
+
+// 読み直しを待っている間に止めても、閉じた通知のチャネルへ送らないこと。
+// 以前は、止めたあとに待ち時間が過ぎると、閉じたチャネルへ送って panic していた。
+func TestStopWhileReloadIsPending(t *testing.T) {
+	root := t.TempDir()
+	w, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() {
+		w.Run(ctx)
+		close(stopped)
+	}()
+
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 変更が届き、読み直しを待ち始めるまで待つ。
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		w.mu.Lock()
+		pending := len(w.pending)
+		w.mu.Unlock()
+		if pending > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("読み直しを待ち始めない")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// 画面がフォルダを開き直すときと同じく、先に止めてから閉じる。
+	cancel()
+	<-stopped
+	time.Sleep(debounceInterval + 200*time.Millisecond)
+	w.Close()
+
+	if _, ok := <-w.Changes(); ok {
+		t.Fatal("止めたあとに通知が届いた")
+	}
+}
