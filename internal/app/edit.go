@@ -3,9 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -197,13 +195,6 @@ func saveNewFile(dir, base, ext string, data []byte) (string, error) {
 // 使われているタグと、ページのあるタグを、使われている件数の多い順に並べる。
 func (a *App) TagNames() []string {
 	return a.store.TagNames()
-}
-
-// contentVersion は、ファイルの中身を表す値を返す。保存の前に、読んだときから
-// 書き換えられていないかを確かめるのに使う。
-func contentVersion(raw []byte) string {
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
 }
 
 // OnBeforeClose は、ウィンドウを閉じる前に、画面へ書きかけのノートの保存を頼むフックを返す。

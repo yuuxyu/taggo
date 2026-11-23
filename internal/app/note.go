@@ -10,6 +10,7 @@ import (
 
 	"github.com/yuuxyu/taggo/internal/meta"
 	"github.com/yuuxyu/taggo/internal/model"
+	"github.com/yuuxyu/taggo/internal/notefile"
 )
 
 // LinkedPage は、fromPath のノートに書かれた Markdown のリンク link の行き先のページを返す。
@@ -61,26 +62,11 @@ func (a *App) pageAt(path string) *model.Entry {
 	return model.NewMissing(path)
 }
 
-// checkPagePath は、path をページのパスとして扱ってよいかを確かめる。
-//
-// フロントエンドから任意の場所のファイルを作らせないよう、開いているフォルダの
-// 直下の .md / .markdown に限る。taggo が読むのはフォルダ直下のノートだけなので、
-// サブフォルダに作っても一覧には出ない。
+// checkPagePath は、path を開いているフォルダのページのパスとして扱ってよいかを確かめる。
+// フロントエンドから任意の場所のファイルを作らせないよう、フォルダの直下の .md / .markdown に
+// 限る（notefile.CheckPagePath）。
 func (a *App) checkPagePath(path string) error {
-	root := a.store.Root()
-	if root == "" {
-		return errors.New("フォルダが開かれていません")
-	}
-	if !model.IsMarkdown(path) {
-		return errors.New("Markdown ファイルではありません")
-	}
-	if !within(root, path) {
-		return errors.New("開いているフォルダの外のノートは扱いません")
-	}
-	if !strings.EqualFold(filepath.Dir(filepath.Clean(path)), filepath.Clean(root)) {
-		return errors.New("サブフォルダのノートは扱いません。taggo が読むのはフォルダ直下のノートだけです")
-	}
-	return nil
+	return notefile.CheckPagePath(a.store.Root(), path)
 }
 
 // CreatedPage は CreatePage の結果。

@@ -167,3 +167,37 @@ func TestSaveWithoutPathFails(t *testing.T) {
 		t.Fatal("保存先が無いのに保存できてしまった")
 	}
 }
+
+// Peek は設定を読むだけで、壊れたファイルを退避しないこと。
+func TestPeekNeverWrites(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+
+	if got := Peek(path); got != Default() {
+		t.Fatalf("ファイルが無いのに既定値でない: %+v", got)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("読んだだけで設定ファイルが作られた: %v", err)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"startupMode":"fixed","startupFolder":"C:\\notes","scanLimit":5000}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := Peek(path)
+	if got.StartupPath() != `C:\notes` || got.ScanLimit != 5000 {
+		t.Fatalf("設定を読めていない: %+v", got)
+	}
+
+	if err := os.WriteFile(path, []byte("{壊れている"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Peek(path); got != Default() {
+		t.Fatalf("壊れたファイルで既定値でない: %+v", got)
+	}
+	if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
+		t.Fatalf("壊れたファイルを退避した: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("壊れたファイルが元の場所から消えた: %v", err)
+	}
+}

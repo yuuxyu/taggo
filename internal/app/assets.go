@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/yuuxyu/taggo/internal/imagefile"
+	"github.com/yuuxyu/taggo/internal/notefile"
 )
 
 // PathImage は、Markdown の本文に埋め込まれた画像を配信する内部エンドポイント。
@@ -106,7 +106,4 @@ func (a *App) resolveImage(raw string) (string, error) {
 }
 
 // within は path が root 配下（root 自身を含む）にあるかを判定する。
-func within(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
+func within(root, path string) bool { return notefile.Within(root, path) }

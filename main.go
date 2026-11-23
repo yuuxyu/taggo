@@ -7,12 +7,14 @@ import (
 	"embed"
 	"flag"
 	"log"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/yuuxyu/taggo/internal/app"
+	"github.com/yuuxyu/taggo/internal/mcpserver"
 	"github.com/yuuxyu/taggo/internal/settings"
 )
 
@@ -23,7 +25,15 @@ func main() {
 	// 起動時にフォルダを指定できるようにしておくと、
 	// ファイルマネージャーからの「このフォルダで開く」やテスト起動が楽になる。
 	folder := flag.String("folder", "", "起動時に読み込むフォルダ")
+	mcpMode := flag.Bool("mcp", false, "画面を出さずに、Claude Desktop などから使う MCP サーバーとして動く")
 	flag.Parse()
+
+	// MCP サーバーは、設定を読むだけで書かない（settings.Load は壊れた設定ファイルを退避する）。
+	// ウィンドウも作らないので、設定の読み込みと wails.Run より前で分ける。
+	if *mcpMode {
+		os.Exit(mcpserver.Main(mcpserver.Options{Folder: *folder}))
+	}
+
 	if *folder == "" && flag.NArg() > 0 {
 		*folder = flag.Arg(0)
 	}

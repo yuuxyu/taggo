@@ -209,6 +209,26 @@ func Load(path string) *Store {
 	return st
 }
 
+// Peek は path の設定ファイルを読むだけで、何も書き換えない。
+//
+// ファイルが無い・読めない・壊れているときは既定値を返す。Load と違い、壊れたファイルを
+// 退避もしない。画面を持たない MCP サーバーのように、設定を見るだけの使い方のためのもの。
+// 退避は、設定を保存する画面の側に任せる。
+func Peek(path string) Settings {
+	if path == "" {
+		return Default()
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Default()
+	}
+	loaded := Default()
+	if err := json.Unmarshal(raw, &loaded); err != nil {
+		return Default()
+	}
+	return loaded.normalize()
+}
+
 // LoadWarning は、読み込み時に既定値へ戻したときの理由を返す。問題が無ければ空文字。
 func (st *Store) LoadWarning() string {
 	return st.warning

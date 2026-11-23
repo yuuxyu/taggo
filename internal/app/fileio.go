@@ -1,31 +1,15 @@
 package app
 
-import (
-	"fmt"
-	"io"
-
-	"github.com/yuuxyu/taggo/internal/atomicfile"
-)
+import "github.com/yuuxyu/taggo/internal/notefile"
 
 // maxNoteBytes は編集画面で扱う Markdown の上限。
 // これを超えるファイルは読み込まず、保存もしない。名前の変更でも書き換えない。
-const maxNoteBytes = 8 << 20
+const maxNoteBytes = notefile.MaxBytes
 
 // readFileLimited は上限付きでファイルを読む。読んでいる間も、保存（atomicfile.Replace）の
 // 置き換えを邪魔しないように開く。
-func readFileLimited(path string) ([]byte, error) {
-	f, err := atomicfile.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
+func readFileLimited(path string) ([]byte, error) { return notefile.ReadLimited(path) }
 
-	data, err := io.ReadAll(io.LimitReader(f, maxNoteBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > maxNoteBytes {
-		return nil, fmt.Errorf("ファイルが大きすぎて開けません (%d バイト超)", maxNoteBytes)
-	}
-	return data, nil
-}
+// contentVersion は、ファイルの中身を表す値を返す。保存の前に、読んだときから
+// 書き換えられていないかを確かめるのに使う。
+func contentVersion(raw []byte) string { return notefile.Version(raw) }
