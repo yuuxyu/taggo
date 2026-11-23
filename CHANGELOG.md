@@ -4,6 +4,16 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.10.1] - 2026-11-23
+
+先頭に BOM があるノートで、見出しをタイトルとして読めるようにしました。
+
+### 修正
+
+- 先頭に BOM があるノート（メモ帳などで保存したもの）で、1 行目の見出しをタイトルとして読めず、カードのタイトルがファイル名になっていたのを直した。Front Matter があると抜粋に混ざっていたのも直した
+- そうしたノートの名前を変えたときに、そのページの見出しが新しい名前に書き換わらなかったのを直した
+- MCP サーバーが Claude Desktop に名乗る版が `dev` になっていたのを直した
+
 ## [0.10.0] - 2026-11-23
 
 Claude Desktop から、taggo のノートを作ったり、書き足したり、書き換えたりできるようにしました。
@@ -234,6 +244,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.10.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.10.1
 [0.10.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.10.0
 [0.9.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.9.1
 [0.9.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.9.0
