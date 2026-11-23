@@ -70,9 +70,11 @@ jobs:
           $config.info.productVersion = "${{ steps.version.outputs.core }}"
           $config | ConvertTo-Json -Depth 10 | Set-Content wails.json -Encoding utf8NoBOM
 
-      # フロントエンドはビルド済みなので -s で作り直しを省く
+      # フロントエンドはビルド済みなので -s で作り直しを省く。
+      # MCP サーバーがクライアントへ名乗る版は、タグの版を -X で埋め込む
+      # （wails.json を書き換えてからビルドするので、go build が git から記録する版には頼れない）。
       - name: ビルド
-        run: wails build -s -clean -platform windows/amd64 -trimpath -ldflags "-s -w"
+        run: wails build -s -clean -platform windows/amd64 -trimpath -ldflags "-s -w -X github.com/yuuxyu/taggo/internal/mcpserver.buildVersion=${{ steps.version.outputs.version }}"
 
       # 添付する exe の名前は、バージョンを入れずに taggo.exe で固定する。
       # 置き換えるときに名前が変わらないので、ショートカットなどをそのまま使える。

@@ -574,3 +574,18 @@ func TestPicksUpChanges(t *testing.T) {
 	}
 	eventually([]string{"b.md"})
 }
+
+// リリースのビルドで埋め込んだ版を名乗ること。
+func TestVersionUsesBuildVersion(t *testing.T) {
+	saved := buildVersion
+	t.Cleanup(func() { buildVersion = saved })
+
+	buildVersion = "0.10.1"
+	if got := version(); got != "0.10.1" {
+		t.Fatalf("埋め込んだ版を名乗っていない: %q", got)
+	}
+	buildVersion = ""
+	if got := version(); got == "" || strings.HasPrefix(got, "v") {
+		t.Fatalf("埋め込んでいないときの版が違う: %q", got)
+	}
+}

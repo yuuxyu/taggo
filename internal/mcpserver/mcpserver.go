@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	// プレースホルダーの見え方を、ファイルを扱う前に固定する（画面と同じ）。
@@ -98,12 +99,20 @@ func chooseFolder(flagFolder string, cfg settings.Settings) (string, error) {
 	return "", errNoFolder
 }
 
-// version は、クライアントへ名乗る taggo の版。go build が埋め込んだ版を使い、
-// 無ければ（開発中のビルドでは）"dev" にする。
+// buildVersion は、リリースのビルドで埋め込む版（"0.10.1" のように先頭の v を付けない）。
+// release.yml が -ldflags "-X github.com/yuuxyu/taggo/internal/mcpserver.buildVersion=…" で渡す。
+var buildVersion string
+
+// version は、クライアントへ名乗る taggo の版。リリースのビルドで埋め込んだ版を使う。
+// 無ければ go build が git から記録した版を、それも無ければ（開発中のビルドでは）"dev" にする。
+// リリースのビルドは wails.json を書き換えてからビルドするので、git の記録には頼らない。
 func version() string {
+	if buildVersion != "" {
+		return buildVersion
+	}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		if v := info.Main.Version; v != "" && v != "(devel)" {
-			return v
+			return strings.TrimPrefix(v, "v")
 		}
 	}
 	return "dev"
