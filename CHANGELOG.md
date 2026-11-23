@@ -4,6 +4,20 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.10.0] - 2026-11-23
+
+Claude Desktop から、taggo のノートを作ったり、書き足したり、書き換えたりできるようにしました。
+
+### 追加
+
+- Claude Desktop から、taggo の書き方でノートを作る。ファイル名と見出しを同じ名前にし、タグは見出しの下の行に `[[タグ]]` で並べ、Front Matter は使わない。既にあるノートは上書きしない
+- Claude Desktop から、ノートにタグを付ける（見出しの下のタグの行に書き足す）、末尾に書き足す、本文の一部を置き換える・消す
+  - 書き換えるのは頼まれたところだけで、整形し直さない。元のファイルの改行（LF / CRLF）と BOM も保つ
+  - Claude が読んだあとでノートが書き換えられていれば（taggo の画面で書いている途中など）、何も変えずに読み直させる
+  - ページの名前の変更と削除は、Claude からはできない（taggo の画面で行う）
+- Claude Desktop のメニューから選べる「ノートを書く」「まだ無いページを書く」「ノートをつなげる」。「タグをまとめる」「最近のノートを振り返る」も、選んだものを書き込むところまで進める
+- `taggo.exe --mcp --read-only` で、Claude からは読むだけにできる
+
 ## [0.9.1] - 2026-11-23
 
 ノートが変わった直後にフォルダを開き直すと、アプリが落ちることがあったのを直しました。0.9.0 はリリースの途中で止まったため、0.9.0 で入れた Claude Desktop との連携も、この版から使えます（登録のしかたは README の「Claude Desktop から使う」にあります）。
@@ -220,6 +234,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.10.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.10.0
 [0.9.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.9.1
 [0.9.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.9.0
 [0.8.3]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.3
