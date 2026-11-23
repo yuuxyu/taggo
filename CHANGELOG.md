@@ -4,6 +4,17 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.9.0] - 2026-11-23
+
+Claude Desktop から、taggo のノートを探して読めるようにしました。登録のしかたは README の「Claude Desktop から使う」にあります。
+
+### 追加
+
+- `taggo.exe --mcp` で、画面を出さずに MCP サーバーとして動く。Claude Desktop に登録すると、Claude がノートを探して読める（ノートは書き換えない）
+  - Wiki の概要、タグを付けたノートの一覧、全文検索（本文全体から探し、見つかった行を返す）、ノートの本文とタグ・リンク先、リンク元、タグの一覧
+  - Claude Desktop のメニューから選べる「タグをまとめる」「最近のノートを振り返る」
+  - 読むフォルダは taggo の設定の「起動時に開くフォルダ」。`--folder` でも指定できる
+
 ## [0.8.3] - 2026-10-12
 
 キーボードで移ったカードに、いつもフォーカスの印が出るようにしました。
@@ -201,6 +212,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.9.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.9.0
 [0.8.3]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.3
 [0.8.2]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.2
 [0.8.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.1
