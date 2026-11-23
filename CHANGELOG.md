@@ -4,6 +4,14 @@
 
 書式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/) に、バージョン番号は [セマンティックバージョニング](https://semver.org/lang/ja/) に従います。
 
+## [0.9.1] - 2026-11-23
+
+ノートが変わった直後にフォルダを開き直すと、アプリが落ちることがあったのを直しました。0.9.0 はリリースの途中で止まったため、0.9.0 で入れた Claude Desktop との連携も、この版から使えます（登録のしかたは README の「Claude Desktop から使う」にあります）。
+
+### 修正
+
+- ノートを保存した直後や、ほかのアプリでノートが変わった直後（0.3 秒以内）に別のフォルダを開くと、アプリが落ちることがあったのを直した
+
 ## [0.9.0] - 2026-11-23
 
 Claude Desktop から、taggo のノートを探して読めるようにしました。登録のしかたは README の「Claude Desktop から使う」にあります。
@@ -212,6 +220,7 @@ Ctrl + L で、どの画面からでも検索バーへ移れるようにしま�
 - ユーザ設定（起動時のフォルダ・既定の並び順・走査の上限件数・テーマ）
 - `--folder` オプションで開くフォルダを指定して起動
 
+[0.9.1]: https://github.com/yuuxyu/taggo/releases/tag/v0.9.1
 [0.9.0]: https://github.com/yuuxyu/taggo/releases/tag/v0.9.0
 [0.8.3]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.3
 [0.8.2]: https://github.com/yuuxyu/taggo/releases/tag/v0.8.2
