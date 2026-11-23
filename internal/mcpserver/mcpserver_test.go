@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,12 +58,18 @@ func openLibrary(t *testing.T, root string, limit int) *library {
 	return lib
 }
 
-// connect は library を読むサーバーにクライアントをつなぐ。
+// connect は library を読むサーバー（書き込むツールも出す）にクライアントをつなぐ。
 func connect(t *testing.T, lib *library) *mcp.ClientSession {
+	t.Helper()
+	return connectWith(t, lib, true)
+}
+
+// connectWith は、writable が false なら --read-only と同じサーバーにつなぐ。
+func connectWith(t *testing.T, lib *library, writable bool) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	if _, err := newServer(lib).Connect(ctx, serverTransport, nil); err != nil {
+	if _, err := newServer(lib, writable).Connect(ctx, serverTransport, nil); err != nil {
 		t.Fatal(err)
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "test"}, nil)
@@ -135,24 +142,58 @@ func summaryNames(notes []NoteSummary) []string {
 	return out
 }
 
-// 読むツールが 6 つそろい、どれも読むだけの注釈を持つこと。
-func TestToolsAreReadOnly(t *testing.T) {
-	cs, _ := newSession(t)
-	res, err := cs.ListTools(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
+// annotation はツールの注釈を、比べやすい文字列にする。
+func annotation(a *mcp.ToolAnnotations) string {
+	if a == nil {
+		return "注釈なし"
 	}
-	var names []string
-	for _, tool := range res.Tools {
-		names = append(names, tool.Name)
-		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
-			t.Errorf("%s に読むだけの注釈が無い", tool.Name)
+	if a.ReadOnlyHint {
+		return "読むだけ"
+	}
+	s := "書き込む"
+	if a.DestructiveHint != nil && *a.DestructiveHint {
+		s += "・書き換える"
+	}
+	if a.IdempotentHint {
+		s += "・何度呼んでも同じ"
+	}
+	return s
+}
+
+// 書き込めるときは 10 のツールが、--read-only のときは読む 6 つだけがそろい、それぞれの注釈を持つこと。
+func TestToolsAndAnnotations(t *testing.T) {
+	root := t.TempDir()
+	lib := openLibrary(t, root, 1000)
+	readTools := map[string]string{
+		"get_overview": "読むだけ", "list_notes": "読むだけ", "search_notes": "読むだけ",
+		"read_note": "読むだけ", "get_backlinks": "読むだけ", "list_tags": "読むだけ",
+	}
+	writeTools := map[string]string{
+		"create_note":    "書き込む",
+		"add_tags":       "書き込む・何度呼んでも同じ",
+		"append_to_note": "書き込む",
+		"edit_note":      "書き込む・書き換える",
+	}
+
+	for _, writable := range []bool{true, false} {
+		res, err := connectWith(t, lib, writable).ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	slices.Sort(names)
-	want := []string{"get_backlinks", "get_overview", "list_notes", "list_tags", "read_note", "search_notes"}
-	if !slices.Equal(names, want) {
-		t.Fatalf("ツールが違う: %v", names)
+		got := map[string]string{}
+		for _, tool := range res.Tools {
+			got[tool.Name] = annotation(tool.Annotations)
+			if tool.Annotations != nil && (tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint) {
+				t.Errorf("%s が外と通信する注釈になっている", tool.Name)
+			}
+		}
+		want := maps.Clone(readTools)
+		if writable {
+			maps.Copy(want, writeTools)
+		}
+		if !maps.Equal(got, want) {
+			t.Errorf("writable=%v のツールが違う:\n got  %v\n want %v", writable, got, want)
+		}
 	}
 }
 

@@ -4,6 +4,7 @@
 package notefile
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -71,4 +72,48 @@ func ReadLimited(path string) ([]byte, error) {
 func Version(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+// BOM はファイルの先頭に付くことのある UTF-8 の BOM。
+var BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// Text は、ノートの中身を、先頭の BOM と改行の種類を覚えたまま文字列として扱うためのもの。
+// 書き換えるときに、元のファイルの BOM と改行（LF / CRLF）を保つために使う。
+type Text struct {
+	// Body は BOM を除いた中身。改行は書かれたまま（CRLF なら \r\n のまま）。
+	Body string
+	// BOM は、元のファイルの先頭に BOM があったこと。
+	BOM bool
+	// EOL はこのノートの改行。最初の改行に合わせ、改行が無ければ LF とする。
+	EOL string
+}
+
+// Decode はファイルの中身を Text にする。
+func Decode(raw []byte) Text {
+	t := Text{EOL: "\n"}
+	if rest, ok := bytes.CutPrefix(raw, BOM); ok {
+		t.BOM, raw = true, rest
+	}
+	t.Body = string(raw)
+	if i := strings.IndexByte(t.Body, '\n'); i > 0 && t.Body[i-1] == '\r' {
+		t.EOL = "\r\n"
+	}
+	return t
+}
+
+// Encode は Body を、元の BOM を付け直したファイルの中身にする。
+func (t Text) Encode() []byte {
+	if !t.BOM {
+		return []byte(t.Body)
+	}
+	return append(append([]byte{}, BOM...), t.Body...)
+}
+
+// Lines は s の改行を、このノートの改行にそろえる。s の改行は LF でも CRLF でもよい。
+func (t Text) Lines(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	if t.EOL == "\r\n" {
+		s = strings.ReplaceAll(s, "\n", "\r\n")
+	}
+	return s
 }

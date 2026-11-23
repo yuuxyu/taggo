@@ -98,3 +98,33 @@ func TestReadFileNotExist(t *testing.T) {
 		t.Fatalf("fs.ErrNotExist になるはずが: %v", err)
 	}
 }
+
+// CreateNew は無いファイルだけを作り、既にあるファイルは上書きしないこと。一時ファイルも残さないこと。
+func TestCreateNew(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+
+	if err := CreateNew(path, []byte("# 新しい\n")); err != nil {
+		t.Fatalf("作れない: %v", err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "# 新しい\n" {
+		t.Fatalf("中身が違う: %q, %v", got, err)
+	}
+
+	// 大文字小文字だけが違う名前も、同じファイルとして断る（Windows の決まり）。
+	err := CreateNew(filepath.Join(dir, "A.md"), []byte("# 上書き\n"))
+	if !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("既にあるファイルで fs.ErrExist にならない: %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "# 新しい\n" {
+		t.Fatalf("既にあるファイルを上書きした: %q", got)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("一時ファイルが残っている: %v", entries)
+	}
+}

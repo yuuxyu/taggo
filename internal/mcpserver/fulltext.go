@@ -26,9 +26,6 @@ const (
 	snippetLead = 40
 )
 
-// utf8BOM はファイルの先頭に付くことのある UTF-8 の BOM。
-var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
-
 // lineMatch は、語が見つかった行 1 つ。
 type lineMatch struct {
 	Line int    `json:"line" jsonschema:"ファイルの行番号（1 から）"`
@@ -146,7 +143,7 @@ func readBody(path string) (body string, lineOffset int) {
 	if err != nil {
 		return "", 0
 	}
-	raw = bytes.TrimPrefix(raw, utf8BOM)
+	raw = bytes.TrimPrefix(raw, notefile.BOM)
 	stripped := meta.StripFrontMatter(raw)
 	lineOffset = bytes.Count(raw[:len(raw)-len(stripped)], []byte("\n"))
 	return string(stripped), lineOffset

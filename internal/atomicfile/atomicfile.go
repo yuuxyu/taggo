@@ -38,6 +38,25 @@ var ErrInUse = errors.New("ほかのアプリ（同期サービスやウイル�
 
 // Replace は data で path を置き換える。一時ファイルの名前は ".<元の名前>.taggo-XXXX" にする。
 func Replace(path string, data []byte) error {
+	return withTemp(path, data, func(tmpName string) error {
+		return retryInUse(func() error { return replaceFile(tmpName, path) })
+	})
+}
+
+// CreateNew は、path がまだ無いときだけ、data を書いたファイルとして作る。
+//
+// Replace と同じく一時ファイルへ書き切ってから、置き換えない名前の変更（MoveFileEx をフラグ無しで
+// 呼ぶ）で置く。書きかけのファイルを、ほかのアプリ（taggo 自身のウォッチャーを含む）に読ませない。
+// 確かめてから置くまでの間に同じ名前のファイルが現れても上書きせず、fs.ErrExist になるエラーを返す。
+func CreateNew(path string, data []byte) error {
+	return withTemp(path, data, func(tmpName string) error {
+		return retryInUse(func() error { return moveNoReplace(tmpName, path) })
+	})
+}
+
+// withTemp は path と同じフォルダの一時ファイルに data を書き切ってから、place で置く。
+// 置けなかったときは一時ファイルを消す。
+func withTemp(path string, data []byte, place func(tmpName string) error) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+strings.TrimPrefix(filepath.Base(path), ".")+tempMarker+"*")
 	if err != nil {
 		return err
@@ -45,7 +64,7 @@ func Replace(path string, data []byte) error {
 	tmpName := tmp.Name()
 	defer func() {
 		tmp.Close()
-		os.Remove(tmpName) // 置き換えに成功していれば何もしない
+		os.Remove(tmpName) // 置けていれば何もしない
 	}()
 
 	if _, err := tmp.Write(data); err != nil {
@@ -57,7 +76,24 @@ func Replace(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return retryInUse(func() error { return replaceFile(tmpName, path) })
+	return place(tmpName)
+}
+
+// moveNoReplace は from を to へ名前を変える。to が既にあれば置き換えずに失敗する
+// （ERROR_ALREADY_EXISTS。errors.Is で fs.ErrExist になる）。
+func moveNoReplace(from, to string) error {
+	src, err := windows.UTF16PtrFromString(from)
+	if err != nil {
+		return err
+	}
+	dst, err := windows.UTF16PtrFromString(to)
+	if err != nil {
+		return err
+	}
+	if err := windows.MoveFileEx(src, dst, 0); err != nil {
+		return &os.LinkError{Op: "rename", Old: from, New: to, Err: err}
+	}
+	return nil
 }
 
 // Rename は from を to へ名前を変える。ほかのプロセスが使用中で失敗したときは、少し待ってやり直す。

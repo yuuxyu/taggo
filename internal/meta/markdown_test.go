@@ -196,3 +196,11 @@ func TestMarkdownThumbnail(t *testing.T) {
 		})
 	}
 }
+
+// Parse は、ファイルから読むときと同じ情報を、中身から取り出すこと。
+func TestParse(t *testing.T) {
+	got := Parse([]byte("---\ntags: [x]\n---\n# 見出し\n\n[[golang]] と [実装](impl.md)\n"))
+	if got.Title != "見出し" || len(got.Tags) != 1 || got.Tags[0] != "golang" || len(got.Links) != 1 || got.Links[0] != "impl.md" {
+		t.Fatalf("取り出した情報が違う: %+v", got)
+	}
+}

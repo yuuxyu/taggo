@@ -27,6 +27,8 @@ import (
 type Options struct {
 	// Folder は読むフォルダ。空なら taggo の設定の「起動時に開くフォルダ」を読む。
 	Folder string
+	// ReadOnly なら、ノートを書き込むツールとプロンプトを出さない。
+	ReadOnly bool
 }
 
 // Main は MCP サーバーを標準入出力で動かし、クライアントが接続を閉じるまで戻らない。
@@ -54,7 +56,7 @@ func Main(opts Options) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	if err := newServer(lib).Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
+	if err := newServer(lib, !opts.ReadOnly).Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 		log.Printf("MCP サーバーが止まりました: %v", err)
 		return 1
 	}

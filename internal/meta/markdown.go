@@ -56,7 +56,12 @@ func readMarkdown(path string) (Info, error) {
 	if len(raw) > maxMarkdownSz {
 		return Info{}, fmt.Errorf("Markdown ファイルが大きすぎてインデックスできません (%d バイト)", len(raw))
 	}
+	return Parse(raw), nil
+}
 
+// Parse は Markdown の中身 raw から、一覧と検索に使う情報を取り出す。ファイルは読まない。
+// 書き込む前の中身からタグやリンクを読むとき（MCP サーバーの書き込み）にも使う。
+func Parse(raw []byte) Info {
 	body := StripFrontMatter(raw)
 	return Info{
 		Tags:      bodyTags(body),
@@ -64,7 +69,7 @@ func readMarkdown(path string) (Info, error) {
 		Preview:   excerpt(body),
 		Thumbnail: thumbnail(body),
 		Links:     noteLinks(body),
-	}, nil
+	}
 }
 
 // StripFrontMatter は、文書の先頭に「---」で囲んだブロックがあれば、それを除いた本文を返す。

@@ -26,12 +26,13 @@ func main() {
 	// ファイルマネージャーからの「このフォルダで開く」やテスト起動が楽になる。
 	folder := flag.String("folder", "", "起動時に読み込むフォルダ")
 	mcpMode := flag.Bool("mcp", false, "画面を出さずに、Claude Desktop などから使う MCP サーバーとして動く")
+	readOnly := flag.Bool("read-only", false, "MCP サーバーで、ノートを書き込むツールを出さない")
 	flag.Parse()
 
 	// MCP サーバーは、設定を読むだけで書かない（settings.Load は壊れた設定ファイルを退避する）。
 	// ウィンドウも作らないので、設定の読み込みと wails.Run より前で分ける。
 	if *mcpMode {
-		os.Exit(mcpserver.Main(mcpserver.Options{Folder: *folder}))
+		os.Exit(mcpserver.Main(mcpserver.Options{Folder: *folder, ReadOnly: *readOnly}))
 	}
 
 	if *folder == "" && flag.NArg() > 0 {

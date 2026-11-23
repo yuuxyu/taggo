@@ -59,3 +59,30 @@ func TestVersion(t *testing.T) {
 		t.Fatal("違う中身で版が同じ")
 	}
 }
+
+// BOM と改行の種類を覚え、書き戻すときに保つこと。
+func TestTextKeepsBOMAndLineEndings(t *testing.T) {
+	raw := append(append([]byte{}, BOM...), "# A\r\n\r\n本文\r\n"...)
+	text := Decode(raw)
+	if !text.BOM || text.EOL != "\r\n" || text.Body != "# A\r\n\r\n本文\r\n" {
+		t.Fatalf("読み方が違う: %+v", text)
+	}
+	if got := text.Lines("a\nb\r\nc"); got != "a\r\nb\r\nc" {
+		t.Fatalf("改行をそろえていない: %q", got)
+	}
+	text.Body += text.Lines("追記\n")
+	if got := string(text.Encode()); got != string(BOM)+"# A\r\n\r\n本文\r\n追記\r\n" {
+		t.Fatalf("書き戻し方が違う: %q", got)
+	}
+
+	plain := Decode([]byte("# B\n本文"))
+	if plain.BOM || plain.EOL != "\n" || string(plain.Encode()) != "# B\n本文" {
+		t.Fatalf("LF のノートの扱いが違う: %+v", plain)
+	}
+	if got := plain.Lines("a\r\nb"); got != "a\nb" {
+		t.Fatalf("LF にそろえていない: %q", got)
+	}
+	if empty := Decode(nil); empty.EOL != "\n" || empty.Body != "" {
+		t.Fatalf("空のノートの扱いが違う: %+v", empty)
+	}
+}

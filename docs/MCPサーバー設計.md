@@ -295,7 +295,8 @@ taggo.exe（画面） ──── 同じフォルダ ────┘  ウォッ
 - **自分の書き込みを 1 つずつにする**：Claude はツールを並べて呼ぶことがあるので、サーバーの中の書き込みはロックで 1 つずつにします（画面の `writeMu` と同じ役目）。
 - **DB への反映**：書いたノートは、ウォッチャーを待たずにサーバーの DB へ載せます。続けて `read_note` や `get_backlinks` で使えるようにするためです。
 - **結果で知らせること**（どの書き込みツールでも同じ形）
-  - `version`：書いたあとの版
+  - `written`：ファイルに書き込んだか（`dry_run` のときや、中身が変わらないときは `false`）
+  - `version`：この呼び出しのあとのファイルの版（続けて `edit_note` を呼ぶときの `base_version` に使える）
   - `tags_added` / `tags_removed`：書く前と後の、本文の `[[タグ]]` の違い
   - `missing_tag_pages`：ページがまだ無いタグ
   - `missing_links`：行き先の無い Markdown のリンク
@@ -365,7 +366,7 @@ taggo.exe（画面） ──── 同じフォルダ ────┘  ウォッ
 ```json
 {
   "name": "goroutine の止め方.md",
-  "created": true,
+  "written": true,
   "version": "…",
   "tags_added": ["golang", "並行処理"],
   "missing_tag_pages": ["並行処理"],
@@ -661,8 +662,8 @@ internal/notefile/         app と mcpserver で共有：パスの確かめ、�
 1. 読む側（済み）
    - 本物の `taggo.exe --mcp` を Node から起動して、Wails のパッケージの初期化が stdio を邪魔しないことを確かめた
    - 読むツール 6 つ、読むだけのプロンプト（`summarize_tag`・`review_recent` の読む部分）、サーバーの説明、README の設定の説明
-2. 書く側
-   - 危なくないものから入れる：`create_note` → `add_tags`・`append_to_note` → `edit_note`
+2. 書く側（済み）
+   - 危なくないものから入れた：`create_note` → `add_tags`・`append_to_note` → `edit_note`
    - 残りのプロンプト
    - 要件定義書と開発ドキュメントの更新
 3. 仕上げ

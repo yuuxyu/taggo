@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -43,6 +44,9 @@ var readChunkRunes = 100_000
 // tools は、ツールの処理をまとめたもの。
 type tools struct {
 	lib *library
+	// writeMu は、ノートへの書き込みを 1 つずつにする。クライアントはツールを並べて呼ぶことがあり、
+	// 読んでから書くまでの間に、別の書き込みが割り込まないようにするため。
+	writeMu sync.Mutex
 }
 
 // ---- 入力の型と、スキーマの補い ----
@@ -450,8 +454,8 @@ func (t *tools) readNote(ctx context.Context, _ *mcp.CallToolRequest, in readNot
 		out.Links[i] = linkRef{Target: link, Note: pageName(s.FindNote(s.LinkPath(link, e.Path)))}
 	}
 
-	// 改行は LF にそろえて返す。位置（offset）は文字数で数える。
-	body := strings.ReplaceAll(strings.TrimPrefix(string(raw), string(utf8BOM)), "\r\n", "\n")
+	// BOM を除き、改行は LF にそろえて返す。位置（offset）は文字数で数える。
+	body := strings.ReplaceAll(notefile.Decode(raw).Body, "\r\n", "\n")
 	chunk, rest := cutRunes(body, in.Offset, readChunkRunes)
 	if rest > 0 {
 		out.Truncated = true
