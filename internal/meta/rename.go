@@ -1,12 +1,14 @@
 package meta
 
 import (
+	"bytes"
 	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/yuuxyu/taggo/internal/model"
+	"github.com/yuuxyu/taggo/internal/notefile"
 )
 
 // renameLinkRe は書き換えのために、Markdown のリンクを部品に分けて捕まえる。
@@ -52,7 +54,9 @@ type RenameRefs struct {
 //   - そのリンクの表示文字が、変更前の名前か拡張子付きのファイル名と同じなら、その表示文字
 //   - Self のときは、最初の見出しが変更前の名前と同じなら、その見出し
 func (r RenameRefs) Rewrite(raw []byte) ([]byte, bool) {
-	body := StripFrontMatter(raw)
+	// 先頭の BOM は Front Matter と一緒に、書かれたまま残す。BOM を残したまま本文を読むと、
+	// 1 行目の見出しや Front Matter を見分けられない。
+	body := StripFrontMatter(bytes.TrimPrefix(raw, notefile.BOM))
 	head := raw[:len(raw)-len(body)]
 	oldKey := model.TagKey(r.OldName)
 

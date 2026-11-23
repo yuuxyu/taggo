@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/yuuxyu/taggo/internal/atomicfile"
+	"github.com/yuuxyu/taggo/internal/notefile"
 )
 
 const (
@@ -61,8 +62,11 @@ func readMarkdown(path string) (Info, error) {
 
 // Parse は Markdown の中身 raw から、一覧と検索に使う情報を取り出す。ファイルは読まない。
 // 書き込む前の中身からタグやリンクを読むとき（MCP サーバーの書き込み）にも使う。
+//
+// 先頭の BOM は除いてから読む。残したままだと、1 行目の見出しや Front Matter を見分けられない
+// （メモ帳などで保存したノートには BOM が付いていることがある）。
 func Parse(raw []byte) Info {
-	body := StripFrontMatter(raw)
+	body := StripFrontMatter(bytes.TrimPrefix(raw, notefile.BOM))
 	return Info{
 		Tags:      bodyTags(body),
 		Title:     firstHeading(body),
